@@ -1,0 +1,189 @@
+[
+ {
+  "name": "plain indent normalizes leading spaces",
+  "kind": "plain",
+  "command": "indent",
+  "source": "第一段。\n  第二段。\n　第三段。\n\n第四段",
+  "expected": "　　第一段。\n　　第二段。\n　　第三段。\n\n　　第四段"
+ },
+ {
+  "name": "plain indent is idempotent",
+  "kind": "plain",
+  "command": "indent",
+  "source": "　　一\n\n　　二",
+  "expected": "　　一\n\n　　二"
+ },
+ {
+  "name": "plain blank line between collapses runs",
+  "kind": "plain",
+  "command": "blank_line_between",
+  "source": "一\n二\n\n\n三\n",
+  "expected": "一\n\n二\n\n三\n"
+ },
+ {
+  "name": "plain blank line between keeps CRLF",
+  "kind": "plain",
+  "command": "blank_line_between",
+  "source": "一\r\n二",
+  "expected": "一\r\n\r\n二"
+ },
+ {
+  "name": "plain blank line between empties a spaces-only separator",
+  "kind": "plain",
+  "command": "blank_line_between",
+  "source": "一\n \n二",
+  "expected": "一\n\n二"
+ },
+ {
+  "name": "plain remove blank lines keeps the ends",
+  "kind": "plain",
+  "command": "remove_blank_lines",
+  "source": "\n一\n\n二\n \n\n三\n\n",
+  "expected": "\n一\n二\n三\n\n"
+ },
+ {
+  "name": "plain cjk spacing",
+  "kind": "plain",
+  "command": "cjk_spacing",
+  "source": "用iPhone拍了3张照片，花了50%的电量。访问https://example.com获取。",
+  "expected": "用 iPhone 拍了 3 张照片，花了 50% 的电量。访问 https://example.com 获取。"
+ },
+ {
+  "name": "plain cjk spacing is idempotent",
+  "kind": "plain",
+  "command": "cjk_spacing",
+  "source": "用 iPhone 拍了 3 张",
+  "expected": "用 iPhone 拍了 3 张"
+ },
+ {
+  "name": "plain cjk spacing leaves punctuation and email alone",
+  "kind": "plain",
+  "command": "cjk_spacing",
+  "source": "写信到a.b@example.com吧，好（OK）",
+  "expected": "写信到 a.b@example.com 吧，好（OK）"
+ },
+ {
+  "name": "selection formats only its lines",
+  "kind": "plain",
+  "command": "indent",
+  "source": "一\n二\n三",
+  "selection": [
+   2,
+   3
+  ],
+  "expected": "一\n　　二\n三"
+ },
+ {
+  "name": "selection ending at column zero leaves the next line",
+  "kind": "plain",
+  "command": "indent",
+  "source": "一\n二\n三",
+  "selection": [
+   0,
+   2
+  ],
+  "expected": "　　一\n二\n三"
+ },
+ {
+  "name": "selection limits blank lines to its range",
+  "kind": "plain",
+  "command": "blank_line_between",
+  "source": "一\n二\n三\n四",
+  "selection": [
+   2,
+   5
+  ],
+  "expected": "一\n二\n\n三\n四"
+ },
+ {
+  "name": "markdown indent skips structure",
+  "kind": "markdown",
+  "command": "indent",
+  "source": "---\ntitle: 测试\n---\n# 标题\n正文一\n- 列表\n  续行\n> 引用\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```js\ncode\n```\n正文二",
+  "expected": "---\ntitle: 测试\n---\n# 标题\n　　正文一\n- 列表\n  续行\n> 引用\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```js\ncode\n```\n　　正文二"
+ },
+ {
+  "name": "markdown blank line between keeps blocks whole",
+  "kind": "markdown",
+  "command": "blank_line_between",
+  "source": "# 标题\n正文一\n正文二\n- a\n- b\n> q1\n> q2\n```\nx\n\ny\n```\n尾",
+  "expected": "# 标题\n\n正文一\n\n正文二\n\n- a\n- b\n\n> q1\n> q2\n\n```\nx\n\ny\n```\n\n尾"
+ },
+ {
+  "name": "markdown remove blank lines only between prose",
+  "kind": "markdown",
+  "command": "remove_blank_lines",
+  "source": "正文一\n\n正文二\n\n# 标题\n\n正文三\n\n- a\n\n- b\n\n正文四",
+  "expected": "正文一\n正文二\n\n# 标题\n\n正文三\n\n- a\n\n- b\n\n正文四"
+ },
+ {
+  "name": "markdown cjk spacing protects code, links, tags and math",
+  "kind": "markdown",
+  "command": "cjk_spacing",
+  "source": "用`code`写，见[文档abc](https://x.com/a中b)和<span>标签a</span>，$x中y$，访问https://a.com获取",
+  "expected": "用`code`写，见[文档 abc](https://x.com/a中b)和<span>标签 a</span>，$x中y$，访问 https://a.com 获取"
+ },
+ {
+  "name": "markdown cjk spacing in headings and lists",
+  "kind": "markdown",
+  "command": "cjk_spacing",
+  "source": "# 第1章\n- 用iOS",
+  "expected": "# 第 1 章\n- 用 iOS"
+ },
+ {
+  "name": "markdown cjk spacing skips code fences",
+  "kind": "markdown",
+  "command": "cjk_spacing",
+  "source": "```\n中文abc\n```",
+  "expected": "```\n中文abc\n```"
+ },
+ {
+  "name": "markdown dollar amounts are not math",
+  "kind": "markdown",
+  "command": "cjk_spacing",
+  "source": "花了$5和$10",
+  "expected": "花了$5 和$10"
+ },
+ {
+  "name": "markdown setext heading stays together",
+  "kind": "markdown",
+  "command": "blank_line_between",
+  "source": "标题\n===\n正文",
+  "expected": "标题\n===\n\n正文"
+ },
+ {
+  "name": "markdown setext heading is not indented",
+  "kind": "markdown",
+  "command": "indent",
+  "source": "标题\n---\n正文",
+  "expected": "标题\n---\n　　正文"
+ },
+ {
+  "name": "markdown indented code stays, indented CJK prose is normalized",
+  "kind": "markdown",
+  "command": "indent",
+  "source": "正文\n\n    code line\n\n　段落\n\n    中文段落",
+  "expected": "　　正文\n\n    code line\n\n　　段落\n\n　　中文段落"
+ },
+ {
+  "name": "markdown table without outer pipes stays whole",
+  "kind": "markdown",
+  "command": "blank_line_between",
+  "source": "a | b\n--- | ---\n1 | 2",
+  "expected": "a | b\n--- | ---\n1 | 2"
+ },
+ {
+  "name": "markdown rule and html are verbatim",
+  "kind": "markdown",
+  "command": "indent",
+  "source": "***\n<div>\n</div>\n[a]: https://x",
+  "expected": "***\n<div>\n</div>\n[a]: https://x"
+ },
+ {
+  "name": "markdown loose list stays a list",
+  "kind": "markdown",
+  "command": "blank_line_between",
+  "source": "- a\n\n  更多\n- b",
+  "expected": "- a\n\n  更多\n- b"
+ }
+]

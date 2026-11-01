@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="camera"
+        android:enabled="true"
+        android:icon="@drawable/ic_lucide_camera"
+        android:shortcutShortLabel="@string/shortcut_take_picture"
+        android:shortcutLongLabel="@string/shortcut_take_picture">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="me.rerere.rikkihub.ui.activity.ShortcutHandlerActivity"
+            android:data="rikkihub://shortcut" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="translator"
+        android:enabled="true"
+        android:icon="@drawable/ic_translate"
+        android:shortcutShortLabel="@string/translator_page_title"
+        android:shortcutLongLabel="@string/translator_page_title">
+        <intent
+            android:action="me.rerere.rikkihub.action.TRANSLATE"
+            android:targetClass="me.rerere.rikkihub.RouteActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="media_creation"
+        android:enabled="true"
+        android:icon="@drawable/ic_image_generation"
+        android:shortcutShortLabel="@string/shortcut_media_creation"
+        android:shortcutLongLabel="@string/shortcut_media_creation">
+        <intent
+            android:action="me.rerere.rikkihub.action.MEDIA_CREATION"
+            android:targetClass="me.rerere.rikkihub.RouteActivity" />
+    </shortcut>
+</shortcuts>

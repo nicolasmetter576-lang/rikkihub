@@ -1,0 +1,124 @@
+{
+  "conversations": {
+    "meta": {
+      "title": "Rikkihub Web",
+      "description": "Rikkihub web client"
+    },
+    "preview": {
+      "empty_message": "Empty message",
+      "image": "[Image]",
+      "video": "[Video]",
+      "audio": "[Audio]",
+      "document": "[Document]",
+      "document_with_name": "[Document] {{name}}",
+      "thinking": "[Thinking]",
+      "tool_call": "[Tool call]",
+      "tool_with_name": "[Tool] {{name}}"
+    },
+    "errors": {
+      "load_detail_failed": "Failed to load conversation details"
+    },
+    "delete_blocked_generating": "Stop the current generation before deleting messages",
+    "translate_failed": "Translation failed",
+    "favorite_failed": "Failed to update favorite",
+    "settings": {
+      "open": "Conversation settings",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving...",
+      "save_failed": "Save failed",
+      "system_prompt_title": "Conversation system prompt",
+      "system_prompt_description": "Sets an extra system prompt for this conversation, applied on top of the assistant's system prompt. Leave empty or clear to use the assistant default.",
+      "system_prompt_placeholder": "Enter a conversation-level system prompt...",
+      "system_prompt_clear": "Clear",
+      "cwd_title": "Workspace directory",
+      "cwd_description": "Pick the working directory (cwd) for this conversation inside the workspace.",
+      "cwd_up": "Up one level",
+      "cwd_load_failed": "Could not load directory",
+      "cwd_no_subdirectories": "No subdirectories",
+      "cwd_reset": "Reset to default",
+      "cwd_set": "Set as cwd",
+      "cwd_scoped": "Only this folder"
+    },
+    "empty_state": {
+      "select_title": "Select a conversation",
+      "select_description": "Pick a conversation from the sidebar to view messages",
+      "loading_title": "Loading...",
+      "loading_description": "Loading conversation details",
+      "error_title": "Load failed",
+      "no_message_title": "No messages yet",
+      "no_message_description": "This conversation does not have any messages yet"
+    },
+    "welcome_prompt": "How can I help you?",
+    "user": {
+      "default_name": "User"
+    },
+    "header": {
+      "select_conversation": "Select a conversation",
+      "open_workspace": "Open workspace files"
+    },
+    "jump_target_missing": "The target message no longer exists",
+    "compress": {
+      "menu": "Compress history",
+      "title": "Compress conversation history",
+      "description": "The current chat model writes a structured summary of the conversation so far and adds it at the end.",
+      "additional_prompt": "Additional instructions (optional)",
+      "additional_prompt_hint": "What to keep or focus on",
+      "keep_recent": "Keep recent messages",
+      "keep_recent_desc": "These messages are not compressed and stay after the summary. 0 compresses everything and reuses the prompt cache best; if the conversation is too long to compress, keep more messages.",
+      "keep_recent_decrease": "Keep fewer messages",
+      "keep_recent_increase": "Keep more messages",
+      "background_hint": "Compression runs on the phone in the background and continues if you close this page. Messages sent meanwhile are queued and sent when it finishes.",
+      "start": "Compress",
+      "starting": "Starting…",
+      "cancel": "Cancel",
+      "running": "Compressing history…",
+      "running_from_app": "The app is compressing this conversation's history…",
+      "running_hint": "Messages sent meanwhile are queued and sent when it finishes; regenerate is unavailable until then.",
+      "cancel_running": "Cancel compression",
+      "cancelled": "Compression cancelled",
+      "succeeded": "History compressed",
+      "failed_title": "Compression did not finish",
+      "retry": "Retry",
+      "dismiss": "Dismiss",
+      "wait": "Compressing history. Try again when it finishes.",
+      "error_busy": "The conversation is generating, waiting for approval or has queued messages. Try compressing later.",
+      "error_already": "This conversation is already being compressed",
+      "error_changed": "The conversation changed during compression; nothing was saved. Please retry.",
+      "error_failed": "Failed to generate the summary",
+      "checkpoint_info": "It uses the same request as the chat, so the prompt cache is reused. Earlier messages stay visible but are no longer sent to the model; delete the summary to undo.",
+      "error_nothing": "No new messages to compress since the last summary",
+      "error_not_enough": "Not enough messages to compress. Reduce the number of messages to keep.",
+      "error_pending_tools": "Handle the pending tool calls before compressing",
+      "error_tool_call": "The model tried to call a tool instead of writing the summary. Please try again.",
+      "context_usage": "Current context"
+    },
+    "size_warning": {
+      "title": "This conversation is very large",
+      "detail": "{{nodes}} messages; the last request sent about {{tokens}} input tokens. Consider compressing the history or starting a new conversation.",
+      "new_conversation": "New conversation"
+    }
+  },
+  "queue_panel": {
+    "pending_count": "{{count}} message(s) queued",
+    "paused_count": "Queue paused · {{count}} message(s)",
+    "resume": "Resume",
+    "expand": "Expand queue",
+    "collapse": "Collapse queue",
+    "edit": "Edit",
+    "editing": " (editing)",
+    "remove": "Remove",
+    "empty": "Queue is empty",
+    "empty_message": "Empty message",
+    "attachment_image": "[Image]",
+    "attachment_video": "[Video]",
+    "attachment_audio": "[Audio]",
+    "attachment_document": "[Document]",
+    "edit_title": "Edit queued message",
+    "edit_save": "Save",
+    "edit_saving": "Saving...",
+    "edit_cancel": "Cancel",
+    "edit_empty": "Message cannot be empty",
+    "update_failed": "Failed to update the queue"
+  }
+}

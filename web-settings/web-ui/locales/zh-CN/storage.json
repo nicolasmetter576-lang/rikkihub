@@ -1,0 +1,86 @@
+{
+  "nav": {
+    "back_to_chat": "返回聊天",
+    "title": "存储与附件"
+  },
+  "page": {
+    "title": "聊天附件",
+    "description": "浏览与管理已上传到本机的聊天附件（仅 upload 目录）。",
+    "notice_protected": "带「受保护」标记的文件正在被会话、排队消息、助手头像/背景或活跃草稿引用，或刚上传不足 24 小时；服务端会拒绝删除，不能强制删除。",
+    "notice_draft_window": "未发送的草稿附件只在浏览器侧可见：租约有效期 24 小时，长时间离线/关闭页面后草稿文件可能不再受保护，清理前请确认。"
+  },
+  "list": {
+    "refresh": "刷新",
+    "cancel": "取消",
+    "retry": "重试",
+    "load_failed": "加载文件列表失败",
+    "search_placeholder": "按文件名 / MIME 搜索…",
+    "apply": "搜索",
+    "total": "共 {{count}} 个文件 · {{size}}",
+    "filtered": "筛选 {{count}} 个 · {{size}}",
+    "selected": "已选 {{count}} 项",
+    "clear_selection": "清除选择",
+    "delete_selected": "删除所选",
+    "select_all": "全选本页可删项",
+    "load_more": "加载更多（{{loaded}}/{{total}}）",
+    "empty": "没有已上传的附件"
+  },
+  "col": {
+    "name": "文件名",
+    "type": "类型",
+    "size": "大小",
+    "time": "时间",
+    "protection": "保护状态"
+  },
+  "reason": {
+    "referenced_db": "消息引用",
+    "referenced_session": "活跃会话",
+    "referenced_settings": "助手/设置",
+    "leased": "草稿租约",
+    "new_file": "新上传",
+    "check_failed": "检查失败",
+    "retained": "保留期内",
+    "protected": "受保护",
+    "gone": "已不存在",
+    "orphaned_row": "盘上缺失",
+    "none": "未检出引用"
+  },
+  "action": {
+    "preview": "预览",
+    "download": "下载"
+  },
+  "delete": {
+    "title": "删除所选附件",
+    "description": "将删除 {{count}} 个文件。删除前服务端会重新核对引用；仍被引用或受保护的项会被跳过。",
+    "warning": "删除不可恢复。被消息、助手设置或活跃草稿引用的文件不会被删除。"
+  },
+  "cleanup": {
+    "title": "按时间清理",
+    "description": "清理早于指定天数的附件。服务端逐项核对最新引用（含排队消息与草稿租约），受保护项自动跳过，失败项单独列出。",
+    "older_than": "{{days}} 天前",
+    "confirm_title": "清理 {{days}} 天前的附件？",
+    "confirm_description": "将扫描 upload 目录中早于 {{days}} 天的全部文件，受保护项会被跳过。",
+    "confirm_notice": "清理过程中每个文件都会重新检查引用；查询失败按受保护处理（不会误删）。",
+    "confirm_action": "开始清理",
+    "failed": "清理失败",
+    "truncated": "一次最多处理 2000 项，本次仅处理 {{count}} 项，请重跑"
+  },
+  "result": {
+    "title": "处理结果",
+    "summary": "已删 {{deleted}} · 跳过 {{skipped}} · 失败 {{failed}} · 释放 {{size}}",
+    "status": {
+      "deleted": "已删",
+      "skipped": "跳过",
+      "failed": "失败"
+    },
+    "all_deleted": "全部已删除"
+  },
+  "draft": {
+    "lease_failed": "草稿附件租约续期失败，附件保护可能在 24 小时后失效"
+  },
+  "common": {
+    "cancel": "取消",
+    "close": "关闭",
+    "confirm_delete": "确认删除"
+  }
+}

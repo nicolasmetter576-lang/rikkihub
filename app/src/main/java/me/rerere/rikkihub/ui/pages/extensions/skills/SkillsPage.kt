@@ -1,0 +1,623 @@
+package me.rerere.rikkihub.ui.pages.extensions.skills
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import me.rerere.rikkihub.ui.components.ui.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import me.rerere.rikkihub.ui.components.ui.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkihub.R
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Alert01
+import me.rerere.hugeicons.stroke.Cancel01
+import me.rerere.hugeicons.stroke.Search01
+import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.Download01
+import me.rerere.hugeicons.stroke.FileImport
+import me.rerere.hugeicons.stroke.MoreVertical
+import me.rerere.hugeicons.stroke.Puzzle
+import me.rerere.rikkihub.data.files.InvalidSkillDir
+import me.rerere.rikkihub.data.files.InvalidSkillReason
+import me.rerere.rikkihub.data.files.SkillFrontmatterParser
+import me.rerere.rikkihub.data.files.SkillMetadata
+import me.rerere.rikkihub.Screen
+import me.rerere.rikkihub.ui.components.nav.BackButton
+import me.rerere.rikkihub.ui.components.ui.RikkaConfirmDialog
+import me.rerere.rikkihub.ui.context.LocalNavController
+import me.rerere.rikkihub.ui.context.LocalToaster
+import me.rerere.rikkihub.ui.theme.CustomColors
+import me.rerere.rikkihub.utils.plus
+import org.koin.androidx.compose.koinViewModel
+
+@Composable
+fun SkillsPage() {
+    val navController = LocalNavController.current
+    val vm = koinViewModel<SkillsVM>()
+    val skills by vm.skills.collectAsStateWithLifecycle()
+    val invalidSkillDirs by vm.invalidSkillDirs.collectAsStateWithLifecycle()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val toaster = LocalToaster.current
+    val context = LocalContext.current
+    var showImportSheet by rememberSaveable { mutableStateOf(false) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var showImportDialog by rememberSaveable { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<SkillMetadata?>(null) }
+    var invalidDeleteTarget by remember { mutableStateOf<InvalidSkillDir?>(null) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val filteredSkills = remember(skills, searchQuery) { filterSkills(skills, searchQuery) }
+    val filteredInvalidDirs = remember(invalidSkillDirs, searchQuery) {
+        invalidSkillDirs.filter { it.dirName.contains(searchQuery.trim(), ignoreCase = true) }
+    }
+    val fileImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        vm.importSkillFromFile(context, uri) { success, message ->
+            if (success) {
+                toaster.show(context.getString(R.string.skills_page_import_success, message))
+            } else {
+                toaster.show(context.getString(R.string.skills_page_import_failed, message))
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            LargeFlexibleTopAppBar(
+                title = { Text(stringResource(R.string.skills_page_title)) },
+                navigationIcon = { BackButton() },
+                scrollBehavior = scrollBehavior,
+                colors = CustomColors.topBarColors,
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showImportSheet = true }) {
+                Icon(HugeIcons.Add01, contentDescription = null)
+            }
+        },
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = CustomColors.topBarColors.containerColor,
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = innerPadding + PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp + 72.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (skills.isEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.Puzzle,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(R.string.skills_page_empty_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(R.string.skills_page_empty_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            if (skills.isNotEmpty()) {
+                item(key = "skills-search") {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it.take(SKILL_SEARCH_QUERY_MAX_CHARS) },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(stringResource(R.string.skills_page_search_placeholder)) },
+                        leadingIcon = { Icon(HugeIcons.Search01, contentDescription = null) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(HugeIcons.Cancel01, contentDescription = stringResource(R.string.skills_page_search_clear))
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = CircleShape,
+                    )
+                }
+            }
+
+            if (skills.isNotEmpty() && filteredSkills.isEmpty()) {
+                item(key = "skills-search-empty") {
+                    Text(
+                        text = stringResource(R.string.skills_page_search_no_result),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+
+            items(filteredSkills, key = { it.skillDir.absolutePath }) { skill ->
+                SkillCard(
+                    skill = skill,
+                    onClick = { navController.navigate(Screen.SkillDetail(skill.name)) },
+                    onDelete = { deleteTarget = skill },
+                )
+            }
+
+            // 空目录、缺 SKILL.md 之类无法识别的目录不在技能列表里，单独列出来供清理
+            if (filteredInvalidDirs.isNotEmpty()) {
+                item(key = "invalid-skill-dirs-title") {
+                    Text(
+                        text = stringResource(R.string.skills_page_invalid_dirs_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+                    )
+                }
+                items(filteredInvalidDirs, key = { "invalid-" + it.dirName }) { dir ->
+                    InvalidSkillDirCard(dir = dir, onDelete = { invalidDeleteTarget = dir })
+                }
+            }
+        }
+    }
+
+    if (showImportSheet) {
+        SkillImportSheet(
+            onDismiss = { showImportSheet = false },
+            onAddManually = {
+                showImportSheet = false
+                showAddDialog = true
+            },
+            onImportFromFile = {
+                showImportSheet = false
+                fileImportLauncher.launch(
+                    arrayOf(
+                        "text/*",
+                        "application/zip",
+                        "application/x-zip-compressed",
+                        "application/octet-stream",
+                    )
+                )
+            },
+            onImportFromGitHub = {
+                showImportSheet = false
+                showImportDialog = true
+            },
+        )
+    }
+
+    if (showAddDialog) {
+        AddSkillDialog(
+            onDismiss = { showAddDialog = false },
+            onConfirm = { name, content ->
+                vm.saveSkill(name, content) { success ->
+                    showAddDialog = false
+                    if (!success) {
+                        toaster.show(context.getString(R.string.skills_page_save_failed))
+                    }
+                }
+            },
+        )
+    }
+
+    if (showImportDialog) {
+        ImportSkillDialog(
+            onDismiss = { showImportDialog = false },
+            onConfirm = { repoUrl ->
+                vm.importSkillFromGitHub(repoUrl) { success, message ->
+                    showImportDialog = false
+                    if (success) {
+                        toaster.show(context.getString(R.string.skills_page_import_success, message))
+                    } else {
+                        toaster.show(context.getString(R.string.skills_page_import_failed, message))
+                    }
+                }
+            },
+        )
+    }
+
+    RikkaConfirmDialog(
+        show = deleteTarget != null,
+        title = stringResource(R.string.skills_page_delete_title),
+        confirmText = stringResource(R.string.delete),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = {
+            deleteTarget?.let { vm.deleteSkill(it) }
+            deleteTarget = null
+        },
+        onDismiss = { deleteTarget = null },
+    ) {
+        Text(stringResource(R.string.skills_page_delete_message, deleteTarget?.name ?: ""))
+    }
+
+    RikkaConfirmDialog(
+        show = invalidDeleteTarget != null,
+        title = stringResource(R.string.skills_page_delete_dir_title),
+        confirmText = stringResource(R.string.delete),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = {
+            invalidDeleteTarget?.let { vm.deleteInvalidSkillDir(it.dirName) }
+            invalidDeleteTarget = null
+        },
+        onDismiss = { invalidDeleteTarget = null },
+    ) {
+        Text(stringResource(R.string.skills_page_delete_dir_message, invalidDeleteTarget?.dirName.orEmpty()))
+    }
+}
+
+@Composable
+private fun InvalidSkillDirCard(
+    dir: InvalidSkillDir,
+    onDelete: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CustomColors.cardColorsOnSurfaceContainer,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = HugeIcons.Alert01,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = dir.dirName,
+                    style = MaterialTheme.typography.titleSmallEmphasized,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(invalidSkillReasonRes(dir.reason)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = HugeIcons.Delete01,
+                    contentDescription = stringResource(R.string.delete),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+private fun invalidSkillReasonRes(reason: InvalidSkillReason): Int = when (reason) {
+    InvalidSkillReason.MissingSkillMd -> R.string.skills_page_invalid_reason_missing_skill_md
+    InvalidSkillReason.MissingName -> R.string.skills_page_invalid_reason_missing_name
+    InvalidSkillReason.MissingDescription -> R.string.skills_page_invalid_reason_missing_description
+    InvalidSkillReason.ReadFailed -> R.string.skills_page_invalid_reason_read_failed
+}
+
+@Composable
+private fun SkillCard(
+    skill: SkillMetadata,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CustomColors.cardColorsOnSurfaceContainer,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = HugeIcons.Puzzle,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = skill.name,
+                    style = MaterialTheme.typography.titleSmallEmphasized,
+                )
+                Text(
+                    text = skill.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                )
+                if (skill.isBuiltin) {
+                    Text(
+                        text = stringResource(R.string.skills_page_builtin_badge),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+                if (!skill.compatibility.isNullOrBlank()) {
+                    Text(
+                        text = skill.compatibility,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+            }
+            if (!skill.isBuiltin) Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = HugeIcons.MoreVertical,
+                        contentDescription = stringResource(R.string.skills_page_more_actions),
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = HugeIcons.Delete01,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SkillImportSheet(
+    onDismiss: () -> Unit,
+    onAddManually: () -> Unit,
+    onImportFromFile: () -> Unit,
+    onImportFromGitHub: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.skills_page_add_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            SkillImportSheetItem(
+                icon = { Icon(HugeIcons.Add01, contentDescription = null) },
+                text = stringResource(R.string.skills_page_add_manually),
+                onClick = onAddManually,
+            )
+            SkillImportSheetItem(
+                icon = { Icon(HugeIcons.FileImport, contentDescription = null) },
+                text = stringResource(R.string.skills_page_import_from_file),
+                onClick = onImportFromFile,
+            )
+            SkillImportSheetItem(
+                icon = { Icon(HugeIcons.Download01, contentDescription = null) },
+                text = stringResource(R.string.skills_page_import_from_github),
+                onClick = onImportFromGitHub,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SkillImportSheetItem(
+    icon: @Composable () -> Unit,
+    text: String,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        leadingContent = icon,
+        headlineContent = { Text(text) },
+        modifier = Modifier
+            .clip(MaterialTheme.shapes.large)
+            .clickable(onClick = onClick),
+    )
+}
+
+@Composable
+private fun AddSkillDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, content: String) -> Unit,
+) {
+    var content by rememberSaveable { mutableStateOf("") }
+
+    val name = remember(content) {
+        SkillFrontmatterParser.parse(content)["name"]?.trim() ?: ""
+    }
+    val nameError = content.isNotBlank() && name.isBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.skills_page_add_title)) },
+        text = {
+            OutlinedTextField(
+                value = content,
+                onValueChange = { content = it },
+                label = { Text(stringResource(R.string.skills_page_skill_content_label)) },
+                placeholder = {
+                    Text(
+                        "---\nname: my-skill\ndescription: \"...\"\n---\n\n指令内容...",
+                        fontFamily = FontFamily.Monospace,
+                    )
+                },
+                supportingText = {
+                    if (nameError) Text(
+                        stringResource(R.string.skills_page_name_error),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    else if (name.isNotBlank()) Text(stringResource(R.string.skills_page_skill_name, name))
+                    else Text(stringResource(R.string.skills_page_paste_hint))
+                },
+                isError = nameError,
+                minLines = 8,
+                maxLines = 14,
+                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name, content) },
+                enabled = name.isNotBlank() && !nameError,
+            ) {
+                Text(stringResource(R.string.skills_page_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun ImportSkillDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (repoUrl: String) -> Unit,
+) {
+    var url by rememberSaveable { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!loading) onDismiss() },
+        title = { Text(stringResource(R.string.skills_page_import_from_github)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.skills_page_import_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text(stringResource(R.string.skills_page_repo_url_label)) },
+                    placeholder = { Text("https://github.com/owner/repo", fontFamily = FontFamily.Monospace) },
+                    supportingText = { Text(stringResource(R.string.skills_page_repo_url_hint)) },
+                    singleLine = true,
+                    enabled = !loading,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (loading) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text(
+                            stringResource(R.string.skills_page_downloading),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    loading = true
+                    onConfirm(url)
+                },
+                enabled = url.isNotBlank() && !loading,
+            ) {
+                Text(stringResource(R.string.skills_page_import_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !loading) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}

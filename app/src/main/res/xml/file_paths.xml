@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider roots narrowed to the exact shared-output
+  directories. The previous files-path name="upload" path="."
+  exposed the ENTIRE filesDir (datastore, workspaces, skills, restore staging,
+  web-auth secret) to any granted content:// URI — getUriForFile callers share
+  upload attachments, message-edited files, camera captures, charts and
+  exports, which live under upload/ or cache/.
+-->
+<paths>
+  <files-path
+    name="upload"
+    path="upload/" />
+  <files-path
+    name="images"
+    path="images/" />
+  <!-- cache-path root is required: camera captures (ChatAttachmentPicker,
+       ShortcutHandlerActivity), chart exports and workspace/device file
+       exports (exportToCacheFile → cacheDir) are shared through FileProvider
+       from cacheDir. cacheDir holds transient share outputs only — no
+       credential stores live there, so root scope is acceptable. -->
+  <cache-path
+    name="cache"
+    path="." />
+  <!-- No caller writes to getExternalFilesDir today — the root was removed
+       (fail-closed). Re-add a NARROW subdirectory entry if a future caller
+       needs it; WorkspaceDocumentsProvider must declare its own
+       provider meta-data, not reuse this file. -->
+</paths>

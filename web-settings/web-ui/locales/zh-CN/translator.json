@@ -1,0 +1,76 @@
+{
+  "nav": {
+    "back_to_chat": "返回聊天",
+    "title": "翻译"
+  },
+  "page": {
+    "title": "翻译",
+    "description": "独立翻译：不创建会话，不写聊天记录；模型选择只作用于本次请求。翻译成功后记入翻译历史（与 App 共用，保留最近 100 条）。"
+  },
+  "input": {
+    "label": "原文",
+    "placeholder": "输入要翻译的文本…",
+    "bytes": "{{count}} / {{max}} 字节"
+  },
+  "language": {
+    "label": "目标语言",
+    "custom": "自定义（BCP-47）",
+    "custom_placeholder": "如 en-US、zh-Hant、fr-CA",
+    "invalid": "请输入合法的 BCP-47 语言标签",
+    "tags": {
+      "en": "英语",
+      "zh_CN": "简体中文",
+      "zh_TW": "繁体中文",
+      "ja": "日语",
+      "ko": "韩语",
+      "fr": "法语",
+      "de": "德语",
+      "es": "西班牙语",
+      "ru": "俄语",
+      "pt": "葡萄牙语",
+      "it": "意大利语",
+      "ar": "阿拉伯语",
+      "th": "泰语",
+      "vi": "越南语",
+      "id": "印尼语"
+    }
+  },
+  "model": {
+    "label": "模型",
+    "default_option": "默认（全局翻译模型）",
+    "unavailable": "已配置的翻译模型（当前不可用）",
+    "hint": "仅本次请求生效，不会修改全局设置",
+    "loading": "加载设置中…"
+  },
+  "action": {
+    "translate": "翻译",
+    "translating": "翻译中…",
+    "cancel": "取消",
+    "clear": "清空",
+    "copy": "复制"
+  },
+  "result": {
+    "label": "译文",
+    "empty": "翻译结果将显示在这里",
+    "render_plain": "纯文本",
+    "render_markdown": "Markdown",
+    "copied": "已复制"
+  },
+  "error": {
+    "title": "翻译失败",
+    "failed": "翻译失败，请重试",
+    "no_models": "没有可用的聊天模型，请先在 App 提供商设置中添加",
+    "copy_failed": "复制失败"
+  },
+  "history": {
+    "title": "翻译历史",
+    "empty": "还没有翻译记录",
+    "clear": "清除",
+    "clear_confirm": "删除全部翻译记录？此操作无法撤销。",
+    "delete": "删除",
+    "load_more": "加载更多",
+    "restore": "填回",
+    "load_failed": "加载翻译历史失败",
+    "delete_failed": "删除失败"
+  }
+}

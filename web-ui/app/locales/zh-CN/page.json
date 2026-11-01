@@ -1,0 +1,124 @@
+{
+  "conversations": {
+    "meta": {
+      "title": "Rikkihub Web",
+      "description": "Rikkihub 网页客户端"
+    },
+    "preview": {
+      "empty_message": "空消息",
+      "image": "[图片]",
+      "video": "[视频]",
+      "audio": "[音频]",
+      "document": "[文档]",
+      "document_with_name": "[文档] {{name}}",
+      "thinking": "[思考]",
+      "tool_call": "[工具调用]",
+      "tool_with_name": "[工具] {{name}}"
+    },
+    "errors": {
+      "load_detail_failed": "加载会话详情失败"
+    },
+    "delete_blocked_generating": "请先停止生成再删除消息",
+    "translate_failed": "翻译失败",
+    "favorite_failed": "收藏失败",
+    "settings": {
+      "open": "会话设置",
+      "cancel": "取消",
+      "save": "保存",
+      "saving": "保存中...",
+      "save_failed": "保存失败",
+      "system_prompt_title": "会话系统提示词",
+      "system_prompt_description": "为该会话单独设置系统提示词，会叠加在助手系统提示词之上。留空或清除则使用助手默认。",
+      "system_prompt_placeholder": "输入会话级系统提示词...",
+      "system_prompt_clear": "清除",
+      "cwd_title": "工作区目录",
+      "cwd_description": "选择会话在工作区内的工作目录（cwd）。",
+      "cwd_up": "上一级",
+      "cwd_load_failed": "无法加载目录",
+      "cwd_no_subdirectories": "没有子目录",
+      "cwd_reset": "重置为默认",
+      "cwd_set": "设为工作目录",
+      "cwd_scoped": "仅此目录"
+    },
+    "empty_state": {
+      "select_title": "请选择会话",
+      "select_description": "选择左侧会话以查看消息",
+      "loading_title": "加载中...",
+      "loading_description": "正在加载会话详情",
+      "error_title": "加载失败",
+      "no_message_title": "暂无消息",
+      "no_message_description": "当前会话还没有消息"
+    },
+    "welcome_prompt": "有什么可以帮助你的？",
+    "user": {
+      "default_name": "用户"
+    },
+    "header": {
+      "select_conversation": "请选择会话",
+      "open_workspace": "打开工作区文件"
+    },
+    "jump_target_missing": "目标消息已不存在",
+    "compress": {
+      "menu": "压缩历史",
+      "title": "压缩对话历史",
+      "description": "用当前对话模型给到目前为止的对话写一份结构化摘要，插在对话末尾。",
+      "additional_prompt": "附加说明（可选）",
+      "additional_prompt_hint": "指定要保留或关注的内容",
+      "keep_recent": "保留最近的消息数",
+      "keep_recent_desc": "这些消息不参与压缩，留在摘要之后。0 表示全部压缩，对提示词缓存最友好；对话长到压缩请求本身发不出去时，可以多保留几条。",
+      "keep_recent_decrease": "少保留一条",
+      "keep_recent_increase": "多保留一条",
+      "background_hint": "压缩在手机后台进行，关掉页面也会继续；期间发送的消息会排队，完成后再发出。",
+      "start": "开始压缩",
+      "starting": "正在开始…",
+      "cancel": "取消",
+      "running": "正在压缩历史…",
+      "running_from_app": "App 正在压缩这个对话的历史…",
+      "running_hint": "期间发送的消息会排队，完成后再发出；重新生成暂不可用。",
+      "cancel_running": "取消压缩",
+      "cancelled": "已取消压缩",
+      "succeeded": "历史已压缩",
+      "failed_title": "压缩未完成",
+      "retry": "重试",
+      "dismiss": "关闭",
+      "wait": "正在压缩历史，完成后再试",
+      "error_busy": "会话正在生成、等待审批或有排队消息，请稍后再压缩",
+      "error_already": "这个对话已经在压缩了",
+      "error_changed": "压缩期间对话有变化，结果没有保存，请重试",
+      "error_failed": "生成摘要失败",
+      "checkpoint_info": "按正常对话的同一套请求生成（能命中提示词缓存）。之前的消息仍然保留、可以查看，但不再发送给模型；删掉这份摘要即可撤销。",
+      "error_nothing": "自上次摘要以来没有新消息可压缩",
+      "error_not_enough": "可压缩的消息不够，请减少保留的消息数",
+      "error_pending_tools": "压缩前请先处理待处理的工具调用",
+      "error_tool_call": "模型试图调用工具，而不是编写摘要。请重试。",
+      "context_usage": "当前上下文"
+    },
+    "size_warning": {
+      "title": "这个对话已经很大",
+      "detail": "共 {{nodes}} 条消息，上一次请求输入约 {{tokens}} token。建议压缩历史或新建对话。",
+      "new_conversation": "新建对话"
+    }
+  },
+  "queue_panel": {
+    "pending_count": "{{count}} 条消息排队中",
+    "paused_count": "队列已暂停 · {{count}} 条消息",
+    "resume": "恢复",
+    "expand": "展开队列",
+    "collapse": "收起队列",
+    "edit": "编辑",
+    "editing": "（编辑中）",
+    "remove": "移除",
+    "empty": "队列已清空",
+    "empty_message": "空消息",
+    "attachment_image": "[图片]",
+    "attachment_video": "[视频]",
+    "attachment_audio": "[音频]",
+    "attachment_document": "[文档]",
+    "edit_title": "编辑排队消息",
+    "edit_save": "保存",
+    "edit_saving": "保存中...",
+    "edit_cancel": "取消",
+    "edit_empty": "消息不能为空",
+    "update_failed": "更新队列失败"
+  }
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 31+ cloud/device-transfer rules aligned with the
+  legacy fullBackupContent whitelist. Everything except the managed upload
+  attachments tree is excluded from automatic cloud backup AND device-to-device
+  transfer — DataStore settings, Room DB/WAL, skills, workspaces, OAuth
+  material, restore staging and the web-auth secret must never ride an
+  unmanaged snapshot channel. Real restores go through the app's controlled
+  manual backup (PendingRestore), not the platform autosnapshot.
+-->
+<data-extraction-rules>
+  <cloud-backup>
+    <include
+      domain="file"
+      path="upload/" />
+  </cloud-backup>
+  <device-transfer>
+    <include
+      domain="file"
+      path="upload/" />
+  </device-transfer>
+</data-extraction-rules>

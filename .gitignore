@@ -1,0 +1,46 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.cursor
+.history
+.kotlin
+release.keystore
+/apk
+
+# Local test tooling
+/executor/build
+/executor-protocol/build
+/scripts/mock-openai/mock.pid
+/scripts/mock-openai/mock.log
+/scripts/mock-openai/mock-requests.jsonl
+__pycache__/
+
+# 本地开发文档与 AI 助手配置（只留在本地，不进仓库）
+/docs/
+/AGENTS.md
+/INDEX.md
+/.agents/
+/.claude/
+/skills-lock.json
+/web-ui/CLAUDE.md
+/web-ui/AGENTS.md
+/locale-tui/CLAUDE.md
+/cc-disguise/OPERATIONS.md
+/claudelife/OPERATIONS.md
+/web-settings/OPERATIONS.md
+/web-ui/README.md
+/ai/README.md
+/.github/
+
+# material-color-utilities 只编译 kotlin/，其余语言实现与文档只留在本地
+/material3/material-color-utilities/*
+!/material3/material-color-utilities/kotlin/
+!/material3/material-color-utilities/LICENSE
+!/material3/material-color-utilities/.gitignore

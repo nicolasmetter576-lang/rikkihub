@@ -1,0 +1,86 @@
+{
+  "nav": {
+    "back_to_chat": "Back to chat",
+    "title": "Storage & attachments"
+  },
+  "page": {
+    "title": "Chat attachments",
+    "description": "Browse and manage uploaded chat attachments (upload folder only).",
+    "notice_protected": "Files marked as protected are referenced by messages, queued drafts, assistant avatar/background, or active drafts, or were uploaded less than 24 hours ago. The server refuses to delete them; there is no force delete.",
+    "notice_draft_window": "Unsent draft attachments are only visible to this browser: their lease lasts 24 hours. Drafts left offline or closed longer than that may lose protection—double-check before cleaning."
+  },
+  "list": {
+    "refresh": "Refresh",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "load_failed": "Failed to load files",
+    "search_placeholder": "Search by name / MIME…",
+    "apply": "Search",
+    "total": "{{count}} files · {{size}}",
+    "filtered": "Filtered {{count}} · {{size}}",
+    "selected": "{{count}} selected",
+    "clear_selection": "Clear selection",
+    "delete_selected": "Delete selected",
+    "select_all": "Select deletable on this page",
+    "load_more": "Load more ({{loaded}}/{{total}})",
+    "empty": "No uploaded attachments"
+  },
+  "col": {
+    "name": "Name",
+    "type": "Type",
+    "size": "Size",
+    "time": "Time",
+    "protection": "Protection"
+  },
+  "reason": {
+    "referenced_db": "Referenced",
+    "referenced_session": "Active session",
+    "referenced_settings": "Assistant/settings",
+    "leased": "Draft lease",
+    "new_file": "Recently uploaded",
+    "check_failed": "Check failed",
+    "retained": "In retention window",
+    "protected": "Protected",
+    "gone": "Gone",
+    "orphaned_row": "Missing on disk",
+    "none": "No reference found"
+  },
+  "action": {
+    "preview": "Preview",
+    "download": "Download"
+  },
+  "delete": {
+    "title": "Delete selected attachments",
+    "description": "Delete {{count}} file(s). The server re-verifies references before each deletion; still-referenced or protected items are skipped.",
+    "warning": "Deletion is permanent. Files referenced by messages, assistant settings, or active drafts will not be removed."
+  },
+  "cleanup": {
+    "title": "Clean by age",
+    "description": "Remove attachments older than the chosen window. Every item is re-checked against the latest references (including queued messages and draft leases); protected items are skipped and failures are listed individually.",
+    "older_than": "Older than {{days}} days",
+    "confirm_title": "Clean attachments older than {{days}} days?",
+    "confirm_description": "This scans all upload files older than {{days}} days; protected items are skipped automatically.",
+    "confirm_notice": "Each file is re-checked during cleanup; query failures are treated as protected (fail-closed).",
+    "confirm_action": "Start cleanup",
+    "failed": "Cleanup failed",
+    "truncated": "At most 2000 items per run; only {{count}} processed—run again"
+  },
+  "result": {
+    "title": "Results",
+    "summary": "Deleted {{deleted}} · Skipped {{skipped}} · Failed {{failed}} · Freed {{size}}",
+    "status": {
+      "deleted": "Deleted",
+      "skipped": "Skipped",
+      "failed": "Failed"
+    },
+    "all_deleted": "All deleted"
+  },
+  "draft": {
+    "lease_failed": "Draft attachment lease renewal failed; protection may expire after 24 hours"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm_delete": "Delete"
+  }
+}

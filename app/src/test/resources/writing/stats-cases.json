@@ -1,0 +1,77 @@
+[
+ {
+  "text": "",
+  "chars": 0,
+  "words": 0
+ },
+ {
+  "text": "Hello, world!",
+  "chars": 12,
+  "words": 2
+ },
+ {
+  "text": "我爱中文。",
+  "chars": 5,
+  "words": 4
+ },
+ {
+  "text": "用 iPhone 拍了 3 张",
+  "chars": 11,
+  "words": 6
+ },
+ {
+  "text": "don't stop, well-known 3.14 和 1,000",
+  "chars": 30,
+  "words": 6
+ },
+ {
+  "text": "　　段落\n\t第二行",
+  "chars": 5,
+  "words": 5
+ },
+ {
+  "text": "😀👍 ok",
+  "chars": 4,
+  "words": 1
+ },
+ {
+  "text": "日本語のテキスト",
+  "chars": 8,
+  "words": 8
+ },
+ {
+  "text": "café au lait",
+  "chars": 11,
+  "words": 3
+ },
+ {
+  "text": "한국어 문장",
+  "chars": 5,
+  "words": 2
+ },
+ {
+  "text": "Привет мир",
+  "chars": 9,
+  "words": 2
+ },
+ {
+  "text": "a - b",
+  "chars": 3,
+  "words": 2
+ },
+ {
+  "text": "x''y",
+  "chars": 4,
+  "words": 2
+ },
+ {
+  "text": "“他说‘OK’你”",
+  "chars": 9,
+  "words": 4
+ },
+ {
+  "text": "# 标题\n**粗体**",
+  "chars": 9,
+  "words": 4
+ }
+]

@@ -1,0 +1,76 @@
+{
+  "nav": {
+    "back_to_chat": "Back to chat",
+    "title": "Translator"
+  },
+  "page": {
+    "title": "Translator",
+    "description": "Standalone translation: no conversation is created and nothing is written to chat history. The model choice applies to this request only. Successful translations are kept in the translation history (shared with the app, latest 100)."
+  },
+  "input": {
+    "label": "Source text",
+    "placeholder": "Enter the text to translate…",
+    "bytes": "{{count}} / {{max}} bytes"
+  },
+  "language": {
+    "label": "Target language",
+    "custom": "Custom (BCP-47)",
+    "custom_placeholder": "e.g. en-US, zh-Hant, fr-CA",
+    "invalid": "Enter a valid BCP-47 language tag",
+    "tags": {
+      "en": "English",
+      "zh_CN": "Simplified Chinese",
+      "zh_TW": "Traditional Chinese",
+      "ja": "Japanese",
+      "ko": "Korean",
+      "fr": "French",
+      "de": "German",
+      "es": "Spanish",
+      "ru": "Russian",
+      "pt": "Portuguese",
+      "it": "Italian",
+      "ar": "Arabic",
+      "th": "Thai",
+      "vi": "Vietnamese",
+      "id": "Indonesian"
+    }
+  },
+  "model": {
+    "label": "Model",
+    "default_option": "Default (global translation model)",
+    "unavailable": "Configured translation model (currently unavailable)",
+    "hint": "Applies to this request only; global settings are not changed",
+    "loading": "Loading settings…"
+  },
+  "action": {
+    "translate": "Translate",
+    "translating": "Translating…",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "copy": "Copy"
+  },
+  "result": {
+    "label": "Translation",
+    "empty": "The translation will appear here",
+    "render_plain": "Plain text",
+    "render_markdown": "Markdown",
+    "copied": "Copied"
+  },
+  "error": {
+    "title": "Translation failed",
+    "failed": "Translation failed, please try again",
+    "no_models": "No chat models available; add one in the app's provider settings first",
+    "copy_failed": "Copy failed"
+  },
+  "history": {
+    "title": "Translation history",
+    "empty": "No translations yet",
+    "clear": "Clear",
+    "clear_confirm": "Delete all translation records? This cannot be undone.",
+    "delete": "Delete",
+    "load_more": "Load more",
+    "restore": "Restore",
+    "load_failed": "Failed to load translation history",
+    "delete_failed": "Failed to delete"
+  }
+}

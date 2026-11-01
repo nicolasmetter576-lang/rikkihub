@@ -1,0 +1,141 @@
+package me.rerere.search
+
+import android.util.Log
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import me.rerere.ai.core.InputSchema
+import me.rerere.search.SearchResult.SearchResultItem
+import me.rerere.search.SearchService.Companion.httpClient
+import me.rerere.search.SearchService.Companion.json
+import okhttp3.Credentials
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Request
+
+private const val TAG = "SearXNGService"
+
+object SearXNGService : SearchService<SearchServiceOptions.SearXNGOptions> {
+    override val name: String = "SearXNG"
+
+    @Composable
+    override fun Description() {
+        Text(stringResource(R.string.searxng_desc_1))
+        Text(stringResource(R.string.searxng_desc_2))
+    }
+
+    override fun parameters(options: SearchServiceOptions.SearXNGOptions): InputSchema? =
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("query", buildJsonObject {
+                    put("type", "string")
+                    put("description", "search keyword")
+                })
+            },
+            required = listOf("query")
+        )
+
+    override fun scrapingParameters(options: SearchServiceOptions.SearXNGOptions): InputSchema? = null
+
+    override suspend fun search(
+        params: JsonObject,
+        commonOptions: SearchCommonOptions,
+        serviceOptions: SearchServiceOptions.SearXNGOptions
+    ): Result<SearchResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(serviceOptions.url.isNotBlank()) {
+                "SearXNG URL cannot be empty"
+            }
+
+            val query = params["query"]?.jsonPrimitive?.content ?: error("query is required")
+
+            // 构建查询URL
+            val url = serviceOptions.url.trimEnd('/')
+                .toHttpUrl()
+                .newBuilder()
+                .addPathSegment("search")
+                .addQueryParameter("q", query)
+                .addQueryParameter("format", "json")
+                .apply {
+                    if (serviceOptions.engines.isNotBlank()) {
+                        addQueryParameter("engines", serviceOptions.engines)
+                    }
+                    if (serviceOptions.language.isNotBlank()) {
+                        addQueryParameter("language", serviceOptions.language)
+                    }
+                }
+                .build()
+
+            // 发送请求
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .apply {
+                    // 添加HTTP Basic Auth支持
+                    if (serviceOptions.username.isNotBlank() && serviceOptions.password.isNotBlank()) {
+                        header("Authorization", Credentials.basic(serviceOptions.username, serviceOptions.password))
+                    }
+                }
+                .build()
+
+            httpClient.newCall(request).await().use { response ->
+                if (response.isSuccessful) {
+                    val bodyRaw = response.body.string()
+                    val searchResponse = runCatching {
+                        json.decodeFromString<SearXNGResponse>(bodyRaw)
+                    }.onFailure {
+                        Log.w(TAG, "Failed to decode SearXNG response", it)
+                        error("Failed to decode SearXNG response: ${it.message}")
+                    }.getOrThrow()
+
+                    // 转换为标准格式，取前 N 个结果
+                    val items = searchResponse.results
+                        .take(commonOptions.resultSize)
+                        .map { result ->
+                            SearchResultItem(
+                                title = result.title,
+                                url = result.url,
+                                text = result.content
+                            )
+                        }
+
+                    return@withContext Result.success(SearchResult(items = items))
+                } else {
+                    error("SearXNG request failed with status ${response.code}: ${response.body.string().take(500)}")
+                }
+            }
+        }
+    }
+
+    override suspend fun scrape(
+        params: JsonObject,
+        commonOptions: SearchCommonOptions,
+        serviceOptions: SearchServiceOptions.SearXNGOptions
+    ): Result<ScrapedResult> {
+        return Result.failure(Exception("Scraping is not supported for SearXNG"))
+    }
+
+
+    @Serializable
+    data class SearXNGResponse(
+        @SerialName("results")
+        val results: List<SearXNGResult>,
+    )
+
+    @Serializable
+    data class SearXNGResult(
+        @SerialName("url")
+        val url: String,
+        @SerialName("title")
+        val title: String,
+        @SerialName("content")
+        val content: String,
+    )
+}

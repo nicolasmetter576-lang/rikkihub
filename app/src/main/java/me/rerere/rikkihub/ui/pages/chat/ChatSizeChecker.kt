@@ -1,0 +1,85 @@
+package me.rerere.rikkihub.ui.pages.chat
+
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Alert01
+import me.rerere.rikkihub.ui.components.ui.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
+import me.rerere.ai.core.MessageRole
+import me.rerere.rikkihub.R
+import me.rerere.rikkihub.data.model.Conversation
+import me.rerere.rikkihub.data.model.lastContextTokens
+
+// 消息节点数量警告阈值
+const val MESSAGE_NODE_WARNING_THRESHOLD = 768
+const val LAST_ASSISTANT_INPUT_TOKEN_WARNING_THRESHOLD = 300_000
+
+data class ConversationSizeInfo(
+    val nodeCount: Int,
+    val lastAssistantInputTokens: Int,
+    val exceedNodeCountThreshold: Boolean,
+    val exceedInputTokenThreshold: Boolean,
+    val showWarning: Boolean
+)
+
+private val DefaultSizeInfo = ConversationSizeInfo(
+    nodeCount = 0,
+    lastAssistantInputTokens = 0,
+    exceedNodeCountThreshold = false,
+    exceedInputTokenThreshold = false,
+    showWarning = false
+)
+
+@Composable
+fun rememberConversationSizeInfo(conversation: Conversation): ConversationSizeInfo {
+    return remember(conversation.messageNodes) {
+        val nodeCount = conversation.messageNodes.size
+        // 最后一次请求的输入；压缩（插入检查点）之后、下一次回复之前按 0 算
+        val lastAssistantInputTokens = conversation.lastContextTokens()?.let {
+            conversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                ?.lastRequestUsage()?.promptTokens
+        } ?: 0
+        val exceedNodeCountThreshold = nodeCount > MESSAGE_NODE_WARNING_THRESHOLD
+        val exceedInputTokenThreshold = lastAssistantInputTokens > LAST_ASSISTANT_INPUT_TOKEN_WARNING_THRESHOLD
+        ConversationSizeInfo(
+            nodeCount = nodeCount,
+            lastAssistantInputTokens = lastAssistantInputTokens,
+            exceedNodeCountThreshold = exceedNodeCountThreshold,
+            exceedInputTokenThreshold = exceedInputTokenThreshold,
+            showWarning = exceedNodeCountThreshold && exceedInputTokenThreshold
+        )
+    }
+}
+
+@Composable
+fun ConversationSizeWarningDialog(
+    sizeInfo: ConversationSizeInfo,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = HugeIcons.Alert01,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary
+            )
+        },
+        title = {
+            Text(text = stringResource(R.string.chat_size_dialog_title))
+        },
+        text = {
+            Text(text = stringResource(R.string.chat_size_dialog_content, sizeInfo.nodeCount))
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.confirm))
+            }
+        }
+    )
+}
