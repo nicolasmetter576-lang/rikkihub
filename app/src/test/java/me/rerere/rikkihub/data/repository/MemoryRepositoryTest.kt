@@ -148,16 +148,86 @@ class MemoryRepositoryTest {
     }
 
     @Test
-    fun `memory stores are isolated and can be copied`() = runBlocking {
-        create("/profile.md", "- [stated] Name is Lin\n")
+    fun `memory stores are isolated and can migrate safely with conflict strategies`() = runBlocking {
+        create("/profile.md", "---\nname: profile\ndescription: About Lin\naliases: [Lin]\n---\n\n- [stated] Name is Lin\n- [stated] Likes tea\n")
+        create("/topics/food.md", "- [stated] Likes noodles\n")
 
         assertTrue(repository.getFiles("other").isEmpty())
-        repository.copyFiles(assistant, "other")
-        assertEquals("- [stated] Name is Lin\n", repository.getFile("other", "/profile.md")?.content)
+        val firstPreview = repository.previewMigration(assistant, "other")
+        assertEquals(2, firstPreview.sourceCount)
+        assertEquals(listOf("/profile.md", "/topics/food.md"), firstPreview.newPaths)
+        assertTrue(firstPreview.conflicts.isEmpty())
 
+        val first = repository.migrateFiles(assistant, "other", MemoryConflictStrategy.MERGE)
+        assertEquals(MemoryMigrationResult(copied = 2, merged = 0, overwritten = 0, skipped = 0), first)
+        assertEquals("- [stated] Likes noodles\n", repository.getFile("other", "/topics/food.md")?.content)
+
+        // Identical files are skipped cleanly
+        val secondPreview = repository.previewMigration(assistant, "other")
+        assertEquals(listOf("/profile.md", "/topics/food.md"), secondPreview.identicalPaths)
+        assertTrue(secondPreview.conflicts.isEmpty())
+
+        // Diverge target /profile.md and verify SKIP, MERGE (idempotent + frontmatter), and OVERWRITE
+        repository.writeFile(
+            "other",
+            "/profile.md",
+            "---\nname: profile\ntitle: 个人资料\naliases: [小林]\ncustom: keep\n---\n\n- [stated] Name is Lin\n- [stated] Lives in Hangzhou\n",
+        )
+        val conflictPreview = repository.previewMigration(assistant, "other")
+        assertEquals(listOf("/profile.md"), conflictPreview.conflicts.map { it.path })
+        assertEquals(false, conflictPreview.conflicts.single().mergeExceedsLimit)
+
+        val skipped = repository.migrateFiles(assistant, "other", MemoryConflictStrategy.SKIP)
+        assertEquals(MemoryMigrationResult(copied = 0, merged = 0, overwritten = 0, skipped = 2), skipped)
+        assertTrue(repository.getFile("other", "/profile.md")!!.content.contains("Lives in Hangzhou"))
+        assertTrue(!repository.getFile("other", "/profile.md")!!.content.contains("Likes tea"))
+
+        val merged = repository.migrateFiles(assistant, "other", MemoryConflictStrategy.MERGE)
+        assertEquals(MemoryMigrationResult(copied = 0, merged = 1, overwritten = 0, skipped = 1), merged)
+        val mergedFile = repository.getFile("other", "/profile.md")!!
+        assertEquals("个人资料", mergedFile.title)
+        assertEquals("About Lin", mergedFile.description)
+        assertEquals(listOf("小林", "Lin"), mergedFile.aliases)
+        assertTrue(mergedFile.content.contains("custom: keep"))
+        // Duplicate bullet "- [stated] Name is Lin" appears only once
+        assertEquals(1, Regex("""-\s+\[stated\]\s+Name is Lin""").findAll(mergedFile.body).count())
+        assertTrue(mergedFile.body.contains("Lives in Hangzhou"))
+        assertTrue(mergedFile.body.contains("Likes tea"))
+        // Second merge is idempotent (no new diff)
+        assertEquals(
+            MemoryMigrationResult(copied = 0, merged = 0, overwritten = 0, skipped = 2),
+            repository.migrateFiles(assistant, "other", MemoryConflictStrategy.MERGE),
+        )
+
+        val overwritten = repository.migrateFiles(assistant, "other", MemoryConflictStrategy.OVERWRITE)
+        assertEquals(MemoryMigrationResult(copied = 0, merged = 0, overwritten = 1, skipped = 1), overwritten)
+        assertEquals(repository.getFile(assistant, "/profile.md")?.content, repository.getFile("other", "/profile.md")?.content)
+
+        // Source store was never modified or deleted
         repository.deleteFilesOfAssistant(assistant)
         assertTrue(repository.getFiles(assistant).isEmpty())
-        assertEquals(1, repository.getFiles("other").size)
+        assertEquals(2, repository.getFiles("other").size)
+    }
+
+    @Test
+    fun `merging files that would exceed 48KB is rejected without corrupting target`() = runBlocking {
+        val bigSource = "---\nname: big\n---\n\n- [stated] " + "s".repeat(30 * 1024) + "\n"
+        val bigTarget = "---\nname: big\n---\n\n- [stated] " + "t".repeat(30 * 1024) + "\n"
+        create("/topics/big.md", bigSource)
+        repository.writeFile("other", "/topics/big.md", bigTarget, MemoryRepository.NEW_FILE_VERSION)
+
+        val preview = repository.previewMigration(assistant, "other")
+        assertTrue(preview.conflicts.single().mergeExceedsLimit)
+
+        val result = repository.migrateFiles(assistant, "other", MemoryConflictStrategy.MERGE)
+        assertEquals(listOf("/topics/big.md"), result.failedOversized)
+        assertEquals(0, result.merged)
+        assertEquals(bigTarget, repository.getFile("other", "/topics/big.md")?.content)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `migrating a memory store into itself is rejected`() = runBlocking<Unit> {
+        repository.migrateFiles(assistant, assistant, MemoryConflictStrategy.MERGE)
     }
 
     @Test

@@ -121,7 +121,9 @@ object ToolUIRegistry {
         overrides: Map<String, ToolOverride> = emptyMap(),
     ): ToolUIRenderer {
         val id = resolveBuiltinToolId(toolName, overrides)
-        return renderers[id] ?: renderers[toolName] ?: DefaultToolUIRenderer
+        return renderers[id] ?: renderers[toolName]
+            ?: AcpToolUI.takeIf { toolName.startsWith(me.rerere.rikkihub.data.cli.AcpParts.TOOL_PREFIX) }
+            ?: DefaultToolUIRenderer
     }
 }
 

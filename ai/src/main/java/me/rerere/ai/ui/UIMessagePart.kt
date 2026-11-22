@@ -4,6 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.util.json
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -192,6 +193,9 @@ sealed class UIMessagePart {
         val startedAt: Instant? = null,
         val finishedAt: Instant? = null,
     ) : UIMessagePart() {
+        /** First tool call of a model response; see [TOOL_STEP_START_KEY]. */
+        val startsStep: Boolean get() = metadata?.get(TOOL_STEP_START_KEY) == JsonPrimitive(true)
+
         /** Whether the tool has been executed (has output) */
         val isExecuted: Boolean get() = output.isNotEmpty()
 
@@ -206,6 +210,15 @@ sealed class UIMessagePart {
             json.parseToJsonElement(input.ifBlank { "{}" })
         }.getOrElse { JsonObject(emptyMap()) }
 
+        /**
+         * Display-only parse of arguments that are still streaming (a JSON prefix): closes the open
+         * string and containers and drops a dangling key, colon, comma, escape or literal. Never use it
+         * to execute a tool; execution parses [input] strictly.
+         */
+        fun inputAsPartialJson(): JsonElement = runCatching {
+            json.parseToJsonElement(closePartialJson(input.ifBlank { "{}" })) as? JsonObject
+        }.getOrNull() ?: JsonObject(emptyMap())
+
         fun merge(other: Tool): Tool {
             return Tool(
                 toolCallId = toolCallId,
@@ -219,4 +232,74 @@ sealed class UIMessagePart {
             )
         }
     }
+}
+
+/**
+ * Metadata key on the first tool call of each model response. Requests keep the calls of different
+ * responses in separate assistant messages, exactly as they were sent while the turn was running;
+ * without it two adjacent tool steps merge into one message and the already cached prefix changes.
+ */
+const val TOOL_STEP_START_KEY = "step_start"
+
+fun UIMessagePart.Tool.markedAsStepStart(): UIMessagePart.Tool =
+    copy(metadata = JsonObject(metadata.orEmpty() + (TOOL_STEP_START_KEY to JsonPrimitive(true))))
+
+private val COMPLETE_JSON_LITERAL = Regex("""true|false|null|-?\d+(\.\d+)?([eE][+-]?\d+)?""")
+
+/** Turns a JSON prefix into a document that parses; see [UIMessagePart.Tool.inputAsPartialJson]. */
+internal fun closePartialJson(prefix: String): String {
+    val closers = ArrayDeque<Char>()
+    var inString = false
+    var escaped = false
+    var stringStart = 0
+    var expectKey = false
+    // Start of an object key whose value has not begun yet; such a key is dropped.
+    var keyStart = -1
+    var sawColon = false
+    for ((i, c) in prefix.withIndex()) {
+        if (inString) {
+            when {
+                escaped -> escaped = false
+                c == '\\' -> escaped = true
+                c == '"' -> inString = false
+            }
+            continue
+        }
+        if (keyStart >= 0 && sawColon && !c.isWhitespace() && c != ':') keyStart = -1
+        when (c) {
+            '"' -> {
+                inString = true
+                stringStart = i
+                if (expectKey) {
+                    keyStart = i
+                    sawColon = false
+                }
+                expectKey = false
+            }
+            '{' -> { closers.addLast('}'); expectKey = true }
+            '[' -> { closers.addLast(']'); expectKey = false }
+            '}', ']' -> { closers.removeLastOrNull(); expectKey = false; keyStart = -1 }
+            ',' -> { expectKey = closers.lastOrNull() == '}'; keyStart = -1 }
+            ':' -> if (keyStart >= 0) sawColon = true
+        }
+    }
+    val out = StringBuilder(prefix)
+    if (inString && keyStart != stringStart) {
+        if (escaped) out.setLength(out.length - 1)
+        val unicode = out.lastIndexOf("\\u")
+        if (unicode >= 0 && out.length - unicode < 6 && out.substring(unicode + 2).all { it.isLetterOrDigit() }) {
+            out.setLength(unicode)
+        }
+        out.append('"')
+    } else if (keyStart >= 0) {
+        out.setLength(keyStart)
+    } else if (!inString) {
+        val literal = out.takeLastWhile { it.isLetterOrDigit() || it == '.' || it == '-' || it == '+' }
+        if (literal.isNotEmpty() && !COMPLETE_JSON_LITERAL.matches(literal)) out.setLength(out.length - literal.length)
+    }
+    while (out.isNotEmpty() && out.last().isWhitespace()) out.setLength(out.length - 1)
+    if (out.lastOrNull() == ',') out.setLength(out.length - 1)
+    if (out.lastOrNull() == ':') out.append("null")
+    closers.reversed().forEach { out.append(it) }
+    return out.toString()
 }

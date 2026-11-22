@@ -156,6 +156,11 @@ class CreatorProposalService(
                 store.updateProposal(proposal.proposalId) { current -> checkNotNull(current).copy(
                     status = ProposalStatus.NEEDS_RECOVERY, approval = null, statusReason = "OUTCOME_REQUIRES_RECEIPT_RECONCILIATION") }
             }
+            // A proposal frozen under an older definition (other object shapes) can no longer be reviewed: let it lapse now.
+            ProposalStatus.PENDING_APPROVAL -> if (proposal.definitionVersion != definitionVersion()) {
+                store.updateProposal(proposal.proposalId) { current -> checkNotNull(current).copy(
+                    status = ProposalStatus.EXPIRED, approval = null, statusReason = "DEFINITION_CHANGED", completedAtMillis = nowMillis()) }
+            }
             else -> Unit
         }
     }

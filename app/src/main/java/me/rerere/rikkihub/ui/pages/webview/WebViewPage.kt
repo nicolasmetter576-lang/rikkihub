@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.webview
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Bug01
@@ -139,7 +140,8 @@ fun WebViewPage(url: String, contentId: String) {
                             )
                         }
                     }
-                }
+                },
+                expandedHeight = AppTopBarHeight,
             )
         }
     ) {

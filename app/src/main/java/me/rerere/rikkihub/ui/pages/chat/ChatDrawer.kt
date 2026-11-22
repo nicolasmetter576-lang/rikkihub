@@ -72,11 +72,14 @@ import me.rerere.hugeicons.stroke.TransactionHistory
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.Screen
 import me.rerere.rikkihub.data.datastore.Settings
+import me.rerere.rikkihub.data.datastore.getCurrentAssistant
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.data.model.Folder
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.ui.components.ai.AssistantPicker
+import me.rerere.rikkihub.ui.components.ai.updateCardAppearance
+import me.rerere.rikkihub.utils.moveByKey
 import me.rerere.rikkihub.ui.components.ui.BackupReminderCard
 import me.rerere.rikkihub.ui.components.ui.Tooltip
 import me.rerere.rikkihub.ui.components.ui.UIAvatar
@@ -93,6 +96,7 @@ import me.rerere.rikkihub.data.datastore.ConversationSortOrder
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.Sorting01
 import me.rerere.hugeicons.stroke.ImageToVideo
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun ChatDrawerContent(
@@ -113,6 +117,7 @@ fun ChatDrawerContent(
     val folders by drawerVm.folders.collectAsStateWithLifecycle()
     val selectedFolderId by drawerVm.selectedFolderId.collectAsStateWithLifecycle()
     val memoryDreaming by drawerVm.memoryDreaming.collectAsStateWithLifecycle()
+    val favouriteCharacters by drawerVm.favouriteCharacters.collectAsStateWithLifecycle()
     val conversationListState = rememberLazyListState(
         initialFirstVisibleItemIndex = drawerVm.scrollIndex,
         initialFirstVisibleItemScrollOffset = drawerVm.scrollOffset,
@@ -138,6 +143,9 @@ fun ChatDrawerContent(
     var conversationToMove by remember { mutableStateOf<Conversation?>(null) }
     val bottomSheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
 
+    // 角色选择层
+    var showCharacterSheet by remember { mutableStateOf(false) }
+
     // 文件夹相关状态
     var showMoveToFolderSheet by remember { mutableStateOf(false) }
     var conversationToMoveFolder by remember { mutableStateOf<Conversation?>(null) }
@@ -160,6 +168,12 @@ fun ChatDrawerContent(
             )
 
             DrawerActions(navController = navController)
+
+            DrawerCharacterEntry(
+                favourites = favouriteCharacters,
+                onOpenPicker = { showCharacterSheet = true },
+                onStartChat = { navigateToChatPage(navController, characterId = it.id) },
+            )
 
             Row(
                 modifier = Modifier
@@ -250,6 +264,16 @@ fun ChatDrawerContent(
                         navigateToChatPage(navigator = navController, chatId = id)
                     }
                 },
+                onReorderAssistants = { movedId, targetId ->
+                    vm.updateSettings { latest ->
+                        latest.copy(assistants = latest.assistants.moveByKey({ it.id }, movedId, targetId))
+                    }
+                },
+                onUpdateCardAppearance = { assistantId, note, cardWide ->
+                    vm.updateSettings { latest ->
+                        latest.copy(assistants = latest.assistants.updateCardAppearance(assistantId, note, cardWide))
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 onClickSetting = {
                     val currentAssistantId = settings.assistantId
@@ -308,10 +332,10 @@ fun ChatDrawerContent(
 
                 DrawerAction(
                     icon = {
-                        Icon(HugeIcons.ChartColumn, "统计数据")
+                        Icon(HugeIcons.ChartColumn, stringResource(R.string.stats_page_title))
                     },
                     label = {
-                        Text("统计数据")
+                        Text(stringResource(R.string.stats_page_title))
                     },
                     onClick = {
                         navController.navigate(Screen.Stats)
@@ -331,6 +355,28 @@ fun ChatDrawerContent(
                 )
             }
         }
+    }
+
+    // 选择角色 Bottom Sheet
+    if (showCharacterSheet) {
+        val closeCharacterSheet = {
+            showCharacterSheet = false
+            drawerVm.characterQuery.value = ""
+        }
+        CharacterPickerSheet(
+            vm = drawerVm,
+            assistantName = settings.getCurrentAssistant().name
+                .ifBlank { stringResource(R.string.assistant_page_default_assistant) },
+            onStartChat = {
+                closeCharacterSheet()
+                navigateToChatPage(navController, characterId = it.id)
+            },
+            onManage = {
+                closeCharacterSheet()
+                navController.navigate(Screen.Characters)
+            },
+            onDismiss = closeCharacterSheet,
+        )
     }
 
     // 移动到文件夹 Bottom Sheet
@@ -357,7 +403,7 @@ fun ChatDrawerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 400.dp)
-                    .padding(16.dp),
+                    .padding(AppSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
@@ -380,7 +426,7 @@ fun ChatDrawerContent(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(AppSpacing.sm),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -411,7 +457,7 @@ fun ChatDrawerContent(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
+                                    .padding(AppSpacing.sm),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
@@ -532,7 +578,7 @@ fun ChatDrawerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 400.dp)
-                    .padding(16.dp),
+                    .padding(AppSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
@@ -544,7 +590,8 @@ fun ChatDrawerContent(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(settings.assistants, key = { it.id }, contentType = { "assistant" }) { assistant ->
+                    val targets = settings.assistants.filter { it.enabled || it.id == conversationToMove?.assistantId }
+                    items(targets, key = { it.id }, contentType = { "assistant" }) { assistant ->
                         AssistantItem(
                             assistant = assistant,
                             isCurrentAssistant = assistant.id == conversationToMove?.assistantId,
@@ -885,7 +932,7 @@ private fun AssistantItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {

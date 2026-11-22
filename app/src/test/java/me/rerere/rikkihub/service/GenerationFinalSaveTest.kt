@@ -74,4 +74,24 @@ class GenerationFinalSaveTest {
         assertFalse(session.rollbackProtocolFailedAttempt(failure))
         session.cleanup()
     }
+
+    @Test
+    fun `protocol failure before the step publishes still persists earlier executed steps`() = runBlocking {
+        val id = Uuid.random()
+        val user = UIMessage(role = MessageRole.USER, parts = listOf(UIMessagePart.Text("go")))
+        // Step 1 ran a tool; step 2 failed on its first frame, so the tail equals the attempt's base.
+        val stepOne = UIMessage(role = MessageRole.ASSISTANT, parts = listOf(UIMessagePart.Tool(
+            toolCallId = "mkdir", toolName = "workspace_shell", input = "{\"command\":\"mkdir -p a\"}",
+            output = listOf(UIMessagePart.Text("{\"exitCode\":0}")),
+        )))
+        val session = ConversationSession(id, Conversation.ofId(id).updateCurrentMessages(listOf(user, stepOne)), this, {})
+        val failure = GenerationAttemptProtocolException(
+            ToolStreamProtocolException("google_stream_upstream_error", "fixture"), id, stepOne.id, 0, stepOne,
+        )
+        session.finishGenerationAfterStream(failure, { fail("final save must skip protocol failures") }, { fail() })
+        val persisted = mutableListOf<Conversation>()
+        session.recoverProtocolFailedAttempt(failure) { persisted += it }
+        assertEquals(listOf(user, stepOne), persisted.single().currentMessages)
+        session.cleanup()
+    }
 }

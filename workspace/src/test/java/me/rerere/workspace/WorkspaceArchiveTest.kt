@@ -375,4 +375,24 @@ class WorkspaceArchiveTest {
         // 校验发生在任何 entry 写出之前
         assertTrue(unzip(out.toByteArray()).isEmpty())
     }
+
+    // ---------- 整个存储根打包为一个具名文件夹 ----------
+
+    @Test
+    fun `exports a whole root as one top folder of the given name`() = runBlocking {
+        val root = area()
+        File(root, "ch1").mkdirs()
+        File(root, "ch1/1.md").writeText("one")
+        val out = ByteArrayOutputStream()
+        val result = exporter.exportFolderZip(root, "小说", out)
+        val entries = unzip(out.toByteArray())
+        assertEquals(listOf("小说/", "小说/ch1/", "小说/ch1/1.md"), entries.keys.toList())
+        assertEquals("one", String(entries.getValue("小说/ch1/1.md")))
+        assertEquals(1, result.fileCount)
+        assertEquals(2, result.directoryCount)
+
+        val empty = ByteArrayOutputStream()
+        exporter.exportFolderZip(tmp.newFolder("blank"), "空", empty)
+        assertEquals(listOf("空/"), unzip(empty.toByteArray()).keys.toList())
+    }
 }

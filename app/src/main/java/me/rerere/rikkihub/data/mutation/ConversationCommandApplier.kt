@@ -29,6 +29,8 @@ data class ConversationCommandContext(
     val folderIds: Set<Uuid>,
     val modeInjectionIds: Set<Uuid>,
     val lorebookIds: Set<Uuid>,
+    /** 现有的角色；改绑角色只认这些。 */
+    val characterIds: Set<Uuid> = emptySet(),
 )
 
 data class ConversationCommandResult(
@@ -167,6 +169,7 @@ object ConversationCommandApplier {
         require(!(command.customSystemPrompt != null && command.clearCustomSystemPrompt))
         require(!(command.workspaceCwd != null && command.clearWorkspaceCwd))
         require(!(command.folderId != null && command.clearFolder))
+        require(!(command.characterId != null && command.clearCharacter)) { "Give a characterId or clearCharacter, not both" }
         val assistantId = command.moveToAssistantId?.let(Uuid::parse)?.also {
             require(it in context.ordinaryAssistantIds) { "Target must be an existing ordinary assistant" }
         } ?: current.assistantId
@@ -195,6 +198,16 @@ object ConversationCommandApplier {
                 validatedIds(it, context.modeInjectionIds, "mode injection")
             } ?: current.modeInjectionIds,
             lorebookIds = command.lorebookIds?.let { validatedIds(it, context.lorebookIds, "lorebook") } ?: current.lorebookIds,
+            tavernMetadata = command.tavernMetadata?.let {
+                me.rerere.rikkihub.data.ai.tavern.TavernConversationState.mergeMetadata(current.tavernMetadata, it)
+            } ?: current.tavernMetadata,
+            characterId = when {
+                command.clearCharacter -> null
+                command.characterId != null -> Uuid.parse(command.characterId).also {
+                    require(it in context.characterIds) { "Unknown character" }
+                }
+                else -> current.characterId
+            },
         )
     }
 

@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageUpdate
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolExecutionContext
 import me.rerere.ai.provider.WorkspaceToolWirePolicy
@@ -255,8 +256,8 @@ class WorkspaceSubagentRunnerStatsTest {
                         StreamChunk.ToolCallStart(id = "u1", toolName = "echo_tool"),
                         StreamChunk.ToolCallDelta(id = "u1", inputDelta = "{}"),
                         StreamChunk.ToolCallEnd(id = "u1"),
-                        StreamChunk.Usage(TokenUsage(100, 5, totalTokens = 105)),
-                        StreamChunk.Usage(TokenUsage(0, 0, totalTokens = 20)),
+                        StreamChunk.Usage(UsageUpdate(100, 5, totalTokens = 105)),
+                        StreamChunk.Usage(UsageUpdate(totalTokens = 20)),
                         StreamChunk.Finish(finishReason = "tool_calls"),
                     )
                 ),
@@ -266,8 +267,8 @@ class WorkspaceSubagentRunnerStatsTest {
                         StreamChunk.ToolCallStart(id = "u2", toolName = "echo_tool"),
                         StreamChunk.ToolCallDelta(id = "u2", inputDelta = "{}"),
                         StreamChunk.ToolCallEnd(id = "u2"),
-                        StreamChunk.Usage(TokenUsage(50, 0, totalTokens = 50)),
-                        StreamChunk.Usage(TokenUsage(0, 15, totalTokens = 15)),
+                        StreamChunk.Usage(UsageUpdate(promptTokens = 50)),
+                        StreamChunk.Usage(UsageUpdate(completionTokens = 15)),
                         StreamChunk.Finish(finishReason = "tool_calls"),
                     )
                 ),
@@ -306,6 +307,7 @@ class WorkspaceSubagentRunnerStatsTest {
         assertEquals("cancelled", log["status"]!!.jsonPrimitive.content)
         assertEquals("cancelled", log["completion_reason"]!!.jsonPrimitive.content)
         assertEquals(0, log["step_count"]!!.jsonPrimitive.intOrNull)
+        assertEquals("Subagent was cancelled.", log["error"]!!.jsonPrimitive.content)
     }
 
     @Test

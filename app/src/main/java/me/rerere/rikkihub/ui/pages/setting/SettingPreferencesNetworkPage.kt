@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,12 +19,11 @@ import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +32,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -87,7 +88,6 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
     var proxyDialogVisible by remember { mutableStateOf(false) }
     val defaultUserAgent = "Rikkihub-Android/${BuildConfig.VERSION_NAME}"
     val proxyUrlInvalid = proxyUrlDraft.isNotBlank() && proxyUrlDraft.toProxyOrNull() == null
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val scope = rememberCoroutineScope()
     val resources = LocalResources.current
     val toaster = LocalToaster.current
@@ -255,17 +255,17 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.setting_page_preferences_network)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { contentPadding ->
         LazyColumn(
+            state = rememberSettingSearchListState(),
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
@@ -274,7 +274,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
         ) {
             item {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                 ) {
                     item(
                         headlineContent = {
@@ -295,12 +295,34 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                                 },
                             )
                         },
+                        searchKey = R.string.setting_page_preferences_network_auto_retry,
+                    )
+                    item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_page_preferences_network_rate_limit_retry))
+                        },
+                        supportingContent = {
+                            Text(stringResource(R.string.setting_page_preferences_network_rate_limit_retry_desc))
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = settings.networkSetting.enableRateLimitRetry,
+                                onCheckedChange = { enabled ->
+                                    vm.updateSettings { latest -> latest.copy(
+                                            networkSetting = latest.networkSetting.copy(
+                                                enableRateLimitRetry = enabled,
+                                            ),
+                                        ) }
+                                },
+                            )
+                        },
+                        searchKey = R.string.setting_page_preferences_network_rate_limit_retry,
                     )
                 }
             }
             item {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = {
                         Text(stringResource(R.string.setting_page_preferences_network_user_agent))
                     },
@@ -343,7 +365,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
             }
             item {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = {
                         Text(stringResource(R.string.setting_page_preferences_network_proxy))
                     },
@@ -373,6 +395,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                         trailingContent = {
                             Icon(HugeIcons.ArrowRight01, contentDescription = null)
                         },
+                        searchKey = R.string.setting_page_config,
                     )
                     item(
                         headlineContent = {
@@ -393,6 +416,7 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                                 }
                             }
                         },
+                        searchKey = R.string.setting_provider_page_test_connection,
                     )
                 }
             }

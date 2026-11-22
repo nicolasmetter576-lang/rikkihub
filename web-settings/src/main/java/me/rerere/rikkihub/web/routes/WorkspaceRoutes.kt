@@ -137,6 +137,12 @@ fun Route.workspaceRoutes(
             call.respond(workspace.toDto())
         }
 
+        get("/{id}/installed") {
+            val workspace = requireWorkspace(workspaceRepository, call.parameters["id"])
+            val installed = workspaceRepository.rootfsReady(workspace.id)
+            call.respond(mapOf("installed" to installed))
+        }
+
         put("/{id}") {
             val id = call.parameters["id"] ?: throw BadRequestException("Missing workspace id")
             val body = call.receive<JsonObject>()

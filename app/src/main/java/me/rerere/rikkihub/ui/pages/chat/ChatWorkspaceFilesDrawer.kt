@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.chat
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
@@ -238,9 +239,7 @@ private fun ChatWorkspaceFilesPane(
                     },
                     navigationIcon = {
                         IconButton(
-                            onClick = {
-                                if (canGoUp) vm.goUp() else onOpenChange(false)
-                            },
+                            onClick = { onOpenChange(false) },
                         ) {
                             Icon(
                                 imageVector = HugeIcons.ArrowLeft01,
@@ -254,6 +253,7 @@ private fun ChatWorkspaceFilesPane(
                         }
                     },
                     colors = CustomColors.topBarColors,
+                    expandedHeight = AppTopBarHeight,
                 )
             },
             containerColor = CustomColors.topBarColors.containerColor,
@@ -264,6 +264,7 @@ private fun ChatWorkspaceFilesPane(
                 state = state,
                 interceptBackToGoUp = false,
                 contentPadding = innerPadding,
+                backEnabled = isOpen,
             )
         }
     }

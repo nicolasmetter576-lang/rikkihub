@@ -1,45 +1,55 @@
 package me.rerere.rikkihub.data.management.adapters
 
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.*
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.*
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkihub.data.creator.definition.AssistantRegistry
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.management.ports.*
 import me.rerere.rikkihub.data.model.*
+import me.rerere.tavern.prompt.PromptEntry
+import me.rerere.rikkihub.data.character.PresetFormatException
+import me.rerere.rikkihub.data.character.PresetPorting
 import kotlin.uuid.Uuid
 
 /** Domain-constrained fields, NOT RFC6902, arbitrary Settings JSON or paths. */
 object SettingsCollectionInterpreter {
     val strictJson = Json { ignoreUnknownKeys = false; encodeDefaults = true; explicitNulls = true }
-    val assistantFields = setOf("name", "avatar", "useAssistantAvatar", "tags", "systemPrompt",
-        "systemPromptMode", "promptSections",
-        "messageTemplate", "presetMessages", "temperature", "topP", "maxTokens", "reasoningLevel",
-        "contextMessageLimit", "streamOutput", "regexes", "chatModelId", "workspaceId", "localTools",
+    val assistantFields = setOf("name", "enabled", "avatar", "useAssistantAvatar", "tags",
+        "messageTemplate", "presetMessages", "temperature", "topP", "topK", "frequencyPenalty", "presencePenalty",
+        "repetitionPenalty", "minP", "topA", "seed", "maxTokens", "reasoningLevel",
+        "contextMessageLimit", "streamOutput", "chatModelId", "workspaceId", "localTools",
         "mcpServers", "enabledSkills", "modeInjectionIds", "lorebookIds", "quickMessageIds",
         "enableMemory", "useGlobalMemory", "autoConsolidateMemory", "enableRecentChatsReference", "enableWebSearch",
         "background", "backgroundOpacity", "useGradientBackground", "enableTimeReminder",
-        "timeReminderIntervalMinutes", "allowConversationSystemPrompt", "allowConversationPromptInjection")
+        "timeReminderIntervalMinutes", "allowConversationSystemPrompt", "allowConversationPromptInjection", "tavernMode", "enableMessageTitle",
+        "promptOptions", "presetExtra",
+        // Create only: the initial main prompt text, and an assistant whose prompt layout, options and regex scripts are copied;
+        // a SillyTavern preset to take the prompt and sampling parameters from
+        "systemPrompt", "copyFrom", "fromPreset")
     val modelFields = setOf("modelId", "displayName", "type", "inputModalities", "outputModalities",
-        "abilities", "tools", "ccDisguise", "contextLength")
-    val modeFields = setOf("name", "enabled", "priority", "position", "content", "injectDepth", "role")
-    val lorebookFields = setOf("name", "description", "enabled", "entries")
+        "abilities", "tools", "ccDisguise", "contextLength", "pricing")
+
+    /** Most object patches one Batch op may hold (bulk create / patch of lorebook entries). */
+    const val MAX_BATCH_PATCHES = 500
 
     const val PROVIDERS = "settings.providers"
     /** Key-based provider types (the ones that can be created); the others sign in with OAuth. */
     val creatableProviderTypes = listOf("openai", "google", "claude")
-    val providerCommonFields = setOf("name", "enabled", "customHeaders", "balanceOption")
+    val providerCommonFields = setOf("name", "enabled", "customHeaders", "balanceOption", "rotationStrategy")
     /** Write-only: never in a projection or a model-visible diff (header values are secret too). */
-    val providerSecretFields = setOf("apiKey", "privateKey")
+    val providerSecretFields = setOf("apiKey", "privateKey", "apiKeys", "serviceAccounts")
 
     /** Writable fields of a provider of serial type [type]. */
     fun providerFields(type: String): Set<String> = when (type) {
-        "openai" -> providerCommonFields + setOf("apiKey", "baseUrl", "chatCompletionsPath", "useResponseApi",
+        "openai" -> providerCommonFields + setOf("apiKey", "apiKeys", "baseUrl", "chatCompletionsPath", "useResponseApi",
             "includeHistoryReasoning", "responsesPath")
-        "google" -> providerCommonFields + setOf("apiKey", "baseUrl", "vertexAI", "useServiceAccount", "privateKey",
-            "serviceAccountEmail", "location", "projectId", "useInteractionsApi")
-        "claude" -> providerCommonFields + setOf("apiKey", "baseUrl", "promptCaching", "promptCacheTtl")
+        "google" -> providerCommonFields + setOf("apiKey", "apiKeys", "baseUrl", "vertexAI", "useServiceAccount", "privateKey",
+            "serviceAccountEmail", "location", "projectId", "serviceAccounts", "useInteractionsApi", "streamFunctionCallArguments")
+        "claude" -> providerCommonFields + setOf("apiKey", "apiKeys", "baseUrl", "promptCaching", "promptCacheTtl")
         else -> setOf("name", "enabled")
     }
 
@@ -73,18 +83,30 @@ object SettingsCollectionInterpreter {
 
     fun collectionJson(settings: Settings, collectionId: String): List<JsonObject> = when (collectionId) {
         "settings.quickMessages" -> settings.quickMessages.map { objectJson(QuickMessage.serializer(), it) }
-        "settings.modeInjections" -> settings.modeInjections.map { objectJson(PromptInjection.ModeInjection.serializer(), it) }
-        "settings.lorebooks" -> settings.lorebooks.map { objectJson(Lorebook.serializer(), it) }
         "settings.assistants" -> settings.assistants.map { assistant ->
-            JsonObject(objectJson(Assistant.serializer(), assistant).filterKeys { it == "id" || it in assistantFields })
+            JsonObject(assistantView(assistant).filterKeys { it == "id" || it in assistantFields })
         }
         "settings.assistantTags" -> settings.assistantTags.map { objectJson(Tag.serializer(), it) }
         PROVIDERS -> settings.providers.map(::providerProjection)
-        else -> {
+        else -> NativeCollections.resolve(collectionId)?.read?.invoke(settings) ?: run {
             val provider = providerFor(settings, collectionId)
             provider.models.map { model -> JsonObject(objectJson(Model.serializer(), model)
                 .filterKeys { it == "id" || it in modelFields }) }
         }
+    }
+
+    /**
+     * The assistant as the creator sees it: every assistant field, with the prompt layout, the prompt entries and the
+     * regex scripts living in their own objects (PRESET_ENTRY, REGEX_SCRIPT). `modeInjectionIds` are the prompt library
+     * entries it uses; `promptOptions` and `presetExtra` are the rest of its SillyTavern preset.
+     */
+    fun assistantView(assistant: Assistant): JsonObject {
+        val base = objectJson(Assistant.serializer(), assistant).filterKeys { it != "promptPreset" && it != "libraryEntryIds" }
+        return JsonObject(base + mapOf(
+            "modeInjectionIds" to JsonArray(assistant.libraryEntryIds.map { JsonPrimitive(it.toString()) }),
+            "promptOptions" to NativeViews.optionsJson(assistant.promptPreset.options),
+            "presetExtra" to NativeViews.presetExtraJson(assistant.promptPreset),
+        ))
     }
 
     /** id, type and the writable non-secret fields; custom headers by name only (values are secret). */
@@ -108,14 +130,13 @@ object SettingsCollectionInterpreter {
      * planned operation, the diff and the "unchanged field" check all use what will be stored.
      */
     fun normalizeFields(collectionId: String, fields: Map<String, JsonElement>): Map<String, JsonElement> {
+        NativeCollections.resolve(collectionId)?.let { return NativeFields.normalize(it.fields, fields) }
         if (collectionId == PROVIDERS) return fields.mapValues { (key, value) ->
             val raw = (value as? JsonPrimitive)?.takeIf { key == "type" && it.isString }?.content
             raw?.let { providerType(it) }?.let(::JsonPrimitive) ?: value
         }
         val descriptor = when {
             collectionId == "settings.quickMessages" -> QuickMessage.serializer().descriptor
-            collectionId == "settings.modeInjections" -> PromptInjection.ModeInjection.serializer().descriptor
-            collectionId == "settings.lorebooks" -> Lorebook.serializer().descriptor
             collectionId == "settings.assistants" -> Assistant.serializer().descriptor
             collectionId == "settings.assistantTags" -> Tag.serializer().descriptor
             collectionId.startsWith("settings.providers.") -> Model.serializer().descriptor
@@ -129,35 +150,90 @@ object SettingsCollectionInterpreter {
 
     private fun applyCollection(settings: Settings, op: SettingsCollectionOp, authorizedImageUris: Set<String>): Settings = when (op.collectionId) {
         "settings.quickMessages" -> settings.copy(quickMessages = patchList(settings.quickMessages,
-            QuickMessage.serializer(), setOf("title", "content"), op.patch, { QuickMessage(id = it) }) {
+            QuickMessage.serializer(), setOf("title", "content"), op.patch, { QuickMessage(id = Uuid.parse(it)) }) {
                 require(it.title.length <= 1024) { "title must be at most 1024 characters" }
                 require(it.content.length <= 64 * 1024) { "content must be at most 65536 characters" }
             })
-        "settings.modeInjections" -> settings.copy(modeInjections = patchList(settings.modeInjections,
-            PromptInjection.ModeInjection.serializer(), modeFields, op.patch,
-            { PromptInjection.ModeInjection(id = it) }, ::validateMode))
-        "settings.lorebooks" -> settings.copy(lorebooks = patchList(settings.lorebooks,
-            Lorebook.serializer(), lorebookFields, op.patch, { Lorebook(id = it) }, ::validateLorebook))
-        "settings.assistants" -> {
-            val before = settings.assistants.associateBy { it.id }
-            val patched = patchList(settings.assistants,
-                Assistant.serializer(), assistantFields, op.patch, { Assistant(id = it) }) {
-                    validateAssistant(it, settings, authorizedImageUris)
-                }
-            // 与存储写入同一规则：改 promptSections 重算 systemPrompt，只改 systemPrompt 时落到对应分块
-            settings.copy(assistants = patched.map { it.reconcileSystemPrompt(before[it.id]) })
-        }
+        "settings.assistants" -> settings.copy(assistants = patchList(settings.assistants,
+            Assistant.serializer(), assistantFields, op.patch, { Assistant(id = Uuid.parse(it)) },
+            validate = { validateAssistant(it, settings, authorizedImageUris) },
+            encode = ::assistantView,
+            decode = { current, json -> assistantFrom(settings, current, json) },
+            normalize = { LenientEnums.normalize(it, Assistant.serializer().descriptor).jsonObject }))
         "settings.assistantTags" -> settings.copy(assistantTags = patchList(settings.assistantTags,
-            Tag.serializer(), setOf("name"), op.patch, { Tag(id = it, name = "") }) { require(it.name.length in 1..1024) })
+            Tag.serializer(), setOf("name"), op.patch, { Tag(id = Uuid.parse(it), name = "") }) { require(it.name.length in 1..1024) })
         PROVIDERS -> settings.copy(providers = patchProviders(settings.providers, op.patch))
-        else -> {
+        else -> NativeCollections.resolve(op.collectionId)?.let { applyNative(settings, it, op.patch) } ?: run {
             val provider = providerFor(settings, op.collectionId)
             val models = patchList(provider.models, Model.serializer(), modelFields, op.patch,
-                { Model(id = it) }, ::validateModel)
+                { Model(id = Uuid.parse(it)) }, validate = ::validateModel)
             settings.copy(providers = settings.providers.map {
                 if (it.id == provider.id) it.copyProvider(models = models) else it
             })
         }
+    }
+
+    /** A native collection (see [NativeCollections]): patched as plain JSON objects, then stored through the collection's writer. */
+    private fun applyNative(settings: Settings, collection: NativeCollection, patch: CollectionPatch): Settings {
+        val old = collection.read(settings)
+        val allowed = collection.allowed
+        if (collection.singleton && patch !is CollectionPatch.PatchFields) rejectForbidden("${collection.label} cannot be created, deleted or reordered; patch them")
+        val new = patchList(old, JsonObject.serializer(), allowed, patch,
+            create = { id -> collection.create(settings, id) },
+            encode = { it }, decode = { _, json -> json }, normalize = { it }, validate = {})
+        return collection.write(settings, new, old)
+    }
+
+    /** Next free object id of a numbered collection (world book entries); null for UUID collections. */
+    fun nextObjectId(settings: Settings, collectionId: String): String? =
+        NativeCollections.resolve(collectionId)?.nextId?.invoke(settings)
+
+    private val ASSISTANT_VIEW_ONLY = setOf("modeInjectionIds", "promptOptions", "presetExtra", "systemPrompt", "copyFrom", "fromPreset")
+
+    /** Largest SillyTavern preset (as JSON text) one operation may carry. */
+    const val MAX_PRESET_CHARS = 1_000_000
+
+    private fun assistantFrom(settings: Settings, current: Assistant, json: JsonObject): Assistant {
+        val ids = strictJson.decodeFromJsonElement(
+            kotlinx.serialization.builtins.SetSerializer(Uuid.serializer()), json["modeInjectionIds"] ?: JsonArray(emptyList()))
+        var out = strictJson.decodeFromJsonElement(Assistant.serializer(), JsonObject(
+            json.filterKeys { it !in ASSISTANT_VIEW_ONLY } + mapOf(
+                "promptPreset" to strictJson.encodeToJsonElement(PromptPresetSerializer, current.promptPreset),
+                "libraryEntryIds" to JsonArray(ids.map { JsonPrimitive(it.toString()) }),
+            )))
+        // json 是当前对象加上改动，分不出「没写」和「写了同样的值」：和当前值一样就当没写，跟着 copyFrom / fromPreset 走
+        val tavernModeSet = out.tavernMode != current.tavernMode
+        (json["copyFrom"] as? JsonPrimitive)?.content?.let { source ->
+            val from = runCatching { Uuid.parse(source) }.getOrNull()?.let { id -> settings.assistants.firstOrNull { it.id == id } }
+                ?: rejectInvalid("copyFrom '$source' is not the id of an assistant")
+            AssistantRegistry().requireOrdinaryAssistantId(from.id)
+            out = out.copy(promptPreset = from.promptPreset, tavernMode = if (tavernModeSet) out.tavernMode else from.tavernMode)
+        }
+        (json["fromPreset"] as? JsonObject)?.let { preset ->
+            if (json["copyFrom"] != null || json["systemPrompt"] != null) rejectInvalid("fromPreset brings the whole prompt: do not combine it with copyFrom or systemPrompt")
+            if (preset.toString().length > MAX_PRESET_CHARS) rejectInvalid("fromPreset must be at most $MAX_PRESET_CHARS characters")
+            val imported = try {
+                PresetPorting.import(preset, out.name).assistant
+            } catch (e: PresetFormatException) {
+                rejectInvalid("fromPreset: ${e.message}")
+            }
+            // the preset's prompt and sampling replace the assistant's own; connection settings never come in and its regex scripts start off
+            out = out.copy(
+                promptPreset = imported.promptPreset, temperature = imported.temperature, topP = imported.topP, topK = imported.topK,
+                frequencyPenalty = imported.frequencyPenalty, presencePenalty = imported.presencePenalty,
+                repetitionPenalty = imported.repetitionPenalty, minP = imported.minP, topA = imported.topA, seed = imported.seed,
+                maxTokens = imported.maxTokens, streamOutput = imported.streamOutput,
+                tavernMode = if (tavernModeSet) out.tavernMode else imported.tavernMode,
+            )
+        }
+        (json["systemPrompt"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let { out = out.withMainPromptText(it) }
+        (json["promptOptions"] as? JsonObject)?.takeIf { it != NativeViews.optionsJson(current.promptPreset.options) }?.let {
+            out = out.copy(promptPreset = out.promptPreset.copy(options = NativeViews.optionsFrom(it, out.promptPreset.options)))
+        }
+        (json["presetExtra"] as? JsonObject)?.takeIf { it != NativeViews.presetExtraJson(current.promptPreset) }?.let {
+            out = out.copy(promptPreset = NativeViews.withPresetExtra(out.promptPreset, it))
+        }
+        return out
     }
 
     private fun providerFor(settings: Settings, collection: String): ProviderSetting {
@@ -210,6 +286,15 @@ object SettingsCollectionInterpreter {
         if (unknown.isNotEmpty()) rejectForbidden("Field(s) $unknown cannot be set on a $type provider; writable fields: ${allowed.sorted()}")
         require(fields.size <= 64 && fields.toString().length <= 256 * 1024) { "At most 64 fields and 256 KiB per change" }
         fields["customHeaders"]?.let { fields["customHeaders"] = mergeHeaders(it, existingHeaders) }
+        if ("apiKey" in fields && "apiKeys" !in fields && type in creatableProviderTypes) {
+            fields["apiKeys"] = JsonArray(emptyList())
+        }
+        if (type == "google" &&
+            listOf("privateKey", "serviceAccountEmail", "projectId").any { it in fields } &&
+            "serviceAccounts" !in fields
+        ) {
+            fields["serviceAccounts"] = JsonArray(emptyList())
+        }
         val decoded = try {
             strictJson.decodeFromJsonElement(ProviderSetting.serializer(),
                 LenientEnums.normalize(JsonObject(raw + fields), ProviderSetting.serializer().descriptor))
@@ -273,16 +358,35 @@ object SettingsCollectionInterpreter {
         fun text(name: String, value: String) = check(name) {
             require(value.length <= 1024) { "$name must be at most 1024 characters" }
         }
+        fun apiKeyPool(entries: List<ApiKeyEntry>) = check("apiKeys") {
+            require(entries.size <= 200) { "apiKeys must have at most 200 entries" }
+            entries.forEach { entry ->
+                require(entry.key.length <= 64 * 1024) { "apiKeys[].key must be at most 65536 characters" }
+                require(entry.label.length <= 256) { "apiKeys[].label must be at most 256 characters" }
+            }
+        }
         when (p) {
             is ProviderSetting.OpenAI -> {
-                url(p.baseUrl); key("apiKey", p.apiKey)
+                url(p.baseUrl); key("apiKey", p.apiKey); apiKeyPool(p.apiKeys)
                 path("chatCompletionsPath", p.chatCompletionsPath); path("responsesPath", p.responsesPath)
             }
             is ProviderSetting.Google -> {
-                url(p.baseUrl); key("apiKey", p.apiKey); key("privateKey", p.privateKey)
+                url(p.baseUrl); key("apiKey", p.apiKey); apiKeyPool(p.apiKeys); key("privateKey", p.privateKey)
                 text("serviceAccountEmail", p.serviceAccountEmail); text("location", p.location); text("projectId", p.projectId)
+                check("serviceAccounts") {
+                    require(p.serviceAccounts.size <= 200) { "serviceAccounts must have at most 200 entries" }
+                    p.serviceAccounts.forEach { acc ->
+                        require(acc.privateKey.length <= 64 * 1024) { "serviceAccounts[].privateKey must be at most 65536 characters" }
+                        require(acc.projectId.length <= 1024 && acc.serviceAccountEmail.length <= 1024) {
+                            "serviceAccounts[] projectId/serviceAccountEmail must be at most 1024 characters"
+                        }
+                        require(acc.location.length <= 256 && acc.label.length <= 256) {
+                            "serviceAccounts[] location/label must be at most 256 characters"
+                        }
+                    }
+                }
             }
-            is ProviderSetting.Claude -> { url(p.baseUrl); key("apiKey", p.apiKey) }
+            is ProviderSetting.Claude -> { url(p.baseUrl); key("apiKey", p.apiKey); apiKeyPool(p.apiKeys) }
             else -> Unit
         }
     }
@@ -290,18 +394,26 @@ object SettingsCollectionInterpreter {
     private fun <T> objectJson(serializer: KSerializer<T>, item: T): JsonObject =
         strictJson.encodeToJsonElement(serializer, item).jsonObject
 
+    /**
+     * [encode] / [decode] / [normalize]：对象在创造助手眼里的形状与内部形状不同时（模式注入、世界书、助手），
+     * 由外观层 [LegacyViews] 互转；缺省是按 [serializer] 直接编解码。
+     */
     private fun <T> patchList(
         initial: List<T>, serializer: KSerializer<T>, allowed: Set<String>, patch: CollectionPatch,
-        create: (Uuid) -> T, validate: (T) -> Unit,
+        create: (String) -> T,
+        encode: (T) -> JsonObject = { objectJson(serializer, it) },
+        decode: (T, JsonObject) -> T = { _, json -> strictJson.decodeFromJsonElement(serializer, json) },
+        normalize: (JsonObject) -> JsonObject = { LenientEnums.normalize(it, serializer.descriptor).jsonObject },
+        validate: (T) -> Unit,
     ): List<T> {
-        fun id(item: T) = objectJson(serializer, item).getValue("id").jsonPrimitive.content
+        fun id(item: T) = encode(item).getValue("id").jsonPrimitive.content
         fun merge(current: T, fields: Map<String, JsonElement>): T {
             val unknown = fields.keys.filterNot { it in allowed }
             if (unknown.isNotEmpty()) rejectForbidden("Field(s) $unknown cannot be set; writable fields: ${allowed.sorted()}")
             require(fields.size <= 64 && fields.toString().length <= 256 * 1024) { "At most 64 fields and 256 KiB per change" }
-            val json = LenientEnums.normalize(JsonObject(objectJson(serializer, current) + fields), serializer.descriptor)
+            val json = normalize(JsonObject(encode(current) + fields))
             val decoded = try {
-                strictJson.decodeFromJsonElement(serializer, json)
+                decode(current, json)
             } catch (e: kotlinx.serialization.SerializationException) {
                 rejectInvalid("Field value has the wrong shape: ${describeSerializationError(e)}")
             }
@@ -310,7 +422,7 @@ object SettingsCollectionInterpreter {
         return when (patch) {
             is CollectionPatch.Create -> {
                 require(initial.none { id(it) == patch.id }) { "Object already exists" }
-                val created = merge(create(Uuid.parse(patch.id)), patch.fields)
+                val created = merge(create(patch.id), patch.fields)
                 initial + created
             }
             is CollectionPatch.PatchFields -> {
@@ -330,8 +442,8 @@ object SettingsCollectionInterpreter {
                 patch.orderedIds.map(byId::getValue)
             }
             is CollectionPatch.Batch -> {
-                require(patch.patches.size in 1..64 && patch.patches.none { it is CollectionPatch.Batch }) { "Invalid nested batch" }
-                patch.patches.fold(initial) { current, child -> patchList(current, serializer, allowed, child, create, validate) }
+                require(patch.patches.size in 1..MAX_BATCH_PATCHES && patch.patches.none { it is CollectionPatch.Batch }) { "Invalid nested batch" }
+                patch.patches.fold(initial) { current, child -> patchList(current, serializer, allowed, child, create, encode, decode, normalize, validate) }
             }
         }
     }
@@ -366,41 +478,13 @@ object SettingsCollectionInterpreter {
         }
     }
 
-    private fun validateMode(m: PromptInjection.ModeInjection) {
-        require(m.name.length <= 1024) { "name must be at most 1024 characters" }
-        require(m.content.length <= 64 * 1024) { "content must be at most 65536 characters" }
-        require(m.injectDepth in 0..1000) { "injectDepth must be 0..1000" }
-        require(m.priority in -100_000..100_000) { "priority must be -100000..100000" }
-        require(m.role == MessageRole.USER || m.role == MessageRole.ASSISTANT) { "role must be user or assistant" }
-    }
-
-    private fun validateLorebook(book: Lorebook) {
-        require(book.name.length <= 1024) { "name must be at most 1024 characters" }
-        require(book.description.length <= 8192) { "description must be at most 8192 characters" }
-        require(book.entries.size <= 1000) { "a lorebook holds at most 1000 entries" }
-        require(book.entries.map { it.id }.distinct().size == book.entries.size) { "entries[].id must be unique" }
-        book.entries.forEachIndexed { i, e ->
-            require(e.content.length <= 64 * 1024) { "entries[$i].content must be at most 65536 characters" }
-            require(e.name.length <= 1024) { "entries[$i].name must be at most 1024 characters" }
-            require(e.keywords.size <= 128) { "entries[$i].keywords holds at most 128 keywords" }
-            require(e.injectDepth in 0..1000) { "entries[$i].injectDepth must be 0..1000" }
-            require(e.scanDepth in 0..1000) { "entries[$i].scanDepth must be 0..1000" }
-            require(e.role == MessageRole.USER || e.role == MessageRole.ASSISTANT) { "entries[$i].role must be user or assistant" }
-            require(e.keywords.all { it.length <= 4096 }) { "entries[$i].keywords: each keyword at most 4096 characters" }
-        }
-    }
-
     // 保留助手（创造助手）不能被直接指定为目标（SettingsDomainAdapter.objectBaseline / Bind 拒绝）；
     // 这里不再拒绝，删除快捷消息/世界书/模式注入/标签时可以顺带解除它上面的绑定。
     private fun validateAssistant(a: Assistant, s: Settings, authorizedImageUris: Set<String>) {
         require(a.name.length <= 1024) { "name must be at most 1024 characters" }
-        // 有分块时 systemPrompt 是合并结果（多出块间空行），只限制分块总长
-        require(a.promptSections.isNotEmpty() || a.systemPrompt.length <= 64 * 1024) { "systemPrompt must be at most 65536 characters" }
-        require(a.promptSections.size <= 64) { "at most 64 promptSections" }
-        require(a.promptSections.map { it.id }.distinct().size == a.promptSections.size) { "promptSections[].id must be unique" }
-        require(a.promptSections.all { it.title.length <= 1024 }) { "promptSections[].title must be at most 1024 characters" }
-        require(a.promptSections.sumOf { it.content.length } <= 64 * 1024) {
-            "promptSections content must be at most 65536 characters in total"
+        require(a.mainPromptText.length <= 64 * 1024) { "the main prompt entry must be at most 65536 characters" }
+        require(a.promptPreset.layout().entries.size <= NativeCollections.MAX_PRESET_ENTRIES) {
+            "an assistant's prompt holds at most ${NativeCollections.MAX_PRESET_ENTRIES} entries"
         }
         require(a.messageTemplate.length <= 64 * 1024) { "messageTemplate must be at most 65536 characters" }
         require(a.contextMessageLimit in 0..100_000) { "contextMessageLimit must be 0..100000" }
@@ -408,11 +492,18 @@ object SettingsCollectionInterpreter {
         require(a.maxTokens == null || a.maxTokens in 1..1_000_000) { "maxTokens must be null or 1..1000000" }
         require(a.temperature == null || a.temperature.isFinite() && a.temperature in 0f..2f) { "temperature must be null or 0..2" }
         require(a.topP == null || a.topP.isFinite() && a.topP in 0f..1f) { "topP must be null or 0..1" }
+        require(a.topK == null || a.topK in 1..100_000) { "topK must be null or 1..100000" }
+        require(a.frequencyPenalty == null || a.frequencyPenalty.isFinite() && a.frequencyPenalty in -2f..2f) { "frequencyPenalty must be null or -2..2" }
+        require(a.presencePenalty == null || a.presencePenalty.isFinite() && a.presencePenalty in -2f..2f) { "presencePenalty must be null or -2..2" }
+        require(a.repetitionPenalty == null || a.repetitionPenalty.isFinite() && a.repetitionPenalty in 0.01f..3f) { "repetitionPenalty must be null or 0.01..3" }
+        require(a.minP == null || a.minP.isFinite() && a.minP in 0f..1f) { "minP must be null or 0..1" }
+        require(a.topA == null || a.topA.isFinite() && a.topA in 0f..1f) { "topA must be null or 0..1" }
+        require(a.seed == null || a.seed >= 0) { "seed must be null or 0 or more" }
         require(a.backgroundOpacity.isFinite() && a.backgroundOpacity in 0f..1f) { "backgroundOpacity must be 0..1" }
         missingRefs("tags", a.tags, s.assistantTags.map { it.id }, "ASSISTANT_TAG")
         missingRefs("quickMessageIds", a.quickMessageIds, s.quickMessages.map { it.id }, "QUICK_MESSAGE")
         missingRefs("lorebookIds", a.lorebookIds, s.lorebooks.map { it.id }, "LOREBOOK")
-        missingRefs("modeInjectionIds", a.modeInjectionIds, s.modeInjections.map { it.id }, "MODE_INJECTION")
+        missingRefs("modeInjectionIds", a.libraryEntryIds, s.promptLibraryIds().toList(), "MODE_INJECTION")
         missingRefs("mcpServers", a.mcpServers, s.mcpServers.map { it.id }, "MCP_SERVER")
         require(a.chatModelId == null || s.providers.flatMap { it.models }.any { it.id == a.chatModelId && it.type == ModelType.CHAT }) {
             "chatModelId '${a.chatModelId}' is not a CHAT model id (list MODEL_DEFINITION for ids; null = use the default chat model)"
@@ -423,11 +514,6 @@ object SettingsCollectionInterpreter {
             msg.modelSnapshot == null && msg.lastUsage == null && msg.stepCount == null &&
             msg.generationTimeMs == null && !msg.isContextCheckpoint &&
             msg.finishedAt == null && msg.role != MessageRole.TOOL }) { "presetMessages must be plain text messages (role USER, ASSISTANT or SYSTEM)" }
-        require(a.regexes.size <= 128) { "at most 128 regexes" }
-        require(a.regexes.map { it.id }.distinct().size == a.regexes.size) { "regexes[].id must be unique" }
-        require(a.regexes.all { it.name.length <= 1024 && it.findRegex.length <= 4096 && it.replaceString.length <= 64 * 1024 }) {
-            "regexes: name <= 1024, findRegex <= 4096, replaceString <= 65536 characters"
-        }
         // Managed image IDs are resolved by the native planner, never arbitrary host URIs.
         val before = s.assistants.firstOrNull { it.id == a.id }
         require(a.avatar !is Avatar.Image || a.avatar == before?.avatar || a.avatar.url in authorizedImageUris) {
@@ -456,6 +542,11 @@ object SettingsCollectionInterpreter {
         require(m.modelId.isNotBlank() && m.modelId.length <= 1024) { "modelId (the provider's model name) is required, at most 1024 characters" }
         require(m.contextLength in 1..MAX_MODEL_CONTEXT_LENGTH) { "contextLength must be 1..$MAX_MODEL_CONTEXT_LENGTH tokens" }
         require(m.displayName.length <= 1024) { "displayName must be at most 1024 characters" }
+        m.pricing?.let { p ->
+            require(listOfNotNull(p.input, p.output, p.cachedInput).all { it.isFinite() && it in 0.0..1_000_000.0 }) {
+                "pricing values are per million tokens and must be 0..1000000"
+            }
+        }
         require(m.inputModalities.isNotEmpty() && m.outputModalities.isNotEmpty()) { "inputModalities and outputModalities must not be empty" }
         require(m.inputModalities.distinct().size == m.inputModalities.size && m.outputModalities.distinct().size == m.outputModalities.size) {
             "modalities must not repeat"

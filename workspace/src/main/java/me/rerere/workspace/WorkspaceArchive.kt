@@ -53,19 +53,42 @@ class WorkspaceArchiveExporter(
             // archive base: 所有选中项的最长公共父路径 ("" 表示存储区根)
             val base = items.map { it.rel.substringBeforeLast('/', "") }
                 .reduce { acc, parent -> commonParentPath(acc, parent) }
-
-            val stats = Stats()
-            val visitedDirs = HashSet<String>()
-            ZipOutputStream(BufferedOutputStream(raw)).use { zip ->
+            return writeArchive(raw) { zip, visitedDirs, stats ->
                 for (item in items) {
                     writeTree(item.file, item.rel, base, zip, visitedDirs, stats)
                 }
             }
-            return WorkspaceArchiveResult(
-                fileCount = stats.files,
-                directoryCount = stats.directories,
-            )
         }
+    }
+
+    /**
+     * 把整个 [dir] 打包成一个名为 [name] 的顶层文件夹 (空目录也保留).
+     * 用于整个存储根 (如文件库里的工作区文件夹): [exportZip] 不接受根本身, 且顶层名要用调用方给的名字.
+     */
+    suspend fun exportFolderZip(
+        dir: File,
+        name: String,
+        outputStream: OutputStream,
+    ): WorkspaceArchiveResult {
+        outputStream.use { raw ->
+            coroutineContext.ensureActive()
+            require(dir.isDirectory) { "Not a directory: $dir" }
+            return writeArchive(raw) { zip, visitedDirs, stats ->
+                writeTree(dir.canonicalFile, name, "", zip, visitedDirs, stats)
+            }
+        }
+    }
+
+    private suspend fun writeArchive(
+        raw: OutputStream,
+        write: suspend (ZipOutputStream, MutableSet<String>, Stats) -> Unit,
+    ): WorkspaceArchiveResult {
+        val stats = Stats()
+        ZipOutputStream(BufferedOutputStream(raw)).use { zip -> write(zip, HashSet(), stats) }
+        return WorkspaceArchiveResult(
+            fileCount = stats.files,
+            directoryCount = stats.directories,
+        )
     }
 
 

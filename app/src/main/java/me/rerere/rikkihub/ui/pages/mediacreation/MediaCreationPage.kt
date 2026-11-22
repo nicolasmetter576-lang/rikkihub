@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.mediacreation
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.EnterExitState
@@ -91,6 +92,7 @@ import me.rerere.rikkihub.ui.components.ui.Tooltip
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 /**
  * 一个媒体创作会话：一条时间线，最新的记录在最下面，紧挨着输入区，上一轮的产出可以直接放回输入区继续用。
@@ -178,6 +180,7 @@ fun MediaCreationPage(id: String) {
                         }
                     }
                 },
+                expandedHeight = AppTopBarHeight,
             )
         },
     ) { innerPadding ->
@@ -304,7 +307,7 @@ private fun MediaCreationTimeline(
         state = listState,
         reverseLayout = true,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(
@@ -394,7 +397,7 @@ private fun TimelineEmpty(
             )
             Button(
                 onClick = onOpenMediaSettings,
-                shapes = ButtonDefaults.shapes(),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(R.string.media_creation_page_go_configure))
             }
@@ -439,7 +442,6 @@ private fun MediaCreationSelectionBar(
             }
             TextButton(
                 onClick = { if (allSelected) vm.clearSelection() else vm.selectAll() },
-                shapes = ButtonDefaults.shapes(),
             ) {
                 Text(
                     stringResource(
@@ -460,8 +462,7 @@ private fun MediaCreationSelectionBar(
                     }
                 },
                 enabled = selectedCount > 0 && !saving,
-                shapes = ButtonDefaults.shapes(),
-                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding
             ) {
                 Icon(HugeIcons.Download01, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))
@@ -472,12 +473,12 @@ private fun MediaCreationSelectionBar(
             Button(
                 onClick = onDelete,
                 enabled = selectedCount > 0 && !saving,
-                shapes = ButtonDefaults.shapes(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError,
                 ),
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Icon(HugeIcons.Delete01, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.width(ButtonDefaults.IconSpacing))

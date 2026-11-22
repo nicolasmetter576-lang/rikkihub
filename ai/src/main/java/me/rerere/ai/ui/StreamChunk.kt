@@ -5,6 +5,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageAccumulator
+import me.rerere.ai.core.UsageUpdate
 
 /**
  * Provider-independent streaming events.
@@ -187,7 +189,13 @@ sealed class StreamChunk {
 
     @Serializable
     @SerialName("usage")
-    data class Usage(val usage: TokenUsage) : StreamChunk()
+    data class Usage(@SerialName("usage") val update: UsageUpdate) : StreamChunk() {
+        constructor(usage: TokenUsage) : this(UsageUpdate(usage))
+
+        /** Legacy single-frame projection. Collectors must accumulate [update], not this value. */
+        val usage: TokenUsage
+            get() = UsageAccumulator().apply { update(this@Usage.update) }.snapshot ?: TokenUsage()
+    }
 
     @Serializable
     @SerialName("finish")

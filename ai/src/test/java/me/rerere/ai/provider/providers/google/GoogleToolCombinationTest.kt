@@ -115,6 +115,7 @@ class GoogleToolCombinationTest {
                             add(functionCallPart)
                         })
                     })
+                    put("finishReason", "STOP")
                 })
             }
         }))

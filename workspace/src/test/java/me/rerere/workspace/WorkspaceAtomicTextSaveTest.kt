@@ -20,7 +20,7 @@ class WorkspaceAtomicTextSaveTest {
     @Test fun failedExclusiveTempOpenCannotTouchExistingFileOrUnownedTemp() {
         val root = tmp.newFolder()
         val file = File(root, "note.md").apply { writeText("original") }
-        val unrelated = File(root, ".l2s.edit.unrelated").apply { writeText("other owner") }
+        val unrelated = File(root, ".rikkihub-tmp-unrelated").apply { writeText("other owner") }
         val fs = WorkspaceFileSystem()
         val snapshot = fs.readTextSnapshot(root, file.name)
         fs.textSaveIo = object : WorkspaceTextSaveIo() {
@@ -65,7 +65,7 @@ class WorkspaceAtomicTextSaveTest {
     @Test fun ordinaryMoveFailureKeepsOldFileAndDoesNotDeleteUnrelatedTemps() {
         val root = tmp.newFolder()
         val file = File(root, "note.md").apply { writeText("original") }
-        val unrelated = File(root, ".l2s.edit.other").apply { writeText("keep") }
+        val unrelated = File(root, ".rikkihub-tmp-other").apply { writeText("keep") }
         val fs = WorkspaceFileSystem()
         val snapshot = fs.readTextSnapshot(root, file.name)
         fs.textSaveIo = object : WorkspaceTextSaveIo() {
@@ -89,7 +89,7 @@ class WorkspaceAtomicTextSaveTest {
             }
             assertThrows(WorkspaceFileRevisionConflictException::class.java) { fs.writeTextWithRevision(root, file.name, "new", snapshot.revision) }
             if (delete) assertFalse(file.exists()) else assertEquals("external", file.readText())
-            assertTrue(root.listFiles()!!.none { it.name.startsWith(".l2s.edit.") })
+            assertTrue(root.listFiles()!!.none { it.name.startsWith(".rikkihub-tmp-") })
         }
     }
 
@@ -129,7 +129,7 @@ class WorkspaceAtomicTextSaveTest {
             override fun move(temp: Path, target: Path) {
                 assertTrue(forced)
                 assertEquals(target.parent, temp.parent)
-                assertTrue(temp.fileName.toString().startsWith(".l2s.edit."))
+                assertTrue(temp.fileName.toString().startsWith(".rikkihub-tmp-"))
                 super.move(temp, target)
             }
         }

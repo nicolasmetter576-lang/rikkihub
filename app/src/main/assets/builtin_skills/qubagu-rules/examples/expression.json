@@ -1,0 +1,283 @@
+{
+  "type": "rikkihub.qubagu.rules",
+  "version": 1,
+  "packs": [
+    {
+      "id": "expression",
+      "name": "老套神态与生理反应",
+      "description": "眼神地震/骤缩、攥拳泛白、吞咽口水、后背电流、倒吸凉气、心脏漏拍、下颌线绷紧、血液倒流、眼底闪过复杂情绪",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "phys_pupil_quake",
+          "name": "眼神地震/骤缩",
+          "sample": "瞳孔猛地一缩 / 瞳孔地震",
+          "find": "瞳孔(?:骤然|猛地|剧烈|瞬间|微微)?(?:一缩|收缩|骤缩|地震|放大|紧缩)",
+          "regex": true,
+          "replacements": [
+            "神色微怔",
+            "目光微动",
+            "怔了怔",
+            "眼神微敛",
+            "眼底掠过一丝异色",
+            "视线顿了顿",
+            "愣了一瞬",
+            "神情微变",
+            "眸光微闪"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_knuckles_white",
+          "name": "攥拳泛白/掐掌心",
+          "sample": "攥得指节泛白 / 指甲深深嵌进掌心",
+          "find": "(?:攥得|握得)?指节(?:有些|微微|寸寸|泛白|发白|发青)|指甲(?:深深|死死)?(?:嵌进|掐入|刺入)(?:了)?(?:掌心|肉里)",
+          "regex": true,
+          "replacements": [
+            "手指紧攥",
+            "指尖收紧",
+            "暗暗握拳",
+            "手背绷紧",
+            "五指悄然收拢",
+            "用力握了握拳",
+            "指腹用力抵着掌心",
+            "手指微微发紧"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_throat_roll",
+          "name": "吞咽与滚动套话",
+          "sample": "上下艰难地滚动了一下",
+          "find": "喉结(?:上下|艰难地|不自觉地|微微|轻轻)?滚动(?:了一下|着)?|(?:艰难地|暗暗)?咽了(?:一口|口)(?:唾沫|口水)",
+          "regex": true,
+          "replacements": [
+            "沉默片刻",
+            "顿了顿",
+            "欲言又止",
+            "一时无言",
+            "把话咽了回去",
+            "抿了抿唇没有出声",
+            "气息微沉",
+            "停顿了片刻"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_spine_chill",
+          "name": "后背发凉/电流窜过",
+          "sample": "一股电流顺着脊背窜上天灵盖",
+          "find": "一股(?:寒意|电流|战栗|酥麻|凉意)(?:顺着|从)?(?:脊背|脊椎|尾椎骨)(?:一路)?(?:窜上|爬上|蔓延|直冲)(?:天灵盖|头皮|全身|四肢百骸|后脑勺)",
+          "regex": true,
+          "replacements": [
+            "心头一凛",
+            "背后发凉",
+            "浑身一震",
+            "心弦骤紧",
+            "后背隐隐发麻",
+            "猛地打了个激灵",
+            "身体微僵",
+            "头皮有些发麻"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_breath_hitch",
+          "name": "呼吸一滞/倒吸凉气",
+          "sample": "呼吸猛地一滞 / 倒吸一口凉气",
+          "find": "呼吸(?:猛地|骤然|瞬间|微微)?一滞|倒吸(?:了)?一口(?:凉气|冷气)",
+          "regex": true,
+          "replacements": [
+            "神情微顿",
+            "动作微顿",
+            "屏住呼吸",
+            "微微一怔",
+            "气息乱了一瞬",
+            "胸口微闷",
+            "呼吸顿了顿",
+            "怔在原地"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_stomach_weightless",
+          "name": "胃部失重/心脏漏拍",
+          "sample": "胃袋一阵失重 / 心脏漏跳了一拍",
+          "find": "胃(?:袋|部|里)一阵(?:失重|翻江倒海|痉挛|抽搐)|心脏(?:猛地|仿佛|骤然)?(?:漏跳了一拍|停跳了一拍|狠狠一缩|被一只无形的手攥紧)",
+          "regex": true,
+          "replacements": [
+            "心绪微乱",
+            "心头一跳",
+            "心里咯噔一下",
+            "心神微晃",
+            "胸口发紧",
+            "心跳快了几分",
+            "心下微沉",
+            "心头莫名发慌"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_eyes_complex_emotion",
+          "name": "眼底闪过一抹复杂情绪",
+          "sample": "眼底划过一抹复杂神色",
+          "find": "(?:眼底|眸底|眼中|眼眸深处)(?:快速|悄然|瞬间)?(?:闪过|划过|掠过)(?:一抹|一丝)?(?:不易察觉的|转瞬即逝的|难以言喻的)?(?:复杂|异样|暗芒|情绪|神色|痛色)",
+          "regex": true,
+          "replacements": [
+            "神色有些微妙",
+            "目光闪了闪",
+            "垂眸掩去情绪",
+            "眼神暗了几分",
+            "脸色微变",
+            "神情有些难辨",
+            "目光沉了沉",
+            "视线微微偏移"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_jawline_tense",
+          "name": "下颌线紧绷/后槽牙咬碎",
+          "sample": "下颌线绷得笔直 / 咬肌微微鼓起",
+          "find": "下颌线(?:瞬间|骤然|微微)?(?:绷紧|绷得笔直|紧绷如刀削)|咬肌(?:微微)?(?:鼓起|紧绷)|后槽牙(?:几乎)?咬得(?:咯咯作响|发酸)",
+          "regex": true,
+          "replacements": [
+            "神情冷硬",
+            "抿紧了嘴角",
+            "脸色沉了下来",
+            "侧脸线条有些冷硬",
+            "闭紧嘴没有吭声",
+            "忍着没有发作",
+            "神色愈发克制"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_blood_freeze",
+          "name": "全身血液倒流/僵在原地",
+          "sample": "全身的血液在这一刻倒流",
+          "find": "(?:全身的|浑身的|体内的)?血液(?:仿佛|瞬间|在这一刻)?(?:倒流|凝固|冻结|冲上头顶)|四肢百骸(?:都)?(?:泛起寒意|僵硬如铁)",
+          "regex": true,
+          "replacements": [
+            "浑身发冷",
+            "手脚有些冰凉",
+            "整个人僵在原地",
+            "脑子里嗡了一声",
+            "半晌没回过神",
+            "指尖一阵发凉",
+            "脸色霎时白了几分"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_eyelash_butterfly",
+          "name": "睫毛如蝶翼轻颤",
+          "sample": "纤长的睫毛像受惊的蝶翼般微微颤抖",
+          "find": "(?:纤长的|浓密的|长长的)?(?:睫毛|眼睫)(?:像|如同|宛如|好似)?(?:受惊的|脆弱的)?(?:蝶翼|蝴蝶翅膀)般?(?:微微|轻轻|剧烈)?(?:颤抖|颤动|轻颤|扇动)",
+          "regex": true,
+          "replacements": [
+            "眼睫轻轻颤了颤",
+            "垂下眼帘",
+            "眨了眨眼",
+            "眼皮微跳",
+            "视线微微低垂",
+            "不自然地移开目光",
+            "轻眨了一下眼"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_ears_bleed_red",
+          "name": "耳根红得滴血",
+          "sample": "耳根瞬间红得像要滴出血来",
+          "find": "(?:耳根|耳尖|耳垂)(?:瞬间|以肉眼可见的速度|腾地)?红得?(?:仿佛|像是|快要)?(?:能滴出血来|要滴血|烧起来|熟透的虾子)",
+          "regex": true,
+          "replacements": [
+            "耳根微微发烫",
+            "耳尖泛起一抹薄红",
+            "脸颊有些发热",
+            "耳朵悄悄红了",
+            "不好意思地偏过头",
+            "脸上有些挂不住"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_en_shiver_spine",
+          "name": "英文生理套话 (Shivers down spine)",
+          "sample": "shivers down her spine / breath hitches",
+          "find": "/\\b(?:sent |sending )?shivers? (?:running )?(?:down|up) (?:his|her|their|your|my) spine\\b|\\b(?:his|her|their|your) breath hitch(?:es|ed)\\b|\\bknuckles turning white\\b/i",
+          "regex": true,
+          "replacements": [
+            "steadied",
+            "tensed",
+            "paused",
+            "froze briefly",
+            "held still"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    }
+  ]
+}

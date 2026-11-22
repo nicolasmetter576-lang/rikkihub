@@ -1,5 +1,7 @@
 package me.rerere.workspace
 
+import android.system.Os
+import android.system.OsConstants
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -68,7 +70,7 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
     try {
         val finished = waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
         if (!finished) {
-            destroyForcibly()
+            killForcibly()
         }
         stdinWriter?.join(1_000)
         stdout.join(1_000)
@@ -82,13 +84,25 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
         )
     } catch (e: InterruptedException) {
         // 调用方线程被中断（如协程取消时的 runInterruptible），杀掉进程避免命令继续执行
-        destroyForcibly()
+        killForcibly()
         // 进程被杀后 stdout/stderr 会关闭, 这里 join 回收两个采集线程, 避免每次取消泄漏一对线程
         stdinWriter?.join(1_000)
         stdout.join(1_000)
         stderr.join(1_000)
         throw e
     }
+}
+
+/**
+ * Kills the process for sure. On Android `destroyForcibly()` is plain `destroy()`, a single SIGTERM,
+ * which PRoot ignores; there the pid (no public accessor before API 36) gets a SIGKILL, and PRoot's
+ * `--kill-on-exit` takes its tracees down with it.
+ */
+internal fun Process.killForcibly() {
+    destroyForcibly()
+    if (!isAlive) return
+    val pid = runCatching { javaClass.getDeclaredField("pid").apply { isAccessible = true }.getInt(this) }.getOrNull() ?: return
+    runCatching { Os.kill(pid, OsConstants.SIGKILL) }
 }
 
 private class StreamWriter(

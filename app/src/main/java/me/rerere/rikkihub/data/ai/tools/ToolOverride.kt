@@ -87,7 +87,7 @@ fun Tool.applyBuiltinOverride(
         name = resolvedName,
         description = interpolateToolText(descriptionSource, placeholders),
         systemPrompt = { model, messages ->
-            val original = originalSystemPrompt(model, messages)
+            val original = interpolateToolText(originalSystemPrompt(model, messages), placeholders)
             val custom = customPrompt?.let { interpolateToolText(it, placeholders) }
             when {
                 custom.isNullOrBlank() -> original

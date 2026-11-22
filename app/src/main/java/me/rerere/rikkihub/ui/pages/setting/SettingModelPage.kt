@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,19 +14,17 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,22 +49,22 @@ import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun SettingModelPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = CustomColors.topBarColors.containerColor,
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.setting_model_page_title)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         bottomBar = {
@@ -85,7 +85,6 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
                 )
             }
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     ) { contentPadding ->
         HorizontalPager(
             state = pagerState,
@@ -102,8 +101,9 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
 @Composable
 private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding: PaddingValues) {
     LazyColumn(
+        state = rememberSettingSearchListState(),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = contentPadding + PaddingValues(horizontal = 16.dp),
+        contentPadding = contentPadding + PaddingValues(horizontal = AppSpacing.sm),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
@@ -171,6 +171,7 @@ private fun SuggestionSettingItem(
                     }
                 )
             },
+            searchKey = R.string.setting_model_page_enable_auto_title,
         )
         item(
             headlineContent = { Text(stringResource(R.string.setting_model_page_enable_suggestion)) },
@@ -182,6 +183,7 @@ private fun SuggestionSettingItem(
                     }
                 )
             },
+            searchKey = R.string.setting_model_page_enable_suggestion,
         )
     }
 }
@@ -237,6 +239,7 @@ private fun ModelSettingItem(
                             onUpdateReasoningLevel = onUpdateReasoningLevel,
                         )
                     },
+                    searchKey = R.string.assistant_page_thinking_budget,
                 )
             }
         }

@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.debug
 
+import me.rerere.rikkihub.data.model.mainPromptText
+import me.rerere.rikkihub.data.model.AssistantPresets
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -38,20 +40,20 @@ class AssistantRecoveryTest {
         assertEquals(listOf(first, second), missingConversationAssistants(tied, settings()))
     }
     @Test fun `invalid IDs never receive replacement identity or overwrite legitimate assistants`() = runBlocking {
-        val prior = settings(Assistant(id = first, systemPrompt = "keep", name = "original"))
+        val prior = settings(Assistant(id = first, promptPreset = AssistantPresets.withSystemPrompt("keep"), name = "original"))
         var stored = prior
         val count = recoverConversationAssistants(assistantRecoveryScan(listOf(ConversationAssistantCount("invalid", 4))),
             { fn -> stored = fn(stored) }, { "Recovered $it" })
         assertEquals(0, count); assertSame(prior, stored)
     }
     @Test fun `fresh settings are merged after an asynchronous scan and originals remain intact`() = runBlocking {
-        val original = Assistant(id = first, name = "edited while scanning", systemPrompt = "secret", enabledSkills = setOf("skill"))
+        val original = Assistant(id = first, name = "edited while scanning", promptPreset = AssistantPresets.withSystemPrompt("secret"), enabledSkills = setOf("skill"))
         var stored = settings(original).copy(sponsorAlertDismissedAt = 123)
         val count = recoverConversationAssistants(scan(), { fn -> stored = fn(stored) }, { "Recovered $it" })
         assertEquals(1, count); assertSame(original, stored.assistants[0])
         assertEquals(123, stored.sponsorAlertDismissedAt); assertEquals(second, stored.assistants[1].id)
         assertEquals("Recovered 1", stored.assistants[1].name)
-        assertEquals("", stored.assistants[1].systemPrompt)
+        assertEquals("", stored.assistants[1].mainPromptText)
         assertFalse(stored.assistants[1].enableMemory); assertNull(stored.assistants[1].workspaceId)
     }
     @Test fun `two concurrent rescues under the real update contract do not create duplicate IDs`() = runBlocking {

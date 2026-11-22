@@ -29,18 +29,20 @@ import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
+import me.rerere.rikkihub.data.ai.prompts.DEFAULT_MESSAGE_TITLE_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.ui.components.ai.ReasoningButton
 import me.rerere.rikkihub.ui.components.ui.CardGroup
 import me.rerere.rikkihub.utils.plus
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 internal fun PromptSettingsPage(settings: Settings, vm: SettingVM, contentPadding: PaddingValues) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = contentPadding + PaddingValues(horizontal = 16.dp),
+        contentPadding = contentPadding + PaddingValues(horizontal = AppSpacing.sm),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
@@ -63,6 +65,16 @@ internal fun PromptSettingsPage(settings: Settings, vm: SettingVM, contentPaddin
                 onPromptChange = { vm.updateSettings { latest -> latest.copy(titlePrompt = it) } },
                 onResetPrompt = { vm.updateSettings { latest -> latest.copy(titlePrompt = DEFAULT_TITLE_PROMPT) } },
                 defaultPrompt = DEFAULT_TITLE_PROMPT,
+            )
+        }
+        item {
+            PromptSettingItem(
+                title = stringResource(R.string.setting_model_page_prompt_message_title),
+                promptDescription = stringResource(R.string.setting_model_page_message_title_prompt_desc),
+                promptValue = settings.messageTitlePrompt,
+                onPromptChange = { vm.updateSettings { latest -> latest.copy(messageTitlePrompt = it) } },
+                onResetPrompt = { vm.updateSettings { latest -> latest.copy(messageTitlePrompt = DEFAULT_MESSAGE_TITLE_PROMPT) } },
+                defaultPrompt = DEFAULT_MESSAGE_TITLE_PROMPT,
             )
         }
         item {

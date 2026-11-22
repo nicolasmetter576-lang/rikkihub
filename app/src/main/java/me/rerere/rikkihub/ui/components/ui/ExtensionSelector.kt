@@ -1,12 +1,17 @@
 package me.rerere.rikkihub.ui.components.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,11 +36,18 @@ import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkihub.ui.components.ai.LorebooksContent
-import me.rerere.rikkihub.ui.components.ai.ModeInjectionsContent
+import me.rerere.rikkihub.ui.components.ai.PromptLibraryContent
 import me.rerere.rikkihub.ui.components.ai.QuickMessagesContent
 import me.rerere.rikkihub.ui.components.ai.SkillsContent
 import org.koin.compose.koinInject
 
+
+private enum class ExtensionTab(@param:StringRes val labelRes: Int) {
+    QUICK_MESSAGES(R.string.extension_selector_tab_quick_messages),
+    MODE_INJECTIONS(R.string.extension_selector_tab_mode_injections),
+    LOREBOOKS(R.string.extension_selector_tab_lorebooks),
+    SKILLS(R.string.extension_selector_tab_skills),
+}
 
 @Composable
 fun ExtensionSelector(
@@ -63,7 +75,7 @@ fun ExtensionSelector(
     val selectedModeInjectionIds = if (useConversationInjections) {
         conversation.modeInjectionIds
     } else {
-        assistant.modeInjectionIds
+        assistant.libraryEntryIds
     }
     val selectedLorebookIds = if (useConversationInjections) {
         conversation.lorebookIds
@@ -71,7 +83,20 @@ fun ExtensionSelector(
         assistant.lorebookIds
     }
 
-    val pagerState = rememberPagerState { 4 }
+    val isCliSession = conversation?.cliSession != null
+    val tabs = remember(isCliSession) {
+        if (isCliSession) {
+            listOf(ExtensionTab.QUICK_MESSAGES, ExtensionTab.MODE_INJECTIONS, ExtensionTab.SKILLS)
+        } else {
+            ExtensionTab.entries
+        }
+    }
+    val pagerState = rememberPagerState(pageCount = { tabs.size })
+    LaunchedEffect(tabs.size) {
+        if (pagerState.currentPage >= tabs.size) {
+            pagerState.scrollToPage(0)
+        }
+    }
     val scope = rememberCoroutineScope()
 
     Column(
@@ -83,58 +108,21 @@ fun ExtensionSelector(
             modifier = Modifier.fillMaxWidth(),
         ) {
             val tabTextStyle = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp)
-            Tab(
-                selected = pagerState.currentPage == 0,
-                onClick = {
-                    scope.launch { pagerState.animateScrollToPage(0) }
-                },
-                text = {
-                    Text(
-                        stringResource(R.string.extension_selector_tab_quick_messages),
-                        style = tabTextStyle,
-                        maxLines = 1,
-                    )
-                }
-            )
-            Tab(
-                selected = pagerState.currentPage == 1,
-                onClick = {
-                    scope.launch { pagerState.animateScrollToPage(1) }
-                },
-                text = {
-                    Text(
-                        stringResource(R.string.extension_selector_tab_mode_injections),
-                        style = tabTextStyle,
-                        maxLines = 1,
-                    )
-                }
-            )
-            Tab(
-                selected = pagerState.currentPage == 2,
-                onClick = {
-                    scope.launch { pagerState.animateScrollToPage(2) }
-                },
-                text = {
-                    Text(
-                        stringResource(R.string.extension_selector_tab_lorebooks),
-                        style = tabTextStyle,
-                        maxLines = 1,
-                    )
-                }
-            )
-            Tab(
-                selected = pagerState.currentPage == 3,
-                onClick = {
-                    scope.launch { pagerState.animateScrollToPage(3) }
-                },
-                text = {
-                    Text(
-                        stringResource(R.string.extension_selector_tab_skills),
-                        style = tabTextStyle,
-                        maxLines = 1,
-                    )
-                }
-            )
+            tabs.forEachIndexed { index, tab ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = {
+                        scope.launch { pagerState.animateScrollToPage(index) }
+                    },
+                    text = {
+                        Text(
+                            stringResource(tab.labelRes),
+                            style = tabTextStyle,
+                            maxLines = 1,
+                        )
+                    }
+                )
+            }
         }
 
         HorizontalPager(
@@ -143,8 +131,8 @@ fun ExtensionSelector(
                 .fillMaxWidth()
                 .weight(1f)
         ) { page ->
-            when (page) {
-                0 -> {
+            when (tabs[page]) {
+                ExtensionTab.QUICK_MESSAGES -> {
                     if (settings.quickMessages.isNotEmpty()) {
                         QuickMessagesContent(
                             quickMessages = settings.quickMessages,
@@ -168,35 +156,48 @@ fun ExtensionSelector(
                     }
                 }
 
-                1 -> {
-                    if (settings.modeInjections.isNotEmpty()) {
-                        ModeInjectionsContent(
-                            modeInjections = settings.modeInjections,
-                            selectedIds = selectedModeInjectionIds,
-                            onToggle = { id, checked ->
-                                val newIds = if (checked) {
-                                    selectedModeInjectionIds + id
-                                } else {
-                                    selectedModeInjectionIds - id
-                                }
-                                if (useConversationInjections) {
-                                    onUpdateConversation(conversation.copy(modeInjectionIds = newIds))
-                                } else {
-                                    onUpdate(assistant.copy(modeInjectionIds = newIds))
-                                }
-                            },
-                            onManage = { onNavigateToPrompts(0) },
-                        )
-                    } else {
-                        ExtensionEmptyState(
-                            message = stringResource(R.string.extension_selector_mode_injections_empty),
-                            buttonText = stringResource(R.string.extension_selector_go_to_extensions),
-                            onAction = { onNavigateToPrompts(0) },
-                        )
+                ExtensionTab.MODE_INJECTIONS -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (isCliSession) {
+                            Text(
+                                text = stringResource(R.string.cli_mode_injections_scope_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
+                        if (settings.promptLibrary.isNotEmpty()) {
+                            PromptLibraryContent(
+                                entries = settings.promptLibrary,
+                                selectedIds = selectedModeInjectionIds,
+                                onToggle = { id, checked ->
+                                    val newIds = if (checked) {
+                                        selectedModeInjectionIds + id
+                                    } else {
+                                        selectedModeInjectionIds - id
+                                    }
+                                    if (useConversationInjections) {
+                                        onUpdateConversation(conversation.copy(modeInjectionIds = newIds))
+                                    } else {
+                                        onUpdate(assistant.copy(libraryEntryIds = newIds))
+                                    }
+                                },
+                                onManage = { onNavigateToPrompts(0) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
+                            Box(modifier = Modifier.weight(1f)) {
+                                ExtensionEmptyState(
+                                    message = stringResource(R.string.extension_selector_mode_injections_empty),
+                                    buttonText = stringResource(R.string.extension_selector_go_to_extensions),
+                                    onAction = { onNavigateToPrompts(0) },
+                                )
+                            }
+                        }
                     }
                 }
 
-                2 -> {
+                ExtensionTab.LOREBOOKS -> {
                     if (settings.lorebooks.isNotEmpty()) {
                         LorebooksContent(
                             lorebooks = settings.lorebooks,
@@ -224,27 +225,49 @@ fun ExtensionSelector(
                     }
                 }
 
-                3 -> {
-                    if (skills.isNotEmpty()) {
-                        SkillsContent(
-                            skills = skills,
-                            enabledSkills = assistant.enabledSkills,
-                            onToggle = { name, checked ->
-                                val newSkills = if (checked) {
-                                    assistant.enabledSkills + name
-                                } else {
-                                    assistant.enabledSkills - name
-                                }
-                                onUpdate(assistant.copy(enabledSkills = newSkills))
-                            },
-                            onManage = onNavigateToSkills,
-                        )
-                    } else {
-                        ExtensionEmptyState(
-                            message = stringResource(R.string.extension_selector_skills_empty),
-                            buttonText = stringResource(R.string.extension_selector_go_to_skills),
-                            onAction = onNavigateToSkills,
-                        )
+                ExtensionTab.SKILLS -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (isCliSession) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.cli_skills_unsupported_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(10.dp),
+                                )
+                            }
+                        }
+                        if (skills.isNotEmpty()) {
+                            SkillsContent(
+                                skills = skills,
+                                enabledSkills = assistant.enabledSkills,
+                                onToggle = { name, checked ->
+                                    if (isCliSession) return@SkillsContent
+                                    val newSkills = if (checked) {
+                                        assistant.enabledSkills + name
+                                    } else {
+                                        assistant.enabledSkills - name
+                                    }
+                                    onUpdate(assistant.copy(enabledSkills = newSkills))
+                                },
+                                onManage = onNavigateToSkills,
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
+                            Box(modifier = Modifier.weight(1f)) {
+                                ExtensionEmptyState(
+                                    message = stringResource(R.string.extension_selector_skills_empty),
+                                    buttonText = stringResource(R.string.extension_selector_go_to_skills),
+                                    onAction = onNavigateToSkills,
+                                )
+                            }
+                        }
                     }
                 }
             }

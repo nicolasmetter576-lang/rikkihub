@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.devin
 
+import me.rerere.rikkihub.data.ai.reportUsageAccount
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -30,7 +31,7 @@ import me.rerere.ai.provider.providers.devin.DevinUsage
 import me.rerere.ai.provider.providers.devin.buildDevinMessages
 import me.rerere.ai.provider.providers.devin.mergeFrom
 import me.rerere.ai.provider.providers.devin.resolveDevinChatModelUid
-import me.rerere.ai.provider.providers.devin.toTokenUsage
+import me.rerere.ai.provider.providers.devin.toUsageUpdate
 import me.rerere.ai.ui.DevinReasoningMetadata
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
@@ -91,7 +92,8 @@ class DevinProvider(
             model = params.model.modelId,
             message = message,
             finishReason = finish?.finishReason,
-            usage = message.usage,
+            usage = handler.usage,
+            hasCompleteUsage = handler.hasCompleteUsage,
         )
     }
 
@@ -208,7 +210,7 @@ class DevinProvider(
                             if (usage.modelName.isNotEmpty()) lastModelName = usage.modelName
                             val merged = accumulatedUsage.mergeFrom(usage)
                             accumulatedUsage = merged
-                            emit(StreamChunk.Usage(merged.toTokenUsage()))
+                            merged.toUsageUpdate()?.let { emit(StreamChunk.Usage(it)) }
                         }
                     }
 
@@ -243,6 +245,7 @@ class DevinProvider(
             var receivedEvent = false
             while (true) {
                 triedAccounts += account.id
+                reportUsageAccount("devin:${account.id}")
                 try {
                     chatApi.streamChat(request.copy(sessionToken = account.sessionToken))
                         .collect { event ->

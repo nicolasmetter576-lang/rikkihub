@@ -12,11 +12,16 @@ import {
   Clipboard,
   ClipboardPaste,
   Clock3,
+  FilePen,
+  FilePlus,
+  FileText,
   Globe,
+  ListTodo,
   Loader2,
   MessageCircleQuestion,
   Search,
   Send,
+  Terminal,
   Video,
   Wrench,
   X,
@@ -33,7 +38,16 @@ import {
   DrawerTitle,
 } from "~/components/ui/drawer";
 import { useIsMobile } from "~/hooks/use-mobile";
+import {
+  extractAcpDiffs,
+  getAcpToolTitle,
+  isAcpToolPart,
+  parseAcpMetadata,
+  type AcpToolMetadata,
+  type ParsedAcpDiff,
+} from "~/lib/cli";
 import { resolveFileUrl } from "~/lib/files";
+import { parsePartialJsonObject } from "~/lib/partial-json";
 import { TOOL_DURATION_MIN_MS, formatToolDuration, toolDurationMs } from "~/lib/tool-duration";
 import { serverNow } from "~/lib/utils";
 import {
@@ -80,6 +94,9 @@ const TOOL_NAMES = {
   CLIPBOARD: "clipboard_tool",
   ASK_USER: "ask_user",
   SUBAGENT: "subagent",
+  WRITE_FILE: "workspace_write_file",
+  ACP_PLAN: "acp_plan",
+  ACP_ASK_QUESTION: "acp_ask_question",
 } as const;
 
 // Exported so the message-part dispatcher can route to AskUserToolPart before hooks run.
@@ -141,6 +158,28 @@ function isSubagentToolName(toolName: string): boolean {
   return toolName === TOOL_NAMES.SUBAGENT;
 }
 
+function getAcpToolIcon(toolName: string, acp: AcpToolMetadata | null) {
+  if (toolName === TOOL_NAMES.ACP_ASK_QUESTION) return MessageCircleQuestion;
+  switch (typeof acp?.kind === "string" ? acp.kind : "") {
+    case "execute":
+      return Terminal;
+    case "edit":
+    case "delete":
+    case "move":
+      return FilePen;
+    case "read":
+      return FileText;
+    case "search":
+      return Search;
+    case "fetch":
+      return Globe;
+    case "plan":
+      return ListTodo;
+    default:
+      return Wrench;
+  }
+}
+
 function getToolIcon(toolName: string, action?: string) {
   if (toolName === MEMORY_FILE_TOOLS.READ || toolName === MEMORY_FILE_TOOLS.LIST) return BookOpen;
   if (toolName === MEMORY_FILE_TOOLS.DELETE) return BookX;
@@ -167,6 +206,7 @@ function getToolIcon(toolName: string, action?: string) {
 
   if (toolName === TOOL_NAMES.ASK_USER) return MessageCircleQuestion;
   if (toolName === TOOL_NAMES.SUBAGENT) return Bot;
+  if (toolName === TOOL_NAMES.WRITE_FILE) return FilePlus;
 
   return Wrench;
 }
@@ -207,7 +247,74 @@ function getToolTitle(toolName: string, args: unknown, t: TFunction): string {
     return title ? t("tool_part.subagent_with_title", { title }) : t("tool_part.subagent");
   }
 
+  if (toolName === TOOL_NAMES.WRITE_FILE) {
+    const path = getStringField(args, "path");
+    return path ? t("tool_part.write_file", { path }) : t("tool_part.write_file_default");
+  }
+
   return t("tool_part.tool_call_with_name", { toolName });
+}
+
+const FILE_SUMMARY_MAX_LINES = 10;
+const ACP_SUMMARY_MAX_LINES = 8;
+
+function AcpDiffView({ diffs, maxLines }: { diffs: ParsedAcpDiff[]; maxLines?: number }) {
+  const { t } = useTranslation("message");
+  const allLines = React.useMemo(
+    () => diffs.flatMap((entry) => entry.diff.split("\n")),
+    [diffs],
+  );
+  const shownLines = maxLines !== undefined ? allLines.slice(0, maxLines) : allLines;
+  const hiddenCount = allLines.length - shownLines.length;
+
+  return (
+    <div
+      data-acp-diff
+      className="overflow-x-auto rounded-md border bg-muted/30 py-1.5 font-mono text-[11px] leading-4"
+    >
+      {shownLines.map((line, index) => {
+        const lineClass =
+          line.startsWith("---") || line.startsWith("+++")
+            ? "font-medium text-muted-foreground"
+            : line.startsWith("@@")
+              ? "bg-primary/5 text-primary"
+              : line.startsWith("+")
+                ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400"
+                : line.startsWith("-")
+                  ? "bg-red-500/12 text-red-700 dark:text-red-400"
+                  : "text-foreground/85";
+        return (
+          <div key={index} className={`whitespace-pre px-2.5 ${lineClass}`}>
+            {line.length > 0 ? line : " "}
+          </div>
+        );
+      })}
+      {hiddenCount > 0 ? (
+        <div className="px-2.5 pt-1 text-muted-foreground">
+          {t("tool_part.acp_diff_more_lines", { count: hiddenCount })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Head of the file being written; while the model is still writing the arguments, its newest lines and a running count. */
+function FileContentSummary({ text, streaming }: { text: string; streaming: boolean }) {
+  const { t } = useTranslation("message");
+  const lines = text.split("\n");
+  const shown = streaming ? lines.slice(-FILE_SUMMARY_MAX_LINES) : lines.slice(0, FILE_SUMMARY_MAX_LINES);
+  return (
+    <>
+      {streaming && (
+        <div className="text-muted-foreground text-xs">
+          {t("tool_part.streaming_chars", { count: text.length })}
+        </div>
+      )}
+      <pre className="max-h-48 overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-2 font-mono text-xs">
+        {shown.join("\n")}
+      </pre>
+    </>
+  );
 }
 
 function JsonBlock({ value }: { value: unknown }) {
@@ -1013,7 +1120,15 @@ export function ToolPart({
   const [expanded, setExpanded] = React.useState(true);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
-  const args = React.useMemo(() => safeJsonParse(tool.input), [tool.input]);
+  const isExecuted = tool.output.length > 0;
+  const isWriteFile = tool.toolName === TOOL_NAMES.WRITE_FILE;
+  // Arguments still being generated: the write-file card shows what has arrived (display only)
+  const streamingArgs = isWriteFile && loading && !isExecuted;
+  const args = React.useMemo(
+    () => (streamingArgs ? parsePartialJsonObject(tool.input) : safeJsonParse(tool.input)),
+    [streamingArgs, tool.input],
+  );
+  const fileText = isWriteFile ? getStringField(args, "text") : undefined;
 
   const outputText = React.useMemo(
     () =>
@@ -1032,12 +1147,27 @@ export function ToolPart({
   );
 
   const memoryAction = getStringField(args, "action");
-  const title = getToolTitle(tool.toolName, args, t);
+  const acpMeta = React.useMemo(() => parseAcpMetadata(tool), [tool]);
+  const isAcp = isAcpToolPart(tool);
+  const isAcpLocal = acpMeta?.local === true;
+  const acpDiffs = React.useMemo(
+    () => (isAcp ? extractAcpDiffs(acpMeta) : []),
+    [acpMeta, isAcp],
+  );
+  const title = React.useMemo(() => {
+    if (!isAcp) return getToolTitle(tool.toolName, args, t);
+    const hasMetaTitle =
+      typeof acpMeta?.title === "string" && acpMeta.title.replace(/[\r\n]+/g, " ").trim().length > 0;
+    if (hasMetaTitle) return getAcpToolTitle(tool, acpMeta);
+    if (tool.toolName === TOOL_NAMES.ACP_PLAN) return t("tool_part.acp_plan");
+    if (tool.toolName === TOOL_NAMES.ACP_ASK_QUESTION) return t("tool_part.acp_ask_question");
+    return getAcpToolTitle(tool, acpMeta);
+  }, [acpMeta, args, isAcp, t, tool]);
   const isPending = tool.output.length === 0 && tool.approvalState.type === "pending";
   const isDenied = tool.approvalState.type === "denied";
   const deniedReason =
     tool.approvalState.type === "denied" ? (tool.approvalState.reason ?? "") : "";
-  const isExecuted = tool.output.length > 0;
+  const acpVisibleOutput = isAcp && !isDenied ? outputText.trim() : "";
 
   // Subagent metadata: live values on tool.metadata, terminal copy on the output
   // text part's metadata and inside the output JSON (snake_case). Tool name may
@@ -1081,14 +1211,16 @@ export function ToolPart({
       (Boolean(getStringField(outputContent, "answer")) ||
         getArrayField(outputContent, "items").length > 0)) ||
     (tool.toolName === TOOL_NAMES.SCRAPE_WEB && Boolean(getStringField(args, "url"))) ||
+    fileText !== undefined ||
+    (isAcp && (acpDiffs.length > 0 || acpVisibleOutput.length > 0)) ||
     isSubagent ||
     isDenied ||
     hasMediaOutput;
 
   // Running subagents expose a live progress log, so the drawer is clickable
   // before the tool produces output. Other tools keep the old behavior.
-  const canOpenDrawer = isPending || isExecuted || isSubagent;
-  const Icon = getToolIcon(tool.toolName, memoryAction);
+  const canOpenDrawer = isPending || isExecuted || isSubagent || (isAcp && acpDiffs.length > 0);
+  const Icon = isAcp ? getAcpToolIcon(tool.toolName, acpMeta) : getToolIcon(tool.toolName, memoryAction);
 
   const handleApprove = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -1122,7 +1254,18 @@ export function ToolPart({
           isSubagent ? (
             <SubagentLabel meta={subagentMeta} title={subagentTitle} running={subagentRunning} />
           ) : (
-            <span className="text-foreground line-clamp-2 text-sm font-medium">{title}</span>
+            <span className="text-foreground line-clamp-2 text-sm font-medium">
+              {isAcpLocal ? (
+                <span
+                  data-acp-local
+                  title={t("tool_part.acp_local_hint")}
+                  className="mr-1.5 inline-flex items-center rounded border border-border/80 bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground"
+                >
+                  {t("tool_part.acp_local_tag")}
+                </span>
+              ) : null}
+              {title}
+            </span>
           )
         }
         extra={
@@ -1169,6 +1312,23 @@ export function ToolPart({
               <div className="line-clamp-2 text-muted-foreground text-xs">
                 {getStringField(args, "url")}
               </div>
+            )}
+
+            {fileText !== undefined && (
+              <FileContentSummary text={fileText} streaming={streamingArgs} />
+            )}
+
+            {isAcp && acpDiffs.length > 0 && (
+              <AcpDiffView diffs={acpDiffs} maxLines={ACP_SUMMARY_MAX_LINES} />
+            )}
+
+            {isAcp && acpDiffs.length === 0 && acpVisibleOutput.length > 0 && (
+              <pre
+                data-acp-output
+                className="max-h-40 overflow-hidden whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-2 font-mono text-xs"
+              >
+                {acpVisibleOutput.split("\n").slice(0, ACP_SUMMARY_MAX_LINES).join("\n")}
+              </pre>
             )}
 
             {isSubagent && (
@@ -1235,6 +1395,7 @@ export function ToolPart({
           <DrawerHeader>
             <DrawerTitle>{isSubagent ? subagentTitle : title}</DrawerTitle>
             <DrawerDescription>
+              {isAcpLocal ? `${t("tool_part.acp_local_tag")} · ` : ""}
               {t("tool_part.tool_name_label", { toolName: tool.toolName })}
             </DrawerDescription>
           </DrawerHeader>
@@ -1252,13 +1413,35 @@ export function ToolPart({
                 running={subagentRunning}
                 outputContent={outputContent}
               />
+            ) : isAcp && (acpDiffs.length > 0 || acpVisibleOutput.length > 0) ? (
+              <div className="space-y-3">
+                {acpDiffs.length > 0 ? <AcpDiffView diffs={acpDiffs} /> : null}
+                {acpVisibleOutput.length > 0 ? (
+                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 font-mono text-xs">
+                    {acpVisibleOutput}
+                  </pre>
+                ) : null}
+              </div>
             ) : (
               <div className="space-y-3">
                 <div>
-                  <div className="mb-1 text-muted-foreground text-xs">
-                    {t("tool_part.parameters")}
-                  </div>
-                  <JsonBlock value={args} />
+                  {fileText !== undefined ? (
+                    <>
+                      <div className="mb-1 break-all text-muted-foreground text-xs">
+                        {getStringField(args, "path") ?? t("tool_part.write_file_default")}
+                      </div>
+                      <pre className="overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 font-mono text-xs">
+                        {fileText}
+                      </pre>
+                    </>
+                  ) : (
+                    <>
+                      <div className="mb-1 text-muted-foreground text-xs">
+                        {t("tool_part.parameters")}
+                      </div>
+                      <JsonBlock value={args} />
+                    </>
+                  )}
                 </div>
                 {isExecuted && (
                   <div className="space-y-2">
@@ -1267,6 +1450,13 @@ export function ToolPart({
                     </div>
                     {tool.output.map((part, i) => {
                       if (part.type === "text") {
+                        if (!part.text.trim()) {
+                          return (
+                            <div key={i} className="text-muted-foreground text-xs">
+                              {t("tool_part.acp_no_output")}
+                            </div>
+                          );
+                        }
                         let parsed: unknown;
                         try {
                           parsed = JSON.parse(part.text);

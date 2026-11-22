@@ -152,5 +152,65 @@
     "restore_failed": "Undo failed",
     "truncated": "Showing the latest {{count}} favorites",
     "refresh": "Refresh"
-  }
+  },
+  "creator_proposals": {
+    "title": "Proposals",
+    "open": "Review proposals",
+    "empty": "The creator has not proposed anything in this chat yet.",
+    "pending_count": "{{count}} waiting for you",
+    "load_failed": "Failed to load proposals",
+    "refresh": "Refresh",
+    "approve": "Approve and apply",
+    "approve_all": "Approve all ({{count}})",
+    "reject": "Reject",
+    "cancel": "Cancel",
+    "approving": "Applying…",
+    "approved_one": "Change applied",
+    "approved_many": "{{applied}} applied, {{failed}} not applied",
+    "approve_failed": "Could not apply the change",
+    "reject_failed": "Could not reject the proposal",
+    "changed": "This proposal changed after it was shown. It has been reloaded; review it again.",
+    "write_gate": "Changes are paused while the app starts up. Try again in a moment.",
+    "risk": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
+    "enhanced_confirm": "Check this one carefully",
+    "status": {
+      "pending_approval": "Waiting",
+      "approved": "Approved",
+      "applying": "Applying",
+      "applied": "Applied",
+      "rejected": "Rejected",
+      "expired": "Expired",
+      "cancelled": "Cancelled",
+      "conflict": "Not applied: data changed",
+      "failed": "Failed",
+      "needs_recovery": "Needs recovery",
+      "other": "Other"
+    },
+    "secret_hidden": "hidden (secret)",
+    "omitted": "{{count}} more changes not shown",
+    "created_ids": "New ids",
+    "empty_value": "(empty)",
+    "expires": "Valid until {{time}}",
+    "show_diff": "Show changes",
+    "hide_diff": "Hide changes",
+    "domain": {
+      "QUICK_MESSAGE": "Quick message",
+      "MODE_INJECTION": "Prompt library",
+      "WORLD_BOOK": "Lorebook",
+      "ASSISTANT": "Assistant",
+      "MODEL_AND_PROMPT_DEFAULTS": "Models and defaults",
+      "SUBAGENT_PRESET": "Sub-agent preset",
+      "USER_SKILL": "Skill",
+      "CONVERSATION": "Conversation",
+      "CHARACTER": "Character"
+    }
+  },
+  "character_picker": {
+    "cli_http_notice": "Character chats use standard HTTP mode (workspace CLI is not enabled)."
+  },
+  "cli_control_forbidden": "Remote CLI control requires an access password or localhost-only mode."
 }

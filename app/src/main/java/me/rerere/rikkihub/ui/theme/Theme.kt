@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.ui.theme
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
 import android.os.Build
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -29,6 +32,18 @@ import me.rerere.rikkihub.utils.getActivity
 private val ExtendLightColors = lightExtendColors()
 private val ExtendDarkColors = darkExtendColors()
 val LocalExtendColors = compositionLocalOf { ExtendLightColors }
+
+// 圆角整体比 M3 默认小一档（对齐 Kelivo）：卡片 12、弹层与对话框 20
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    largeIncreased = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(20.dp),
+    extraLargeIncreased = RoundedCornerShape(20.dp),
+    extraExtraLarge = RoundedCornerShape(24.dp),
+)
 
 val LocalDarkMode = compositionLocalOf { false }
 
@@ -111,6 +126,7 @@ fun RikkihubTheme(
         MaterialExpressiveTheme(
             colorScheme = colorSchemeConverted,
             typography = Typography,
+            shapes = AppShapes,
             content = content,
             motionScheme = MotionScheme.expressive()
         )

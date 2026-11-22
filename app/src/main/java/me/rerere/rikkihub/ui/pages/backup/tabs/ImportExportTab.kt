@@ -1,8 +1,8 @@
 package me.rerere.rikkihub.ui.pages.backup.tabs
 
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.File01
-import me.rerere.hugeicons.stroke.FileImport
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MultiChoiceSegmentedButtonRow
@@ -30,158 +29,167 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.rikkihub.ui.components.ui.toast.ToastType
+import com.composables.icons.lucide.Key
+import com.composables.icons.lucide.Lock
+import com.composables.icons.lucide.Lucide
 import kotlinx.coroutines.launch
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.File01
+import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.datastore.WebDavConfig
+import me.rerere.rikkihub.data.sync.BackupEncryption
+import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import me.rerere.rikkihub.ui.components.ui.CardGroup
 import me.rerere.rikkihub.ui.components.ui.StickyHeader
+import me.rerere.rikkihub.ui.components.ui.switchItem
+import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import me.rerere.rikkihub.ui.context.LocalToaster
+import me.rerere.rikkihub.ui.pages.backup.BackupPasswordResolution
 import me.rerere.rikkihub.ui.pages.backup.BackupVM
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
+import me.rerere.rikkihub.ui.pages.backup.components.BackupPasswordPromptDialog
+import me.rerere.rikkihub.ui.pages.backup.components.SetBackupPasswordDialog
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun ImportExportTab(
     vm: BackupVM,
-    onShowRestartDialog: () -> Unit
 ) {
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val selectedBackupItems by vm.localBackupItems.collectAsStateWithLifecycle()
+    val deviceState by vm.deviceState.collectAsStateWithLifecycle()
+    val hasRememberedPwd by vm.hasRememberedPassword.collectAsStateWithLifecycle()
+    val encryptionConfig = deviceState.encryption
+
     var isExporting by remember { mutableStateOf(false) }
-    var isRestoring by remember { mutableStateOf(false) }
+    var isImportingThirdParty by remember { mutableStateOf(false) }
+    var thirdPartyType by remember { mutableStateOf("") }
     var showImportConfirmDialog by remember { mutableStateOf(false) }
 
-    // 导入类型：local 为本地备份，chatbox 为 Chatbox 导入，cherry 为 Cherry Studio 导入
-    var importType by remember { mutableStateOf("local") }
+    var showSetPasswordDialog by remember { mutableStateOf(false) }
+    var isChangePasswordMode by remember { mutableStateOf(false) }
+    var showDisableEncryptionConfirm by remember { mutableStateOf(false) }
+    var showRememberPasswordPrompt by remember { mutableStateOf(false) }
+    var rememberPromptError by remember { mutableStateOf<String?>(null) }
 
-    // 创建文件保存的launcher
-    val createDocumentLauncher = rememberLauncherForActivityResult(
+    var pendingExportPassword by remember { mutableStateOf<String?>(null) }
+    var showExportPasswordPrompt by remember { mutableStateOf(false) }
+    var exportPasswordPromptError by remember { mutableStateOf<String?>(null) }
+    var exportKeystoreWarning by remember { mutableStateOf(false) }
+
+    fun launchPlainExport(launcher: androidx.activity.result.ActivityResultLauncher<String>) {
+        val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        pendingExportPassword = null
+        launcher.launch("rikkihub_backup_$timestamp.zip")
+    }
+
+    fun launchEncryptedExport(
+        launcher: androidx.activity.result.ActivityResultLauncher<String>,
+        password: String,
+    ) {
+        val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+        pendingExportPassword = password
+        launcher.launch("rikkihub_backup_$timestamp.${BackupEncryption.EXTENSION}")
+    }
+
+    fun handleExportUri(uri: Uri?, password: String?) {
+        val targetUri = uri ?: run {
+            pendingExportPassword = null
+            return
+        }
+        scope.launch {
+            isExporting = true
+            runCatching {
+                vm.exportToUri(targetUri, password)
+                toaster.show(
+                    context.getString(R.string.backup_page_backup_success),
+                    type = ToastType.Success,
+                )
+            }.onFailure { e ->
+                e.printStackTrace()
+                toaster.show(
+                    e.message ?: context.getString(R.string.backup_page_unknown_error),
+                    type = ToastType.Error,
+                )
+            }
+            pendingExportPassword = null
+            isExporting = false
+        }
+    }
+
+    val createPlainDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri -> handleExportUri(uri, null) }
+
+    val createEncryptedDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> handleExportUri(uri, pendingExportPassword) }
+
+    val openLocalBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { targetUri ->
-            scope.launch {
-                isExporting = true
-                runCatching {
-                    // 导出文件
-                    val exportFile = vm.exportToFile()
-
-                    // 复制到用户选择的位置
-                    context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
-                        FileInputStream(exportFile).use { inputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
-                    }
-
-                    // 清理临时文件
-                    exportFile.delete()
-
-                    toaster.show(
-                        context.getString(R.string.backup_page_backup_success),
-                        type = ToastType.Success
-                    )
-                }.onFailure { e ->
-                    e.printStackTrace()
-                    toaster.show(
-                        context.getString(R.string.backup_page_restore_failed, e.message ?: ""),
-                        type = ToastType.Error
-                    )
-                }
-                isExporting = false
+        val sourceUri = uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val displayName = resolveDisplayName(context, sourceUri) ?: "backup"
+                vm.startLocalRestoreFromUri(sourceUri, displayName)
+            }.onFailure { e ->
+                e.printStackTrace()
+                toaster.show(
+                    context.getString(R.string.backup_page_restore_failed, e.message ?: ""),
+                    type = ToastType.Error,
+                )
             }
         }
     }
 
-    // 创建文件选择的launcher
-    val openDocumentLauncher = rememberLauncherForActivityResult(
+    val openThirdPartyLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let { sourceUri ->
-            scope.launch {
-                isRestoring = true
-                runCatching {
-                    when (importType) {
-                        "local" -> {
-                            // 本地备份导入：处理zip文件
-                            val tempFile =
-                                File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
-
-                            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                FileOutputStream(tempFile).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
-                                }
-                            }
-
-                            // 从临时文件恢复
-                            vm.restoreFromLocalFile(tempFile)
-
-                            // 清理临时文件
-                            tempFile.delete()
-                        }
-
-                        "chatbox" -> {
-                            // Chatbox Backup v2：处理 ZIP 文件
-                            val tempFile =
-                                File(context.cacheDir, "temp_chatbox_${System.currentTimeMillis()}.zip")
-
-                            try {
-                                context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                    FileOutputStream(tempFile).use { outputStream ->
-                                        inputStream.copyTo(outputStream)
-                                    }
-                                }
-
-                                vm.restoreFromChatBox(tempFile)
-                            } finally {
-                                tempFile.delete()
-                            }
-                        }
-
-                        "cherry" -> {
-                            // Cherry Studio导入：处理zip文件
-                            val tempFile =
-                                File(context.cacheDir, "temp_cherry_${System.currentTimeMillis()}.zip")
-
-                            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                FileOutputStream(tempFile).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
-                                }
-                            }
-
-                            // 从Cherry Studio备份恢复
-                            vm.restoreFromCherryStudio(tempFile)
-
-                            // 清理临时文件
-                            tempFile.delete()
-                        }
+        val sourceUri = uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            isImportingThirdParty = true
+            runCatching {
+                when (thirdPartyType) {
+                    "chatbox" -> {
+                        val result = vm.restoreFromChatBox(sourceUri)
+                        toaster.show(
+                            context.getString(
+                                R.string.backup_page_chatbox_import_done,
+                                result.importedConversations,
+                                result.importedProviders,
+                                result.skippedExistingConversations,
+                            ),
+                            type = ToastType.Success,
+                        )
                     }
-
-                    toaster.show(
-                        context.getString(R.string.backup_page_restore_success),
-                        type = ToastType.Success
-                    )
-                    onShowRestartDialog()
-                }.onFailure { e ->
-                    e.printStackTrace()
-                    toaster.show(
-                        context.getString(R.string.backup_page_restore_failed, e.message ?: ""),
-                        type = ToastType.Error
-                    )
+                    "cherry" -> {
+                        val count = vm.restoreFromCherryStudio(sourceUri)
+                        toaster.show(
+                            context.getString(R.string.backup_page_cherry_import_done, count),
+                            type = ToastType.Success,
+                        )
+                    }
                 }
-                isRestoring = false
+            }.onFailure { e ->
+                e.printStackTrace()
+                toaster.show(
+                    context.getString(R.string.backup_page_restore_failed, e.message ?: ""),
+                    type = ToastType.Error,
+                )
             }
+            isImportingThirdParty = false
         }
     }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(AppSpacing.sm),
     ) {
         stickyHeader {
             StickyHeader {
@@ -227,9 +235,19 @@ fun ImportExportTab(
                 item(
                     onClick = if (!isExporting) {
                         {
-                            val timestamp = LocalDateTime.now()
-                                .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                            createDocumentLauncher.launch("rikkihub_backup_$timestamp.zip")
+                            scope.launch {
+                                when (val res = vm.resolveBackupPassword()) {
+                                    BackupPasswordResolution.NotEncrypted ->
+                                        launchPlainExport(createPlainDocumentLauncher)
+                                    is BackupPasswordResolution.Resolved ->
+                                        launchEncryptedExport(createEncryptedDocumentLauncher, res.password)
+                                    is BackupPasswordResolution.NeedPrompt -> {
+                                        exportKeystoreWarning = res.showKeystoreWarning
+                                        exportPasswordPromptError = null
+                                        showExportPasswordPrompt = true
+                                    }
+                                }
+                            }
                         }
                     } else null,
                     headlineContent = { Text(stringResource(R.string.backup_page_local_backup_export)) },
@@ -252,29 +270,70 @@ fun ImportExportTab(
                 )
 
                 item(
-                    onClick = if (!isRestoring) {
-                        {
-                            showImportConfirmDialog = true
-                        }
-                    } else null,
+                    onClick = { showImportConfirmDialog = true },
                     headlineContent = { Text(stringResource(R.string.backup_page_local_backup_import)) },
+                    supportingContent = { Text(stringResource(R.string.backup_page_import_desc)) },
+                    leadingContent = { Icon(HugeIcons.FileImport, null) },
+                )
+            }
+        }
+
+        stickyHeader {
+            StickyHeader {
+                Text(stringResource(R.string.backup_enc_section_title))
+            }
+        }
+
+        item {
+            CardGroup {
+                switchItem(
+                    checked = encryptionConfig.enabled,
+                    onCheckedChange = { wantEnable ->
+                        if (wantEnable) {
+                            isChangePasswordMode = false
+                            showSetPasswordDialog = true
+                        } else {
+                            showDisableEncryptionConfirm = true
+                        }
+                    },
+                    leadingContent = { Icon(Lucide.Lock, contentDescription = null) },
                     supportingContent = {
                         Text(
-                            if (isRestoring) {
-                                stringResource(R.string.backup_page_importing)
-                            } else {
-                                stringResource(R.string.backup_page_import_desc)
-                            }
+                            stringResource(
+                                if (encryptionConfig.enabled) R.string.backup_enc_enabled_status
+                                else R.string.backup_enc_disabled_status
+                            )
                         )
                     },
-                    leadingContent = {
-                        if (isRestoring) {
-                            CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
-                        } else {
-                            Icon(HugeIcons.FileImport, null)
-                        }
-                    },
-                )
+                ) {
+                    Text(stringResource(R.string.backup_enc_enable))
+                }
+
+                if (encryptionConfig.enabled) {
+                    switchItem(
+                        checked = encryptionConfig.rememberPasswordOnDevice && hasRememberedPwd,
+                        onCheckedChange = { wantRemember ->
+                            if (wantRemember) {
+                                rememberPromptError = null
+                                showRememberPasswordPrompt = true
+                            } else {
+                                scope.launch { vm.forgetRememberedPassword() }
+                            }
+                        },
+                        supportingContent = { Text(stringResource(R.string.backup_enc_remember_password_desc)) },
+                    ) {
+                        Text(stringResource(R.string.backup_enc_remember_password))
+                    }
+
+                    item(
+                        onClick = {
+                            isChangePasswordMode = true
+                            showSetPasswordDialog = true
+                        },
+                        leadingContent = { Icon(Lucide.Key, contentDescription = null) },
+                        headlineContent = { Text(stringResource(R.string.backup_enc_change_password)) },
+                    )
+                }
             }
         }
 
@@ -287,16 +346,16 @@ fun ImportExportTab(
         item {
             CardGroup {
                 item(
-                    onClick = if (!isRestoring) {
+                    onClick = if (!isImportingThirdParty) {
                         {
-                            importType = "chatbox"
-                            openDocumentLauncher.launch(arrayOf("application/zip"))
+                            thirdPartyType = "chatbox"
+                            openThirdPartyLauncher.launch(arrayOf("application/zip", "*/*"))
                         }
                     } else null,
                     headlineContent = { Text(stringResource(R.string.backup_page_import_from_chatbox)) },
                     supportingContent = { Text(stringResource(R.string.backup_page_import_chatbox_desc)) },
                     leadingContent = {
-                        if (isRestoring && importType == "chatbox") {
+                        if (isImportingThirdParty && thirdPartyType == "chatbox") {
                             CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
                         } else {
                             Icon(HugeIcons.FileImport, null)
@@ -305,16 +364,16 @@ fun ImportExportTab(
                 )
 
                 item(
-                    onClick = if (!isRestoring) {
+                    onClick = if (!isImportingThirdParty) {
                         {
-                            importType = "cherry"
-                            openDocumentLauncher.launch(arrayOf("application/zip"))
+                            thirdPartyType = "cherry"
+                            openThirdPartyLauncher.launch(arrayOf("application/zip", "*/*"))
                         }
                     } else null,
                     headlineContent = { Text(stringResource(R.string.backup_page_import_from_cherry_studio)) },
                     supportingContent = { Text(stringResource(R.string.backup_page_import_cherry_studio_desc)) },
                     leadingContent = {
-                        if (isRestoring && importType == "cherry") {
+                        if (isImportingThirdParty && thirdPartyType == "cherry") {
                             CircularWavyProgressIndicator(modifier = Modifier.size(24.dp))
                         } else {
                             Icon(HugeIcons.FileImport, null)
@@ -334,8 +393,8 @@ fun ImportExportTab(
                 TextButton(
                     onClick = {
                         showImportConfirmDialog = false
-                        importType = "local"
-                        openDocumentLauncher.launch(arrayOf("application/zip"))
+                        // 使用 */* 以允许选择 .rkbackup 加密备份与 .zip 备份
+                        openLocalBackupLauncher.launch(arrayOf("*/*"))
                     }
                 ) {
                     Text(stringResource(R.string.confirm))
@@ -348,4 +407,117 @@ fun ImportExportTab(
             },
         )
     }
+
+    if (showSetPasswordDialog) {
+        SetBackupPasswordDialog(
+            isChange = isChangePasswordMode,
+            initialRemember = if (isChangePasswordMode) encryptionConfig.rememberPasswordOnDevice else true,
+            onDismiss = { showSetPasswordDialog = false },
+            onConfirm = { password, rememberOnDevice ->
+                showSetPasswordDialog = false
+                scope.launch {
+                    runCatching {
+                        vm.enableOrChangeEncryption(password, rememberOnDevice)
+                        toaster.show(
+                            context.getString(
+                                if (isChangePasswordMode) R.string.backup_enc_password_updated
+                                else R.string.backup_enc_password_saved
+                            ),
+                            type = ToastType.Success,
+                        )
+                    }.onFailure { err ->
+                        toaster.show(
+                            err.message ?: context.getString(R.string.backup_page_unknown_error),
+                            type = ToastType.Error,
+                        )
+                    }
+                }
+            },
+        )
+    }
+
+    if (showDisableEncryptionConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDisableEncryptionConfirm = false },
+            title = { Text(stringResource(R.string.backup_enc_disable_confirm_title)) },
+            text = { Text(stringResource(R.string.backup_enc_disable_confirm_msg)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDisableEncryptionConfirm = false
+                        scope.launch {
+                            vm.disableEncryption()
+                            toaster.show(
+                                context.getString(R.string.backup_enc_disabled_toast),
+                                type = ToastType.Info,
+                            )
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisableEncryptionConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (showRememberPasswordPrompt) {
+        BackupPasswordPromptDialog(
+            title = stringResource(R.string.backup_enc_remember_password),
+            description = stringResource(R.string.backup_enc_enter_password_encrypt_desc),
+            errorMessage = rememberPromptError,
+            onDismiss = { showRememberPasswordPrompt = false },
+            onConfirm = { password ->
+                scope.launch {
+                    if (vm.enableRememberPassword(password)) {
+                        showRememberPasswordPrompt = false
+                    } else {
+                        rememberPromptError = context.getString(R.string.backup_enc_wrong_password)
+                    }
+                }
+            },
+        )
+    }
+
+    if (showExportPasswordPrompt) {
+        BackupPasswordPromptDialog(
+            title = stringResource(R.string.backup_enc_enter_password_title),
+            description = stringResource(
+                if (exportKeystoreWarning) R.string.backup_enc_keystore_unavailable
+                else R.string.backup_enc_enter_password_encrypt_desc
+            ),
+            errorMessage = exportPasswordPromptError,
+            onDismiss = { showExportPasswordPrompt = false },
+            onConfirm = { password ->
+                scope.launch {
+                    if (vm.verifyEnteredBackupPassword(password)) {
+                        showExportPasswordPrompt = false
+                        launchEncryptedExport(createEncryptedDocumentLauncher, password)
+                    } else {
+                        exportPasswordPromptError = context.getString(R.string.backup_enc_wrong_password)
+                    }
+                }
+            },
+        )
+    }
+}
+
+private fun resolveDisplayName(context: Context, uri: Uri): String? {
+    runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        val name = cursor.getString(idx)
+                        if (!name.isNullOrBlank()) return name
+                    }
+                }
+            }
+    }
+    return uri.lastPathSegment?.substringAfterLast('/')
 }

@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { ProviderSpendLimit } from "@overlay/components/settings/provider-spend-limit";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -20,6 +21,20 @@ import {
   reportSettingsError,
 } from "@overlay/components/settings/settings-ui";
 import { ProviderHeadersEditor } from "@overlay/components/settings/provider-headers-editor";
+import {
+  ApiKeysPoolEditor,
+  VertexServiceAccountsEditor,
+} from "@overlay/components/settings/provider-credentials-editor";
+import { ModelPricingFields } from "@overlay/components/settings/model-pricing-fields";
+import type { ModelPricing } from "@overlay/lib/model-pricing";
+import {
+  type ApiKeyDraftItem,
+  type VertexServiceAccountDraftItem,
+  buildApiKeysPayload,
+  buildServiceAccountsPayload,
+  toApiKeyDraftItems,
+  toServiceAccountDraftItems,
+} from "@overlay/lib/provider-credentials";
 import { parseProviderHeaders, providerHeadersDraft, providerHeadersPayload } from "@overlay/lib/provider-headers";
 import { getDisplayName, getModelDisplayName } from "~/lib/display";
 import {
@@ -43,13 +58,16 @@ import { useSettingsStore } from "~/stores";
 const DEFAULT_MODEL_CONTEXT_LENGTH = 1_000_000;
 const MAX_MODEL_CONTEXT_LENGTH = 100_000_000;
 import type {
+  ApiKeyEntry,
   ClaudePromptCacheTtl,
+  CredentialRotationStrategy,
   ModelAbility,
   ModelCapabilities,
   ModelType,
   ProviderModel,
   ProviderProfile,
   RemoteModelsResponse,
+  VertexServiceAccount,
 } from "@overlay/types/settings";
 
 type ProviderDraft = {
@@ -62,7 +80,11 @@ type ProviderDraft = {
    * projected (masked) client never rewrites a credential it did not edit. */
   apiKeyTouched: boolean;
   privateKeyTouched: boolean;
+  apiKeysTouched: boolean;
+  serviceAccountsTouched: boolean;
   apiKey: string;
+  apiKeys: ApiKeyDraftItem[];
+  rotationStrategy: CredentialRotationStrategy;
   baseUrl: string;
   type: "openai" | "google" | "claude" | "codex" | "devin" | "antigravity";
   chatCompletionsPath: string;
@@ -73,8 +95,10 @@ type ProviderDraft = {
   promptCacheTtl: ClaudePromptCacheTtl;
   vertexAI: boolean;
   useInteractionsApi: boolean;
+  streamFunctionCallArguments: boolean;
   useServiceAccount: boolean;
   privateKey: string;
+  serviceAccounts: VertexServiceAccountDraftItem[];
   serviceAccountEmail: string;
   location: string;
   projectId: string;
@@ -94,7 +118,11 @@ export function connectionDraft(provider: ProviderProfile): ProviderDraft {
     models: provider.models,
     apiKeyTouched: false,
     privateKeyTouched: false,
+    apiKeysTouched: false,
+    serviceAccountsTouched: false,
     apiKey: String(readField(provider, "apiKey") ?? ""),
+    apiKeys: toApiKeyDraftItems(readField(provider, "apiKeys") as ApiKeyEntry[] | undefined),
+    rotationStrategy: readField(provider, "rotationStrategy") === "failover" ? "failover" : "round_robin",
     baseUrl: String(readField(provider, "baseUrl") ?? ""),
     type: getProviderType(provider),
     chatCompletionsPath: String(readField(provider, "chatCompletionsPath") ?? "/chat/completions"),
@@ -105,8 +133,12 @@ export function connectionDraft(provider: ProviderProfile): ProviderDraft {
     promptCacheTtl: (readField(provider, "promptCacheTtl") as ClaudePromptCacheTtl | undefined) ?? "5m",
     vertexAI: readField(provider, "vertexAI") === true,
     useInteractionsApi: readField(provider, "useInteractionsApi") === true,
+    streamFunctionCallArguments: readField(provider, "streamFunctionCallArguments") !== false,
     useServiceAccount: readField(provider, "useServiceAccount") === true,
     privateKey: String(readField(provider, "privateKey") ?? ""),
+    serviceAccounts: toServiceAccountDraftItems(
+      readField(provider, "serviceAccounts") as VertexServiceAccount[] | undefined,
+    ),
     serviceAccountEmail: String(readField(provider, "serviceAccountEmail") ?? ""),
     location: String(readField(provider, "location") ?? "us-central1"),
     projectId: String(readField(provider, "projectId") ?? ""),
@@ -130,13 +162,16 @@ export default function SettingsProviderDetailPage() {
   const [deleting, setDeleting] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [modelDraft, setModelDraft] = React.useState<ProviderModel | null>(null);
+  const [referencePrice, setReferencePrice] = React.useState<ModelPricing | null>(null);
+  const [modelPricingValid, setModelPricingValid] = React.useState(true);
   // 新建模型时按型号自动识别能力；用户手动改过模态、能力或上下文长度后就不再覆盖
   const [capabilitiesEdited, setCapabilitiesEdited] = React.useState(false);
   const [detectedVersion, setDetectedVersion] = React.useState(0);
   const draftModelId = modelDraft?.modelId ?? "";
   const draftIsNew = modelDraft !== null && !provider?.models.some((item) => item.id === modelDraft.id);
   React.useEffect(() => {
-    if (!shouldDetectCapabilities(draftIsNew, draftModelId, capabilitiesEdited)) return;
+    setReferencePrice(null);
+    if (!draftModelId.trim()) return;
     const modelId = draftModelId.trim();
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
@@ -145,6 +180,9 @@ export default function SettingsProviderDetailPage() {
           signal: controller.signal,
         })
         .then((capabilities) => {
+          if (controller.signal.aborted) return;
+          setReferencePrice(capabilities.referencePrice ?? null);
+          if (!shouldDetectCapabilities(draftIsNew, draftModelId, capabilitiesEdited)) return;
           setModelDraft((current) =>
             current && current.modelId.trim() === modelId ? applyModelCapabilities(current, capabilities) : current,
           );
@@ -169,6 +207,7 @@ export default function SettingsProviderDetailPage() {
   const [selectedRemote, setSelectedRemote] = React.useState<string[]>([]);
   const [fetchingRemote, setFetchingRemote] = React.useState(false);
   const [importingRemote, setImportingRemote] = React.useState(false);
+  const [statusRefreshSignal, setStatusRefreshSignal] = React.useState(0);
   const loadedIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -233,11 +272,27 @@ export default function SettingsProviderDetailPage() {
                   enabled: draft.enabled,
                   name: draft.name,
                   ...(draft.apiKeyTouched ? { apiKey: draft.apiKey } : {}),
+                  ...(draft.apiKeysTouched
+                    ? {
+                        apiKeys: buildApiKeysPayload(draft.apiKeys),
+                        ...(draft.apiKeys.length === 0 ? { apiKey: "" } : {}),
+                      }
+                    : {}),
+                  rotationStrategy: draft.rotationStrategy,
                   baseUrl: draft.baseUrl ?? "",
                   vertexAI: draft.vertexAI === true,
                   useInteractionsApi: draft.useInteractionsApi === true,
+                  streamFunctionCallArguments: draft.streamFunctionCallArguments,
                   useServiceAccount: draft.useServiceAccount === true,
                   ...(draft.privateKeyTouched ? { privateKey: draft.privateKey } : {}),
+                  ...(draft.serviceAccountsTouched
+                    ? {
+                        serviceAccounts: buildServiceAccountsPayload(draft.serviceAccounts),
+                        ...(draft.serviceAccounts.length === 0
+                          ? { privateKey: "", serviceAccountEmail: "", projectId: "" }
+                          : {}),
+                      }
+                    : {}),
                   serviceAccountEmail: draft.serviceAccountEmail ?? "",
                   location: draft.location ?? "",
                   projectId: draft.projectId ?? "",
@@ -249,6 +304,13 @@ export default function SettingsProviderDetailPage() {
                     enabled: draft.enabled,
                     name: draft.name,
                     ...(draft.apiKeyTouched ? { apiKey: draft.apiKey } : {}),
+                    ...(draft.apiKeysTouched
+                      ? {
+                          apiKeys: buildApiKeysPayload(draft.apiKeys),
+                          ...(draft.apiKeys.length === 0 ? { apiKey: "" } : {}),
+                        }
+                      : {}),
+                    rotationStrategy: draft.rotationStrategy,
                     baseUrl: draft.baseUrl ?? "",
                     promptCaching: draft.promptCaching === true,
                     promptCacheTtl: draft.promptCacheTtl ?? "5m",
@@ -259,6 +321,13 @@ export default function SettingsProviderDetailPage() {
                     enabled: draft.enabled,
                     name: draft.name,
                     ...(draft.apiKeyTouched ? { apiKey: draft.apiKey } : {}),
+                    ...(draft.apiKeysTouched
+                      ? {
+                          apiKeys: buildApiKeysPayload(draft.apiKeys),
+                          ...(draft.apiKeys.length === 0 ? { apiKey: "" } : {}),
+                        }
+                      : {}),
+                    rotationStrategy: draft.rotationStrategy,
                     baseUrl: draft.baseUrl ?? "",
                     chatCompletionsPath: draft.chatCompletionsPath ?? "/chat/completions",
                     responsesPath: draft.responsesPath ?? "/responses",
@@ -270,6 +339,7 @@ export default function SettingsProviderDetailPage() {
         ...providerHeadersPayload(draft.providerHeadersJson),
       });
       setDraft(connectionDraft({ ...saved, models: provider.models }));
+      setStatusRefreshSignal((n) => n + 1);
       toast.success(t("common.saved"));
     } catch (error) {
       reportSettingsError(error, t("common.save_failed"));
@@ -279,6 +349,7 @@ export default function SettingsProviderDetailPage() {
   };
 
   const openModelEditor = (model: ProviderModel) => {
+    setModelPricingValid(true);
     setModelDraft(model);
     setCapabilitiesEdited(false);
     setModelHeadersJson(JSON.stringify(model.customHeaders ?? [], null, 2));
@@ -298,7 +369,7 @@ export default function SettingsProviderDetailPage() {
   };
 
   const saveModel = async () => {
-    if (!modelDraft) {
+    if (!modelDraft || !modelPricingValid) {
       return;
     }
     const customHeaders = parseJsonList(modelHeadersJson);
@@ -351,6 +422,8 @@ export default function SettingsProviderDetailPage() {
         }
       />
 
+      <ProviderSpendLimit providerId={provider.id} />
+
       <div className="flex flex-wrap gap-2">
         {builtinLocked ? <Badge variant="secondary">{t("providers.builtin_badge")}</Badge> : null}
         {!draft.enabled ? <Badge variant="outline">{t("common.disabled")}</Badge> : null}
@@ -362,18 +435,17 @@ export default function SettingsProviderDetailPage() {
         </SettingsField>
         {type !== "codex" && type !== "devin" && type !== "antigravity" ? (
           <>
-            <SettingsField label={t("providers.fields.api_key")}>
-              <Input
-                type="password"
-                autoComplete="off"
-                value={draft.apiKey ?? ""}
-                placeholder={readField(provider, "apiKeyConfigured") === true ? "••••••••" : undefined}
-                onChange={(event) => updateDraft({ apiKey: event.target.value, apiKeyTouched: true })}
+            {type !== "google" || !(draft.vertexAI && draft.useServiceAccount) ? (
+              <ApiKeysPoolEditor
+                providerId={provider.id}
+                items={draft.apiKeys}
+                rotationStrategy={draft.rotationStrategy}
+                refreshSignal={statusRefreshSignal}
+                disabled={saving}
+                onChangeItems={(apiKeys) => updateDraft({ apiKeys, apiKeysTouched: true })}
+                onChangeStrategy={(rotationStrategy) => updateDraft({ rotationStrategy })}
               />
-              {readField(provider, "apiKeyConfigured") === true && !draft.apiKeyTouched ? (
-                <p className="text-xs text-muted-foreground">{t("providers.fields.api_key_hint")}</p>
-              ) : null}
-            </SettingsField>
+            ) : null}
             <SettingsField label={t("providers.fields.base_url")} className="md:col-span-2">
               <Input value={draft.baseUrl ?? ""} onChange={(event) => updateDraft({ baseUrl: event.target.value })} />
             </SettingsField>
@@ -463,6 +535,16 @@ export default function SettingsProviderDetailPage() {
             <p className="text-xs text-muted-foreground">
               {t(draft.vertexAI ? "providers.interactions_vertex_hint" : "providers.interactions_hint")}
             </p>
+            {draft.vertexAI ? (
+              <>
+                <SettingsSwitchRow
+                  label={t("providers.fields.stream_function_call_arguments")}
+                  checked={draft.streamFunctionCallArguments}
+                  onCheckedChange={(checked) => updateDraft({ streamFunctionCallArguments: checked })}
+                />
+                <p className="text-xs text-muted-foreground">{t("providers.stream_function_call_arguments_hint")}</p>
+              </>
+            ) : null}
             <SettingsSwitchRow
               label={t("providers.fields.use_service_account")}
               checked={draft.useServiceAccount === true}
@@ -474,35 +556,30 @@ export default function SettingsProviderDetailPage() {
 
       {type === "google" && draft.vertexAI ? (
         <div className="grid gap-4 md:grid-cols-2">
-          <SettingsField label={t("providers.fields.service_account_email")}>
-            <Input
-              value={draft.serviceAccountEmail ?? ""}
-              onChange={(event) => updateDraft({ serviceAccountEmail: event.target.value })}
-            />
-          </SettingsField>
-          <SettingsField label={t("providers.fields.project_id")}>
-            <Input
-              value={draft.projectId ?? ""}
-              onChange={(event) => updateDraft({ projectId: event.target.value })}
-            />
-          </SettingsField>
-          <SettingsField label={t("providers.fields.location")}>
+          <SettingsField
+            label={t("providers.fields.location")}
+            hint={t("providers.credentials.default_location_hint")}
+            className="md:col-span-2"
+          >
             <Input
               value={draft.location ?? ""}
               onChange={(event) => updateDraft({ location: event.target.value })}
             />
           </SettingsField>
-          <SettingsField label={t("providers.fields.private_key")} className="md:col-span-2">
-            <Textarea
-              rows={5}
-              value={draft.privateKey ?? ""}
-              placeholder={readField(provider, "privateKeyConfigured") === true ? "••••••••" : undefined}
-              onChange={(event) => updateDraft({ privateKey: event.target.value, privateKeyTouched: true })}
+          {draft.useServiceAccount ? (
+            <VertexServiceAccountsEditor
+              providerId={provider.id}
+              defaultLocation={draft.location ?? "us-central1"}
+              items={draft.serviceAccounts}
+              rotationStrategy={draft.rotationStrategy}
+              refreshSignal={statusRefreshSignal}
+              disabled={saving}
+              onChangeItems={(serviceAccounts) =>
+                updateDraft({ serviceAccounts, serviceAccountsTouched: true })
+              }
+              onChangeStrategy={(rotationStrategy) => updateDraft({ rotationStrategy })}
             />
-            {readField(provider, "privateKeyConfigured") === true && !draft.privateKeyTouched ? (
-              <p className="text-xs text-muted-foreground">{t("providers.fields.private_key_hint")}</p>
-            ) : null}
-          </SettingsField>
+          ) : null}
         </div>
       ) : null}
 
@@ -627,9 +704,9 @@ export default function SettingsProviderDetailPage() {
           </div>
         ) : null}
 
-        <div className="space-y-2">
+        <div className="divide-y overflow-hidden rounded-xl border">
           {draft.models.map((model) => (
-            <div key={model.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+            <div key={model.id} className="flex min-h-12 items-center justify-between gap-3 px-3 py-2">
               <button
                 type="button"
                 className="min-w-0 flex-1 text-left"
@@ -651,7 +728,7 @@ export default function SettingsProviderDetailPage() {
       </div>
 
       {modelDraft ? (
-        <div className="space-y-4 rounded-xl border p-4">
+        <div className="space-y-4 rounded-xl border p-3">
           <div className="grid gap-4 md:grid-cols-2">
             <SettingsField label={t("providers.fields.model_id")}>
               <Input
@@ -751,6 +828,16 @@ export default function SettingsProviderDetailPage() {
               />
             </SettingsField>
           ) : null}
+          {modelDraft.type === "CHAT" ? (
+            <ModelPricingFields
+              key={modelDraft.id}
+              modelKey={modelDraft.id}
+              pricing={modelDraft.pricing}
+              referencePrice={referencePrice}
+              onChange={(pricing) => setModelDraft((current) => current ? { ...current, pricing } : current)}
+              onValidityChange={setModelPricingValid}
+            />
+          ) : null}
           <div className="space-y-2">
             <p className="text-sm font-medium">{t("providers.fields.builtin_tools")}</p>
             {BUILTIN_TOOL_TYPES.map((item) => (
@@ -793,7 +880,7 @@ export default function SettingsProviderDetailPage() {
             </SettingsField>
           </div>
           <div className="flex gap-2">
-            <Button type="button" onClick={() => void saveModel()} disabled={modelSaving}>
+            <Button type="button" onClick={() => void saveModel()} disabled={modelSaving || !modelPricingValid}>
               {modelSaving ? t("common.saving") : t("common.save")}
             </Button>
             <Button type="button" variant="outline" onClick={() => setModelDraft(null)}>

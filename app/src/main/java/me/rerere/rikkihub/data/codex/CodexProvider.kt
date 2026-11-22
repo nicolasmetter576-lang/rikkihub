@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.data.codex
 
+import me.rerere.rikkihub.data.ai.reportUsageAccount
+import me.rerere.rikkihub.data.ai.UsageAccountSlot
+import me.rerere.rikkihub.data.ai.quotaReadings
+import kotlinx.coroutines.currentCoroutineContext
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -104,10 +108,13 @@ class CodexProvider(
         params: TextGenerationParams,
     ): TextGenerationResult {
         val account = repository.acquireAccount()
+        reportUsageAccount("codex:${account.id}")
         return cachedResponseApiFor(account).generateText(
             providerSetting = syntheticSetting(providerSetting, account),
             messages = withDefaultInstructions(messages),
-            params = withCodexParams(params, account, stream = false),
+            params = withCodexParams(params, account, stream = false).copy(
+                requestTag = currentCoroutineContext()[UsageAccountSlot],
+            ),
         )
     }
 
@@ -117,10 +124,13 @@ class CodexProvider(
         params: TextGenerationParams,
     ): Flow<StreamChunk> {
         val account = repository.acquireAccount()
+        reportUsageAccount("codex:${account.id}")
         return cachedResponseApiFor(account).streamText(
             providerSetting = syntheticSetting(providerSetting, account),
             messages = withDefaultInstructions(messages),
-            params = withCodexParams(params, account, stream = true),
+            params = withCodexParams(params, account, stream = true).copy(
+                requestTag = currentCoroutineContext()[UsageAccountSlot],
+            ),
         )
     }
 
@@ -165,10 +175,11 @@ class CodexProvider(
         )
 
     // The Codex backend needs a system/instructions item to behave; fall back to a generic one
-    // when the caller didn't supply a system message, same as the request body used to do by
-    // hand via the `instructions` field.
+    // when the caller didn't supply a leading system message (only leading ones become
+    // `instructions`, later ones are sent as user input), same as the request body used to do
+    // by hand via the `instructions` field.
     private fun withDefaultInstructions(messages: List<UIMessage>): List<UIMessage> =
-        if (messages.any { it.role == MessageRole.SYSTEM }) {
+        if (messages.firstOrNull()?.role == MessageRole.SYSTEM) {
             messages
         } else {
             listOf(UIMessage.system(DEFAULT_INSTRUCTIONS)) + messages
@@ -216,6 +227,8 @@ class CodexProvider(
             .addNetworkInterceptor { chain ->
                 val response = chain.proceed(chain.request())
                 parseCodexUsage(response.headers)?.let { usage ->
+                    (chain.request().tag(Any::class.java) as? UsageAccountSlot)?.quotaReadings =
+                        account.copy(usage = usage).quotaReadings()
                     // updateUsage encrypts + writes the credential file; keep it off the main thread.
                     scope.launch(Dispatchers.IO) { repository.updateUsage(account.id, usage) }
                 }

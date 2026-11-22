@@ -16,7 +16,8 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("conversation_id")]
+    // 分页按 node_index 排序读取；以 conversation_id 为前导列同时覆盖外键与按会话查询
+    indices = [Index("conversation_id", "node_index")]
 )
 data class MessageNodeEntity(
     @PrimaryKey

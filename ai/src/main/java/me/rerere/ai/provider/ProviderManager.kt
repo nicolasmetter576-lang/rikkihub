@@ -5,6 +5,8 @@ import me.rerere.ai.ccdisguise.ClaudeCodeDisguiseConfig
 import me.rerere.ai.provider.providers.claude.ClaudeProvider
 import me.rerere.ai.provider.providers.google.GoogleProvider
 import me.rerere.ai.provider.providers.openai.OpenAIProvider
+import me.rerere.ai.util.CredentialPool
+import me.rerere.ai.util.ImageEncodeCache
 import okhttp3.OkHttpClient
 
 /**
@@ -15,14 +17,17 @@ class ProviderManager(
     context: Context,
     ccDisguiseConfigProvider: () -> ClaudeCodeDisguiseConfig = { ClaudeCodeDisguiseConfig() },
 ) {
+    val credentialPool: CredentialPool = CredentialPool()
+
     // 存储已注册的Provider实例
     private val providers = mutableMapOf<String, Provider<*>>()
 
     init {
+        ImageEncodeCache.init(context.cacheDir)
         // 注册默认Provider
-        registerProvider("openai", OpenAIProvider(client, context))
-        registerProvider("google", GoogleProvider(client, context))
-        registerProvider("claude", ClaudeProvider(client, context, ccDisguiseConfigProvider))
+        registerProvider("openai", OpenAIProvider(client, credentialPool))
+        registerProvider("google", GoogleProvider(client, credentialPool))
+        registerProvider("claude", ClaudeProvider(client, context, ccDisguiseConfigProvider, credentialPool))
     }
 
     /**

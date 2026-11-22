@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.setting.subagent
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.Button
@@ -43,6 +43,10 @@ import me.rerere.rikkihub.ui.pages.extensions.workspace.workspaceSubagentPresetR
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import androidx.compose.foundation.lazy.itemsIndexed
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
 
 @Composable
 fun SubagentLibraryPage(presetId: String? = null, vm: SubagentLibraryVM = koinViewModel()) {
@@ -58,31 +62,30 @@ fun SubagentLibraryPage(presetId: String? = null, vm: SubagentLibraryVM = koinVi
     }
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.subagent_library_page_title)) },
-            navigationIcon = { BackButton() }, colors = CustomColors.topBarColors) },
+            navigationIcon = { BackButton() }, colors = CustomColors.topBarColors, expandedHeight = AppTopBarHeight) },
         containerColor = CustomColors.topBarColors.containerColor,
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = padding + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = padding + PaddingValues(AppSpacing.sm)) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.padding(bottom = AppSpacing.sm), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.subagent_library_page_notice), style = MaterialTheme.typography.bodySmall)
                     Text(stringResource(R.string.subagent_library_page_disabled_notice), style = MaterialTheme.typography.bodySmall)
                     Text(stringResource(R.string.subagent_library_page_model_notice), style = MaterialTheme.typography.bodySmall)
                     if (state.loading || state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     LibraryError(state, vm::dismissError)
                     if (!state.loading && state.error == R.string.subagent_library_page_load_failed) {
-                        Button(onClick = vm::reload) { Text(stringResource(R.string.subagent_library_page_retry)) }
+                        Button(onClick = vm::reload, shape = MaterialTheme.shapes.medium) { Text(stringResource(R.string.subagent_library_page_retry)) }
                     }
                     if (state.corrupt) {
                         Text(stringResource(R.string.subagent_library_page_corrupt), color = MaterialTheme.colorScheme.error)
-                        Button(onClick = { reset = true }, enabled = !state.busy) {
+                        Button(onClick = { reset = true }, enabled = !state.busy, shape = MaterialTheme.shapes.medium) {
                             Text(stringResource(R.string.workspace_subagent_preset_repair))
                         }
                     } else {
                         val canCreate = !state.loading && !state.busy && state.presets != null &&
                             state.presets.orEmpty().size < SUBAGENT_LIBRARY_UI_LIMIT &&
                             state.error != R.string.subagent_library_page_load_failed
-                        Button(onClick = { vm.edit() }, enabled = canCreate) {
+                        Button(onClick = { vm.edit() }, enabled = canCreate, shape = MaterialTheme.shapes.medium) {
                             Text(stringResource(R.string.workspace_subagent_preset_create))
                         }
                         if (state.presets.orEmpty().size >= SUBAGENT_LIBRARY_UI_LIMIT) {
@@ -92,9 +95,11 @@ fun SubagentLibraryPage(presetId: String? = null, vm: SubagentLibraryVM = koinVi
                     }
                 }
             }
-            if (!state.corrupt) items(state.presets.orEmpty().sortedWith(compareBy({ it.sortOrder }, { it.key })), key = { it.id }) { preset ->
-                Card(Modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val presets = state.presets.orEmpty().sortedWith(compareBy({ it.sortOrder }, { it.key }))
+            if (!state.corrupt) itemsIndexed(presets, key = { _, preset -> preset.id }) { index, preset ->
+                Card(Modifier.fillMaxWidth(), shape = cardGroupItemShape(index, presets.size), colors = CustomColors.cardColorsOnSurfaceContainer) {
+                    if (index > 0) CardGroupDivider()
+                    Column(Modifier.padding(AppSpacing.sm), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("${preset.name} (${preset.key})", style = MaterialTheme.typography.titleMedium)
                         Text(preset.description, style = MaterialTheme.typography.bodySmall)
                         Text(stringResource(if (preset.enabled) R.string.workspace_subagent_preset_enabled else R.string.subagent_library_page_globally_disabled),

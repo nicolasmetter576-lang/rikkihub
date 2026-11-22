@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.ai.tuiqiao
 
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
@@ -65,7 +66,7 @@ class TuiqiaoHandlerTest {
 
     private val assistantModel = Model(modelId = "assistant-model")
     private val roleModel = Model(modelId = "role-model")
-    private val assistant = Assistant(chatModelId = assistantModel.id, systemPrompt = "助手提示词不该出现")
+    private val assistant = Assistant(chatModelId = assistantModel.id, promptPreset = AssistantPresets.withSystemPrompt("助手提示词不该出现"))
 
     private fun settings(roles: List<TuiqiaoRole>) = Settings(
         providers = listOf(ProviderSetting.OpenAI(apiKey = "k", baseUrl = "http://localhost", models = listOf(assistantModel, roleModel))),

@@ -7,6 +7,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
 import me.rerere.ai.provider.providers.PartGroup
+import me.rerere.ai.provider.providers.splitSystemPrompt
 import me.rerere.ai.ui.DevinReasoningMetadata
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -30,7 +31,7 @@ data class DevinMessageBundle(
  * 把通用 UI 消息列表转换为 Devin 请求的 (systemPrompt, prompts, tools).
  *
  * 映射规则 (对照 CPA parseInteractionsPayload + rikkihub 各 provider 惯例):
- * - SYSTEM: 所有 Text part 合并为 systemPrompt
+ * - SYSTEM: 开头连续的合并为 systemPrompt, 其余原位改为 USER (splitSystemPrompt)
  * - USER: source=1; Text 按 "\n" 拼接; Image(data: URI) → f10
  * - ASSISTANT: 按 tool boundary 分组; 内容组 → source=2 (Text 拼接为 content,
  *   Reasoning 拼接为 thinking + DevinReasoningMetadata 签名); Tool part → f6 toolCall
@@ -48,13 +49,14 @@ fun buildDevinMessages(
     tools: List<Tool>,
     wireToolRenames: Map<String, String> = emptyMap(),
 ): DevinMessageBundle {
-    val systemPrompt = buildDevinSystemPrompt(messages)
+    val split = messages.splitSystemPrompt()
+    val systemPrompt = buildDevinSystemPrompt(split.system)
     val prompts = mutableListOf<DevinPrompt>()
 
-    for (message in messages) {
+    for (message in split.conversation) {
         when (message.role) {
-            MessageRole.SYSTEM -> Unit // 已合并进 systemPrompt
-            MessageRole.USER -> prompts.add(message.toUserPrompt())
+            // 开头以外的系统消息已改成用户消息（splitSystemPrompt），这里不会再有
+            MessageRole.SYSTEM, MessageRole.USER -> prompts.add(message.toUserPrompt())
             MessageRole.ASSISTANT -> prompts.addAll(message.toAssistantPrompts(wireToolRenames))
             MessageRole.TOOL -> prompts.addAll(message.toToolResultPrompts())
         }
@@ -67,9 +69,8 @@ fun buildDevinMessages(
     )
 }
 
-private fun buildDevinSystemPrompt(messages: List<UIMessage>): String {
-    return messages
-        .filter { it.role == MessageRole.SYSTEM }
+private fun buildDevinSystemPrompt(systemMessages: List<UIMessage>): String {
+    return systemMessages
         .flatMap { it.parts.filterIsInstance<UIMessagePart.Text>().map { t -> t.text } }
         .joinToString("\n")
         .trim()

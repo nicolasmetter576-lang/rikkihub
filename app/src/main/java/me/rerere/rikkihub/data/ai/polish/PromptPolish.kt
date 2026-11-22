@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.data.ai.polish
 
+import me.rerere.rikkihub.data.ai.UsageRecorder
+import me.rerere.rikkihub.data.ai.UsageSource
+import me.rerere.rikkihub.data.ai.UsageTag
+import me.rerere.rikkihub.data.ai.wrapOrSelf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -119,7 +123,10 @@ object PromptPolish {
  * 调模型润色一段输入。只发一条 user 消息：不带助手提示词、工具、温度，推理关闭；带会话 id。
  * 发出的是**累计**的已清理文本（流式过程中也去掉首尾空白，围栏要等结束才剥）；结束时再发一次最终结果。
  */
-class PromptPolishHandler(private val providerManager: ProviderManager) {
+class PromptPolishHandler(
+    private val providerManager: ProviderManager,
+    private val usageRecorder: UsageRecorder? = null,
+) {
     fun polish(
         settings: Settings,
         input: String,
@@ -131,7 +138,9 @@ class PromptPolishHandler(private val providerManager: ProviderManager) {
             ?: throw PromptPolishException(PromptPolishException.Reason.NO_MODEL)
         val provider = model.findProvider(settings.providers)
             ?: throw PromptPolishException(PromptPolishException.Reason.NO_MODEL)
-        val handler = providerManager.getProviderByType(provider)
+        val handler = usageRecorder.wrapOrSelf(
+            providerManager.getProviderByType(provider), UsageTag(UsageSource.POLISH, conversationId = conversationId),
+        )
         var messages = listOf(UIMessage.user(PromptPolish.buildPrompt(settings.promptPolish, input, context)))
         val chunks = StreamChunkHandler(model)
         var output = ""

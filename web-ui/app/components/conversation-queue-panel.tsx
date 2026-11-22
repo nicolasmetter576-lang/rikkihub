@@ -88,11 +88,10 @@ function buildEditedQueueParts(
 interface QueueEditDialogProps {
   conversationId: string;
   message: QueuedMessageDto;
-  onFinished: (next: MessageQueueDto | null) => void;
   onClose: () => void;
 }
 
-function QueueEditDialog({ conversationId, message, onFinished, onClose }: QueueEditDialogProps) {
+function QueueEditDialog({ conversationId, message, onClose }: QueueEditDialogProps) {
   const { t } = useTranslation("page");
   const initialText = React.useMemo(
     () =>
@@ -121,23 +120,21 @@ function QueueEditDialog({ conversationId, message, onFinished, onClose }: Queue
       if (unlockedRef.current) return;
       unlockedRef.current = true;
       try {
-        const next = await api.post<MessageQueueDto>(
+        await api.post(
           `conversations/${conversationId}/queue/${message.id}/finish-edit`,
           { parts },
         );
-        onFinished(next);
         return true;
       } catch (unlockError) {
         // Allow a later save attempt or the unmount fallback to retry the unlock.
         unlockedRef.current = false;
-        onFinished(null);
         toast.error(
           unlockError instanceof Error ? unlockError.message : t("queue_panel.update_failed"),
         );
         return false;
       }
     },
-    [conversationId, message.id, onFinished, t],
+    [conversationId, message.id, t],
   );
   const unlockRef = React.useRef(unlock);
   unlockRef.current = unlock;
@@ -211,7 +208,7 @@ export interface ConversationQueuePanelProps {
   queue: MessageQueueDto | null;
   queueSize: number;
   queuePaused: boolean;
-  onQueueChange: (next: MessageQueueDto | null) => void;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -220,7 +217,7 @@ export function ConversationQueuePanel({
   queue,
   queueSize,
   queuePaused,
-  onQueueChange,
+  disabled = false,
   className,
 }: ConversationQueuePanelProps) {
   const { t } = useTranslation("page");
@@ -232,51 +229,45 @@ export function ConversationQueuePanel({
   const displayCount = queue ? queue.messages.length : queueSize;
   const paused = queue?.paused ?? queuePaused;
 
-  const refreshQueue = React.useCallback(async () => {
-    try {
-      const next = await api.get<MessageQueueDto>(`conversations/${conversationId}/queue`);
-      onQueueChange(next);
-    } catch {
-      // Queue fetch is best-effort; SSE updates keep the panel in sync.
-    }
-  }, [conversationId, onQueueChange]);
-
+  const mounted = React.useRef(false);
   React.useEffect(() => {
-    if (expanded) {
-      void refreshQueue();
-    }
-  }, [expanded, refreshQueue]);
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  // queue_update is sent on every connection. REST actions only acknowledge commands;
+  // their queue snapshots can already be older than the last event on this stream.
 
   const handleRemove = React.useCallback(
     async (queuedId: string) => {
-      if (pendingAction) return;
+      if (disabled || pendingAction) return;
       setPendingAction(`remove:${queuedId}`);
       try {
         await api.delete(`conversations/${conversationId}/queue/${queuedId}`);
-        onQueueChange(
-          queue ? { ...queue, messages: queue.messages.filter((m) => m.id !== queuedId) } : null,
-        );
       } catch (removeError) {
         toast.error(
           removeError instanceof Error ? removeError.message : t("queue_panel.update_failed"),
         );
-        void refreshQueue();
       } finally {
         setPendingAction(null);
       }
     },
-    [conversationId, onQueueChange, pendingAction, queue, refreshQueue, t],
+    [conversationId, disabled, pendingAction, t],
   );
 
   const handleBeginEdit = React.useCallback(
     async (queuedId: string) => {
-      if (pendingAction) return;
+      if (disabled || pendingAction) return;
       setPendingAction(`edit:${queuedId}`);
       try {
         const next = await api.post<MessageQueueDto>(
           `conversations/${conversationId}/queue/${queuedId}/begin-edit`,
         );
-        onQueueChange(next);
+        if (!mounted.current) {
+          // Leaving while begin-edit was in flight must not leave the server item locked.
+          await api.post(`conversations/${conversationId}/queue/${queuedId}/finish-edit`, { parts: null });
+          return;
+        }
+        // The response supplies an editing draft, never the displayed queue state.
         const target = next.messages.find((item) => item.id === queuedId) ?? null;
         if (target) {
           setEditingMessage(target);
@@ -289,15 +280,14 @@ export function ConversationQueuePanel({
         setPendingAction(null);
       }
     },
-    [conversationId, onQueueChange, pendingAction, t],
+    [conversationId, disabled, pendingAction, t],
   );
 
   const handleResume = React.useCallback(async () => {
-    if (pendingAction) return;
+    if (disabled || pendingAction) return;
     setPendingAction("resume");
     try {
-      const next = await api.post<MessageQueueDto>(`conversations/${conversationId}/queue/resume`);
-      onQueueChange(next);
+      await api.post(`conversations/${conversationId}/queue/resume`);
     } catch (resumeError) {
       toast.error(
         resumeError instanceof Error ? resumeError.message : t("queue_panel.update_failed"),
@@ -305,7 +295,7 @@ export function ConversationQueuePanel({
     } finally {
       setPendingAction(null);
     }
-  }, [conversationId, onQueueChange, pendingAction, t]);
+  }, [conversationId, disabled, pendingAction, t]);
 
   if (displayCount <= 0) {
     return null;
@@ -327,7 +317,7 @@ export function ConversationQueuePanel({
               size="xs"
               variant="ghost"
               className="h-6 gap-1 px-2 text-xs"
-              disabled={pendingAction !== null}
+              disabled={disabled || pendingAction !== null}
               onClick={() => void handleResume()}
             >
               <Play className="size-3" />
@@ -365,7 +355,7 @@ export function ConversationQueuePanel({
                   className="size-6 shrink-0"
                   aria-label={t("queue_panel.edit")}
                   title={queuedMessage.isEditing ? t("queue_panel.editing") : t("queue_panel.edit")}
-                  disabled={pendingAction !== null || queuedMessage.isEditing}
+                  disabled={disabled || pendingAction !== null || queuedMessage.isEditing}
                   onClick={() => void handleBeginEdit(queuedMessage.id)}
                 >
                   <Pencil className="size-3" />
@@ -377,7 +367,7 @@ export function ConversationQueuePanel({
                   className="size-6 shrink-0 text-destructive hover:text-destructive"
                   aria-label={t("queue_panel.remove")}
                   title={t("queue_panel.remove")}
-                  disabled={pendingAction !== null || queuedMessage.isEditing}
+                  disabled={disabled || pendingAction !== null || queuedMessage.isEditing}
                   onClick={() => void handleRemove(queuedMessage.id)}
                 >
                   <X className="size-3.5" />
@@ -396,13 +386,6 @@ export function ConversationQueuePanel({
           key={editingMessage.id}
           conversationId={conversationId}
           message={editingMessage}
-          onFinished={(next) => {
-            if (next) {
-              onQueueChange(next);
-            } else {
-              void refreshQueue();
-            }
-          }}
           onClose={() => setEditingMessage(null)}
         />
       ) : null}

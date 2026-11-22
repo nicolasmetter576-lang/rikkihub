@@ -17,6 +17,8 @@ object ProotLauncher {
         "TERM=xterm-256color",
         "LANG=C.UTF-8",
         "LC_ALL=C.UTF-8",
+        // Programs that honour BROWSER (Python webbrowser, gh, …) use the same handoff as xdg-open.
+        "BROWSER=xdg-open",
     )
 
     fun prootExecutable(nativeLibraryDir: File): File = File(nativeLibraryDir, PROOT_EXEC)

@@ -56,6 +56,14 @@ class MessageQueue {
         )
     }
 
+    /** 下一条会被 [takeNext] 取走的消息，不取走。 */
+    @Synchronized
+    fun peekNext(): QueuedMessage? {
+        val current = state.value
+        if (current.paused) return null
+        return current.messages.firstOrNull()?.takeUnless { it.isEditing }
+    }
+
     @Synchronized
     fun takeNext(): QueuedMessage? {
         val current = state.value

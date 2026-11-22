@@ -77,7 +77,7 @@ fun WorkspaceSubagentPresetCard(workspace: WorkspaceEntity?, vm: WorkspaceDetail
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (corrupt) {
                 Text(stringResource(R.string.workspace_subagent_preset_corrupt), color = MaterialTheme.colorScheme.error)
-                Button(onClick = { repair = true }, enabled = !busy) {
+                Button(onClick = { repair = true }, enabled = !busy, shape = MaterialTheme.shapes.medium) {
                     Text(stringResource(R.string.workspace_subagent_preset_repair))
                 }
             } else if (presets != null) {
@@ -400,7 +400,7 @@ private fun <T> WorkspaceSubagentPresetChoice(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { expanded = true }, enabled = enabled) { Text("$label: ${choiceLabel(selected)}") }
+        OutlinedButton(onClick = { expanded = true }, enabled = enabled, shape = MaterialTheme.shapes.medium) { Text("$label: ${choiceLabel(selected)}") }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             choices.forEach { choice ->
                 DropdownMenuItem(text = { Text(choiceLabel(choice)) }, onClick = { expanded = false; onSelect(choice) })

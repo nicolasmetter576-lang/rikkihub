@@ -40,20 +40,22 @@ class HistoryVM(
     // Serializes delete and its undo: an undo tapped right away still runs after the delete.
     private val deletions = Mutex()
 
-    fun deleteConversation(conversation: Conversation) {
+    fun deleteConversations(conversations: List<Conversation>) {
         viewModelScope.launch {
-            deletions.withLock { conversationRepo.deleteConversation(conversation) }
+            deletions.withLock { conversations.forEach { conversationRepo.deleteConversation(it) } }
         }
     }
 
-    /** Undo of [deleteConversation]: the conversation comes back unchanged, in its old place. */
-    fun undoDelete(conversationId: Uuid) {
+    /** Undo of [deleteConversations]: the conversations come back unchanged, in their old places. */
+    fun undoDelete(conversationIds: List<Uuid>) {
         viewModelScope.launch {
             deletions.withLock {
-                try {
-                    conversationRepo.restoreConversation(conversationId)
-                } catch (e: MutationConflictException) {
-                    Log.w(TAG, "undo delete: conversation $conversationId is no longer restorable", e)
+                conversationIds.forEach { conversationId ->
+                    try {
+                        conversationRepo.restoreConversation(conversationId)
+                    } catch (e: MutationConflictException) {
+                        Log.w(TAG, "undo delete: conversation $conversationId is no longer restorable", e)
+                    }
                 }
             }
         }

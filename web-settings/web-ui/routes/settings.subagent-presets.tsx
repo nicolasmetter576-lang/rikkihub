@@ -102,7 +102,7 @@ export default function SubagentPresetLibraryPage() {
         </Button>)}
       </div> : null}
       {presets.length === 0 && !editor ? <p className="text-sm text-muted-foreground">{t("library.empty")}</p> : null}
-      {!editor ? <ul className="space-y-3">{presets.map((preset) => <li key={preset.id} className="space-y-2 rounded border p-3">
+      {!editor ? <ul className="divide-y overflow-hidden rounded-xl border">{presets.map((preset) => <li key={preset.id} className="space-y-2 p-3">
         <div className="flex flex-wrap items-center gap-2"><strong className="min-w-0 max-w-full break-words">{preset.name}</strong><code className="break-all text-xs">{preset.key}</code>
           <span className="text-xs text-muted-foreground">{t(builtinKeys.has(preset.key) ? "library.builtin" : "library.custom")}</span>
           <span className="text-xs text-muted-foreground">{t(preset.enabled ? "presets.enabled" : "presets.disabled")} · v{preset.version}</span>

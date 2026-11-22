@@ -11,7 +11,7 @@ class ProviderConfigureDraftCommitTest {
         val configure = source("app/src/main/java/me/rerere/rikkihub/ui/pages/setting/components/ProviderConfigure.kt")
         val fields = Regex("""CommitOnDoneTextField\((.*?)\n\s*\)""", RegexOption.DOT_MATCHES_ALL)
             .findAll(configure).map { it.groupValues[1] }.toList()
-        assertEquals(14, fields.size)
+        assertEquals(8, fields.size)
         fields.forEach { assertTrue(it, it.contains("commitOnChange = true")) }
     }
 

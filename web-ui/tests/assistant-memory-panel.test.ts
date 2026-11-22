@@ -14,6 +14,7 @@ import { initReactI18next } from "react-i18next";
 
 import {
   AssistantMemoryPanel,
+  GlobalMemoryPanel,
   MEMORY_FILE_MAX_BYTES,
   dreamSummary,
   memoryContentError,
@@ -87,4 +88,12 @@ test("memory strings exist in both languages", () => {
   assert.deepEqual(Object.keys(zh.assistants.memory).sort(), Object.keys(en.assistants.memory).sort());
   assert.ok(en.assistants.fields.auto_consolidate_memory);
   assert.ok(zh.assistants.fields.auto_consolidate_memory);
+  assert.ok(en.nav.global_memory);
+  assert.ok(zh.nav.global_memory);
+});
+
+test("global memory panel renders global scope header", () => {
+  const html = renderToStaticMarkup(createElement(GlobalMemoryPanel));
+  assert.match(html, /Global Memory/);
+  assert.match(html, /Global/);
 });

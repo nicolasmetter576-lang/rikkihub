@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
@@ -33,6 +32,7 @@ import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.ui.pages.extensions.workspace.toShellStatusLabel
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
 
 @Composable
 internal fun WorkspaceSelectSheet(
@@ -93,7 +93,7 @@ internal fun WorkspaceSelectSheet(
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
             // 管理工作区
-            ListItem(
+            CompactListItem(
                 leadingContent = {
                     Icon(HugeIcons.Codesandbox, contentDescription = null)
                 },
@@ -123,7 +123,7 @@ private fun WorkspaceSelectRow(
     onClick: () -> Unit,
     status: String? = null,
 ) {
-    ListItem(
+    CompactListItem(
         leadingContent = {
             Icon(HugeIcons.Codesandbox, contentDescription = null)
         },

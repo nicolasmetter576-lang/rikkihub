@@ -37,6 +37,7 @@ class UIMessageSerializationTest {
             generationTimeMs = 1200,
             lastUsage = TokenUsage(promptTokens = 150, completionTokens = 20),
             stepCount = 2,
+            usageComplete = true,
             isContextCheckpoint = true,
         )
         assertEquals(message, json.decodeFromString<UIMessage>(json.encodeToString(message)))
@@ -53,10 +54,25 @@ class UIMessageSerializationTest {
         assertNull(decoded.generationTimeMs)
         assertNull(decoded.lastUsage)
         assertNull(decoded.stepCount)
+        assertNull(decoded.usageComplete)
         assertFalse(decoded.isContextCheckpoint)
         // 旧消息的 usage 只保留了最后一步，正好就是最后一次请求的 usage
         assertEquals(TokenUsage(promptTokens = 10, completionTokens = 2), decoded.lastRequestUsage())
         assertEquals(12, decoded.contextTokens())
+    }
+
+    @Test
+    fun `known missing current usage survives serialization without legacy fallback`() {
+        val message = UIMessage.assistant("partial").copy(
+            usage = TokenUsage(250, 30, totalTokens = 280),
+            lastUsage = null,
+            usageComplete = false,
+            stepCount = 2,
+        )
+        val decoded = json.decodeFromString<UIMessage>(json.encodeToString(message))
+        assertEquals(message, decoded)
+        assertNull(decoded.lastRequestUsage())
+        assertNull(decoded.contextTokens())
     }
 
     @Test
@@ -72,5 +88,55 @@ class UIMessageSerializationTest {
         assertEquals("Claude X", model.displayName)
         assertNull(message.copy(modelId = null).snapshotModel())
         assertNull(message.copy(modelSnapshot = null).snapshotModel())
+    }
+
+    @Test
+    fun `checkpoint metadata and empty clear checkpoint round trip cleanly`() {
+        val startId = Uuid.random()
+        val endId = Uuid.random()
+        val supersededId = Uuid.random()
+        val summaryMsg = UIMessage.user("Summary").copy(
+            isContextCheckpoint = true,
+            checkpointMeta = ContextCheckpointMetadata(
+                kind = ContextCheckpointKind.OVERFLOW_RETRY,
+                templateId = "code",
+                fromOriginal = true,
+                chunked = true,
+                requestCount = 3,
+                carriedCount = 2,
+                rangeStartNodeId = startId,
+                rangeEndNodeId = endId,
+                summarizedCount = 8,
+                supersededCheckpointNodeId = supersededId,
+                usage = TokenUsage(promptTokens = 100, completionTokens = 25, totalTokens = 125),
+            ),
+        )
+        val decodedSummary = json.decodeFromString(UIMessage.serializer(), json.encodeToString(UIMessage.serializer(), summaryMsg))
+        assertEquals(ContextCheckpointKind.OVERFLOW_RETRY, decodedSummary.checkpointMeta?.kind)
+        assertEquals("code", decodedSummary.checkpointMeta?.templateId)
+        assertTrue(decodedSummary.checkpointMeta?.fromOriginal == true)
+        assertTrue(decodedSummary.checkpointMeta?.chunked == true)
+        assertEquals(startId, decodedSummary.checkpointMeta?.rangeStartNodeId)
+        assertEquals(endId, decodedSummary.checkpointMeta?.rangeEndNodeId)
+        assertEquals(supersededId, decodedSummary.checkpointMeta?.supersededCheckpointNodeId)
+        assertEquals(125, decodedSummary.checkpointMeta?.usage?.totalTokens)
+        assertFalse(decodedSummary.isClearContextCheckpoint)
+
+        val clearMsg = UIMessage(
+            role = MessageRole.USER,
+            parts = emptyList(),
+            isContextCheckpoint = true,
+            checkpointMeta = ContextCheckpointMetadata(kind = ContextCheckpointKind.CLEAR, summarizedCount = 4),
+        )
+        val decodedClear = json.decodeFromString(UIMessage.serializer(), json.encodeToString(UIMessage.serializer(), clearMsg))
+        assertTrue(decodedClear.isContextCheckpoint)
+        assertTrue(decodedClear.isClearContextCheckpoint)
+        assertEquals(ContextCheckpointKind.CLEAR, decodedClear.checkpointMeta?.kind)
+        assertTrue(decodedClear.parts.isEmpty())
+
+        val legacyMsg = UIMessage.user("Legacy summary").copy(isContextCheckpoint = true)
+        val decodedLegacy = json.decodeFromString(UIMessage.serializer(), json.encodeToString(UIMessage.serializer(), legacyMsg))
+        assertNull(decodedLegacy.checkpointMeta)
+        assertFalse(decodedLegacy.isClearContextCheckpoint)
     }
 }

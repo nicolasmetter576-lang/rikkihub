@@ -268,7 +268,11 @@ test("extension picker is always there with the App's four tabs and manage links
   assert.equal(EXTENSION_MANAGE_LINKS.quickmessages, "/settings/extensions?tab=quick");
   assert.equal(EXTENSION_MANAGE_LINKS.skills, "/settings/skills");
   assert.equal(extensionTabFromSearch("?tab=lorebook"), "lorebook");
-  assert.equal(extensionTabFromSearch("?tab=mode"), "mode");
+  // the prompt library used to be called "mode injection"; old links keep working
+  assert.equal(extensionTabFromSearch("?tab=library"), "library");
+  assert.equal(extensionTabFromSearch("?tab=mode"), "library");
+  assert.equal(extensionTabFromSearch("?tab=regex"), "regex");
+  assert.equal(EXTENSION_MANAGE_LINKS.mode, "/settings/extensions?tab=library");
   assert.equal(extensionTabFromSearch("?tab=bogus"), "quick");
   assert.equal(extensionTabFromSearch(""), "quick");
   for (const tab of EXTENSION_TABS) assert.notEqual(i18next.t(`input:injection.tab_${tab}`), `injection.tab_${tab}`);

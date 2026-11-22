@@ -168,6 +168,21 @@ const api = {
       return handleError(error);
     }
   },
+  /** Send a file's bytes as the request body (character cards, avatars). */
+  async postBinary<T>(url: string, body: Blob, options?: Options): Promise<T> {
+    try {
+      return await kyInstance.post(url, { ...options, body, timeout: 120_000 }).json<T>();
+    } catch (error) {
+      return handleError(error);
+    }
+  },
+  async putBinary<T>(url: string, body: Blob, options?: Options): Promise<T> {
+    try {
+      return await kyInstance.put(url, { ...options, body, timeout: 120_000 }).json<T>();
+    } catch (error) {
+      return handleError(error);
+    }
+  },
   async put<T>(url: string, data?: unknown, options?: Options): Promise<T> {
     try {
       return await kyInstance

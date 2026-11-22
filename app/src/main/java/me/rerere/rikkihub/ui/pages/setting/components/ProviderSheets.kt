@@ -1,5 +1,10 @@
 package me.rerere.rikkihub.ui.pages.setting.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import me.rerere.rikkihub.ui.components.ui.CardGroupCorner
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.SheetValue
@@ -24,7 +28,6 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.ui.components.ui.AutoAIIcon
-import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
 
 // 新建服务商时先选类型的面板
 @Composable
@@ -54,12 +57,16 @@ internal fun <T> ProviderTypeSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
-            Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(CardGroupCorner))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            ) {
                 types.fastForEachIndexed { index, type ->
                     val name = typeName(type)
+                    if (index > 0) CardGroupDivider()
                     Surface(
                         onClick = { onSelect(type) },
-                        shape = cardGroupItemShape(index, types.size),
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
                         Row(

@@ -1,5 +1,9 @@
+import * as React from "react";
+
 import { useTranslation } from "react-i18next";
 
+import { CharacterAvatar } from "@overlay/components/tavern/character-avatar";
+import { ActiveCharacterContext } from "@overlay/hooks/use-active-character";
 import { AIIcon } from "~/components/ui/ai-icon";
 import { UIAvatar } from "~/components/ui/ui-avatar";
 import { useSettingsStore } from "~/stores";
@@ -41,6 +45,7 @@ export function ChatMessageAvatarRow({
 }: ChatMessageAvatarRowProps) {
   const { t, i18n } = useTranslation(["common", "page"]);
   const displaySetting = useSettingsStore((state) => state.settings?.displaySetting);
+  const character = React.useContext(ActiveCharacterContext);
 
   if (!hasMessageContent) {
     return null;
@@ -87,9 +92,12 @@ export function ChatMessageAvatarRow({
   const modelName = modelInfo
     ? modelInfo.displayName.trim() || modelInfo.modelId.trim() || defaultAssistantName
     : assistantName;
-  const title = useAssistantAvatar ? assistantName : modelName;
+  // 和角色聊天：头像与名字是角色的，不是模型的
+  const title = character ? character.name : useAssistantAvatar ? assistantName : modelName;
 
-  const icon = !showModelIcon ? null : useAssistantAvatar ? (
+  const icon = !showModelIcon ? null : character ? (
+    <CharacterAvatar name={character.name} avatarUrl={character.avatarUrl} className="size-9" />
+  ) : useAssistantAvatar ? (
     <UIAvatar name={assistantName} avatar={assistant?.avatar} className="size-9" />
   ) : modelInfo ? (
     <AIIcon
@@ -100,7 +108,12 @@ export function ChatMessageAvatarRow({
       imageClassName="h-[72%] w-[72%]"
     />
   ) : null;
-  if (!icon && !showModelName) {
+  // 每轮标题：模型名右侧的浅色小字
+  const turnTitle = message.title?.trim() || null;
+  const turnTitleLabel = turnTitle ? (
+    <div className="truncate text-xs text-muted-foreground/70">{turnTitle}</div>
+  ) : null;
+  if (!icon && !showModelName && !turnTitle) {
     return null;
   }
 
@@ -110,12 +123,17 @@ export function ChatMessageAvatarRow({
         {icon}
         {showModelName ? (
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-foreground/90">{title}</div>
+            <div className="flex min-w-0 items-baseline gap-2">
+              <div className="truncate text-sm font-medium text-foreground/90">{title}</div>
+              {turnTitleLabel}
+            </div>
             {createdAtLabel ? (
               <div className="truncate text-xs text-muted-foreground/80">{createdAtLabel}</div>
             ) : null}
           </div>
-        ) : null}
+        ) : (
+          turnTitleLabel
+        )}
       </div>
     </div>
   );

@@ -14,7 +14,6 @@ import me.rerere.rikkihub.ui.components.ui.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
@@ -44,6 +43,7 @@ import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.compose.koinInject
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
 
 @Composable
 fun WorkspaceCwdPickerSheet(
@@ -124,7 +124,7 @@ fun WorkspaceCwdPickerSheet(
             ) {
                 val dirs = entries.filter { it.isDirectory }
                 items(dirs, key = { it.path }) { entry ->
-                    ListItem(
+                    CompactListItem(
                         headlineContent = {
                             Text(
                                 text = entry.name,

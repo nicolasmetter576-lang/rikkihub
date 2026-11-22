@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -19,12 +21,11 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,21 +52,20 @@ import org.koin.androidx.compose.koinViewModel
 fun SettingToolsPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.setting_page_tools)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { contentPadding ->
         LazyColumn(
+            state = rememberSettingSearchListState(),
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -76,7 +76,7 @@ fun SettingToolsPage(vm: SettingVM = koinViewModel()) {
                 fun save(transform: (ToolExecutionConfig) -> ToolExecutionConfig) =
                     vm.updateSettings { latest -> latest.copy(toolExecution = transform(latest.toolExecution)) }
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.setting_page_tools_execution_title)) },
                 ) {
                     item(
@@ -88,6 +88,7 @@ fun SettingToolsPage(vm: SettingVM = koinViewModel()) {
                                 onCheckedChange = { checked -> save { it.copy(parallel = checked) } },
                             )
                         },
+                        searchKey = R.string.setting_page_tools_parallel,
                     )
                     if (execution.parallel) {
                         item(
@@ -117,7 +118,7 @@ fun SettingToolsPage(vm: SettingVM = koinViewModel()) {
             BuiltinToolCatalog.grouped().forEach { (category, specs) ->
                 item(category.name) {
                     CardGroup(
-                        modifier = Modifier.padding(horizontal = 8.dp),
+                        modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                         title = { Text(categoryTitle(category)) },
                     ) {
                         specs.forEach { spec ->
@@ -149,11 +150,10 @@ fun SettingToolsPage(vm: SettingVM = koinViewModel()) {
 fun SettingToolDetailPage(id: String, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val spec = BuiltinToolCatalog[id]
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(
                         spec?.let {
@@ -163,17 +163,16 @@ fun SettingToolDetailPage(id: String, vm: SettingVM = koinViewModel()) {
                     )
                 },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { contentPadding ->
         if (spec == null) {
             Text(
                 text = stringResource(R.string.setting_page_tools_not_found),
-                modifier = Modifier.padding(contentPadding).padding(16.dp),
+                modifier = Modifier.padding(contentPadding).padding(AppSpacing.sm),
             )
             return@Scaffold
         }
@@ -201,7 +200,7 @@ fun SettingToolDetailPage(id: String, vm: SettingVM = koinViewModel()) {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(contentPadding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = AppSpacing.sm)
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {

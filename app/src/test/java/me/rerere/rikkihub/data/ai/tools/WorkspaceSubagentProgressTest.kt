@@ -2,6 +2,7 @@ package me.rerere.rikkihub.data.ai.tools
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.intOrNull
@@ -13,6 +14,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.core.ToolExecutionContext
+import me.rerere.ai.ui.GoogleThoughtMetadata
 import me.rerere.ai.ui.SubagentMetadata
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -393,6 +395,20 @@ class WorkspaceSubagentProgressTest {
         val json = JsonInstant.parseToJsonElement((ended.output.single() as UIMessagePart.Text).text).jsonObject
         assertEquals("ok", json["status"]!!.jsonPrimitive.content)
         assertEquals("/subagent_runs/run.json", json["log_path"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `cancellation keeps the provider thoughtSignature on the call`() {
+        val tool = UIMessagePart.Tool(
+            toolCallId = "signed", toolName = "subagent", input = "{}",
+            metadata = JsonObject(
+                SubagentMetadata(status = "running", stepCount = 1, startedAtEpochMs = 100).toMetadata() +
+                    ("thoughtSignature" to JsonPrimitive("sig")),
+            ),
+        )
+        val ended = finishInterruptedSubagentTool(tool, tempFolder.newFolder("signed"), 1100)!!
+        assertEquals("cancelled", ended.metadataAs<SubagentMetadata>()?.status)
+        assertEquals("sig", ended.metadataAs<GoogleThoughtMetadata>()?.thoughtSignature)
     }
 
     @Test

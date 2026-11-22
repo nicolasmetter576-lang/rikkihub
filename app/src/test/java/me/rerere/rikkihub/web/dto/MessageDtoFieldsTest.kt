@@ -24,6 +24,7 @@ class MessageDtoFieldsTest {
             parts = listOf(UIMessagePart.Text("done")),
             modelSnapshot = ModelSnapshot(modelId = "m", displayName = "Model M"),
             usage = TokenUsage(promptTokens = 250, completionTokens = 30),
+            usageComplete = true,
             generationTimeMs = 900,
             lastUsage = TokenUsage(promptTokens = 150, completionTokens = 20),
             stepCount = 2,
@@ -33,11 +34,36 @@ class MessageDtoFieldsTest {
         assertEquals(message.modelSnapshot, dto.modelSnapshot)
         assertEquals(900L, dto.generationTimeMs)
         assertEquals(message.lastUsage, dto.lastUsage)
+        assertEquals(true, dto.usageComplete)
         assertEquals(2, dto.stepCount)
         assertTrue(dto.isContextCheckpoint)
         val encoded = json.encodeToString(MessageDto.serializer(), dto)
         assertTrue(encoded.contains("\"lastUsage\""))
+        assertTrue(encoded.contains("\"usageComplete\":true"))
         assertTrue(encoded.contains("\"isContextCheckpoint\":true"))
+    }
+
+    @Test
+    fun `usage completeness survives message JSON and DTO without inventing legacy values`() {
+        val oldJson = """{"role":"assistant","parts":[],"createdAt":"2026-11-02T10:00:00","usage":{"promptTokens":100,"completionTokens":50,"totalTokens":180}}"""
+        val oldMessage = json.decodeFromString(UIMessage.serializer(), oldJson)
+        assertNull(oldMessage.usageComplete)
+        assertNull(oldMessage.finishedAt)
+        assertNull(oldMessage.toDto().usageComplete)
+        for (complete in listOf(null, false, true)) {
+            val message = oldMessage.copy(usageComplete = complete, lastUsage = null)
+            val saved = json.encodeToString(UIMessage.serializer(), message)
+            val restored = json.decodeFromString(UIMessage.serializer(), saved)
+            assertEquals(complete, restored.usageComplete)
+            val dto = restored.toDto()
+            assertEquals("ASSISTANT", dto.role) // DTO role names differ from persisted AI enum values.
+            val wire = json.encodeToString(MessageDto.serializer(), dto)
+            assertEquals(complete, json.decodeFromString(MessageDto.serializer(), wire).usageComplete)
+            assertNull(dto.lastUsage)
+            assertNull(dto.finishedAt)
+        }
+        val oldDto = """{"id":"old","role":"ASSISTANT","parts":[],"createdAt":"2026-11-02T10:00:00"}"""
+        assertNull(json.decodeFromString(MessageDto.serializer(), oldDto).usageComplete)
     }
 
     @Test

@@ -22,7 +22,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,13 +33,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
 import kotlinx.datetime.toJavaLocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.hugeicons.stroke.Clean
+import androidx.compose.ui.platform.testTag
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Copy01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Edit01
@@ -50,6 +51,7 @@ import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Refresh03
 import me.rerere.hugeicons.stroke.Share04
 import me.rerere.hugeicons.stroke.StopCircle
+import me.rerere.hugeicons.stroke.TextFont
 import me.rerere.hugeicons.stroke.TextSelection
 import me.rerere.hugeicons.stroke.Translate
 import me.rerere.hugeicons.stroke.VolumeHigh
@@ -65,6 +67,7 @@ import me.rerere.rikkihub.utils.removeBracketedContent
 import me.rerere.rikkihub.utils.toLocalString
 import me.rerere.rikkihub.utils.toMessageTimeString
 import java.util.Locale
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun ColumnScope.ChatMessageActionButtons(
@@ -78,16 +81,8 @@ fun ColumnScope.ChatMessageActionButtons(
 ) {
     val context = LocalContext.current
     val settings = LocalSettings.current
-    var isPendingDelete by remember { mutableStateOf(false) }
     var showTranslateDialog by remember { mutableStateOf(false) }
     var showRegenerateConfirm by remember { mutableStateOf(false) }
-
-    LaunchedEffect(isPendingDelete) {
-        if (isPendingDelete) {
-            delay(3000) // 3秒后自动取消
-            isPendingDelete = false
-        }
-    }
 
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -254,6 +249,10 @@ fun ChatMessageActionsSheet(
     isFavorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
     onWebViewPreview: () -> Unit,
+    activationCount: Int = 0,
+    onShowActivations: () -> Unit = {},
+    onQubagu: (() -> Unit)? = null,
+    onEditTitle: (() -> Unit)? = null,
     onDismissRequest: () -> Unit
 ) {
     ModalBottomSheet(
@@ -263,7 +262,7 @@ fun ChatMessageActionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -279,7 +278,7 @@ fun ChatMessageActionsSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier
-                        .padding(16.dp)
+                        .padding(AppSpacing.sm)
                         .fillMaxWidth()
                 ) {
                     Icon(
@@ -310,7 +309,7 @@ fun ChatMessageActionsSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
-                            .padding(16.dp)
+                            .padding(AppSpacing.sm)
                             .fillMaxWidth()
                     ) {
                         Icon(
@@ -320,6 +319,65 @@ fun ChatMessageActionsSheet(
                         )
                         Text(
                             text = stringResource(R.string.render_with_webview),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+            }
+
+            // 去八股：打开这条回复的改动清单（还没检查过就先检查一遍）
+            if (onQubagu != null) {
+                Card(
+                    onClick = {
+                        onDismissRequest()
+                        onQubagu()
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.testTag("message-action-qubagu"),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .padding(AppSpacing.sm)
+                            .fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.Clean,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.qubagu_title),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+            }
+
+            // 世界书激活记录（这条回复用到了哪些条目）
+            if (activationCount > 0) {
+                Card(
+                    onClick = {
+                        onDismissRequest()
+                        onShowActivations()
+                    },
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .padding(AppSpacing.sm)
+                            .fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.BookOpen01,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.worldinfo_activations_action, activationCount),
                             style = MaterialTheme.typography.titleMedium,
                         )
                     }
@@ -338,7 +396,7 @@ fun ChatMessageActionsSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier
-                        .padding(16.dp)
+                        .padding(AppSpacing.sm)
                         .fillMaxWidth()
                 ) {
                     Icon(
@@ -350,6 +408,35 @@ fun ChatMessageActionsSheet(
                         text = stringResource(R.string.edit),
                         style = MaterialTheme.typography.titleMedium,
                     )
+                }
+            }
+
+            // Edit per-turn title
+            if (onEditTitle != null) {
+                Card(
+                    onClick = {
+                        onDismissRequest()
+                        onEditTitle()
+                    },
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .padding(AppSpacing.sm)
+                            .fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.TextFont,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.chat_message_edit_title),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
                 }
             }
 
@@ -365,7 +452,7 @@ fun ChatMessageActionsSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier
-                        .padding(16.dp)
+                        .padding(AppSpacing.sm)
                         .fillMaxWidth()
                 ) {
                     Icon(
@@ -392,7 +479,7 @@ fun ChatMessageActionsSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier
-                        .padding(16.dp)
+                        .padding(AppSpacing.sm)
                         .fillMaxWidth()
                 ) {
                     Icon(
@@ -419,7 +506,7 @@ fun ChatMessageActionsSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
-                            .padding(16.dp)
+                            .padding(AppSpacing.sm)
                             .fillMaxWidth()
                     ) {
                         Icon(
@@ -453,7 +540,7 @@ fun ChatMessageActionsSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier
-                        .padding(16.dp)
+                        .padding(AppSpacing.sm)
                         .fillMaxWidth()
                 ) {
                     Icon(

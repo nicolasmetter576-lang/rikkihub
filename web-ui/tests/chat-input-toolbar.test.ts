@@ -94,9 +94,11 @@ test("desktop toolbar sizes itself by the pane, not the viewport", () => {
   assert.match(html, /@container\/composer/);
   // Send cluster: its own container, grows into the row and wraps as a whole below its basis.
   assert.match(html, /@container\/send grow basis-76/);
-  // The model name is the only part that shrinks; labels follow the pane / cluster width.
+  // The model name is the only part that shrinks; reasoning now lives in the "+" panel.
   assert.match(html, /max-w-56 shrink/);
-  assert.match(html, /@\[25rem\]\/send:block/);
+  assert.doesNotMatch(html, /data-testid="chat-more-reasoning"/);
+  assert.match(html, /href="\/workspaces\/w1\?tab=terminal"/);
+  assert.match(html, /data-testid="chat-workspace-terminal"/);
   assert.match(html, /@2xl\/composer:inline[^"]*">Draft</);
   // The tool icons never shrink into a column.
   assert.match(html, /flex flex-wrap items-center gap-0\.5 max-w-full shrink-0/);
@@ -110,6 +112,7 @@ test("mobile toolbar keeps the viewport-based single row", () => {
   assert.match(html, /justify-between gap-2/);
   assert.match(html, /flex flex-wrap items-center gap-0\.5 min-w-0/);
   assert.match(html, /max-w-\[120px\] sm:max-w-56/);
-  assert.match(html, /hidden sm:block/);
+  assert.doesNotMatch(html, /data-testid="chat-more-reasoning"/);
+  assert.match(html, /data-testid="chat-workspace-terminal"/);
   assert.match(html, /sm:inline[^"]*">Draft</);
 });

@@ -12,12 +12,19 @@ sealed interface SettingsAction {
     @Serializable data class Create(val fields: Map<String, JsonElement>) : SettingsAction
     @Serializable data class Patch(val id: String, val fields: Map<String, JsonElement>) : SettingsAction
     @Serializable data class Delete(val id: String) : SettingsAction
+    /** Several objects of one native sub-collection (lorebook entries, preset entries, regex scripts) in one command. */
+    @Serializable data class CreateMany(val items: List<Map<String, JsonElement>>) : SettingsAction
+    @Serializable data class PatchMany(val patches: List<ObjectPatch>) : SettingsAction
+    @Serializable data class DeleteMany(val ids: List<String>) : SettingsAction
     @Serializable data class Reorder(val orderedIds: List<String>) : SettingsAction
     @Serializable data class Clone(val id: String, val name: String) : SettingsAction
     @Serializable data class SetField(val fieldId: String, val value: JsonElement) : SettingsAction
     @Serializable data class BindAssistant(val assistantId: String, val targetId: String, val enabled: Boolean) : SettingsAction
     @Serializable data class ResetPrompt(val slot: String) : SettingsAction
 }
+
+@Serializable
+data class ObjectPatch(val id: String, val fields: Map<String, JsonElement>)
 
 @Serializable
 data class SettingsDomainCommand(
@@ -29,10 +36,12 @@ data class SettingsDomainCommand(
         is SettingsAction.Patch -> listOf(ObjectRef(domain, a.id))
         is SettingsAction.Delete -> listOf(ObjectRef(domain, a.id))
         is SettingsAction.Clone -> listOf(ObjectRef(domain, a.id))
+        is SettingsAction.PatchMany -> a.patches.map { ObjectRef(domain, it.id) }
+        is SettingsAction.DeleteMany -> a.ids.map { ObjectRef(domain, it) }
         else -> emptyList()
     }
     override fun risk(): RiskLevel = when (action) {
-        is SettingsAction.Delete, is SettingsAction.Clone, is SettingsAction.SetField,
+        is SettingsAction.Delete, is SettingsAction.DeleteMany, is SettingsAction.Clone, is SettingsAction.SetField,
         is SettingsAction.ResetPrompt, is SettingsAction.BindAssistant -> RiskLevel.HIGH
         is SettingsAction.Reorder -> RiskLevel.LOW
         else -> if (domain == ManagementDomain.ASSISTANT || domain == ManagementDomain.MODEL_AND_PROMPT_DEFAULTS)

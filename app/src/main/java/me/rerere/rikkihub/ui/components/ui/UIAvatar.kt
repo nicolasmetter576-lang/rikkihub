@@ -216,7 +216,8 @@ fun UIAvatar(
                             showPickOption = false
                             imagePickerLauncher.launch("image/*")
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(text = stringResource(id = R.string.avatar_pick_image))
                     }
@@ -225,7 +226,8 @@ fun UIAvatar(
                             showPickOption = false
                             showEmojiPicker = true
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(text = stringResource(id = R.string.avatar_pick_emoji))
                     }
@@ -235,7 +237,8 @@ fun UIAvatar(
                             urlInput = ""
                             showUrlInput = true
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(text = stringResource(id = R.string.avatar_input_url))
                     }
@@ -244,7 +247,8 @@ fun UIAvatar(
                             showPickOption = false
                             onUpdate?.invoke(Avatar.Dummy)
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(text = stringResource(id = R.string.avatar_reset))
                     }
@@ -389,7 +393,8 @@ private fun PreviewUIAvatar() {
         Button(
             onClick = {
                 loading = !loading
-            }
+            },
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text("Toggle Loading")
         }

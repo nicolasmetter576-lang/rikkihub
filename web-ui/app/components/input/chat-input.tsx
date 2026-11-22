@@ -1,14 +1,19 @@
 import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import {
   ArrowUp,
+  BarChart3,
   ChevronDown,
+  Eraser,
   File,
   FileDown,
   Flame,
+  FolderOpen,
   Image,
   LoaderCircle,
   MessageSquarePlus,
+  MessageSquareText,
   Shrink,
   Mic,
   Plus,
@@ -25,12 +30,14 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import { useCurrentAssistant } from "~/hooks/use-current-assistant";
+import { AssistantQuickConfigDialog } from "./assistant-quick-config";
 import { ModelList } from "~/components/input/model-list";
 import { ReasoningPickerButton } from "~/components/input/reasoning-picker";
 import { SearchPickerButton } from "~/components/input/search-picker";
 import { McpPickerButton } from "~/components/input/mcp-picker";
 import { ExtensionPickerButton } from "~/components/input/extension-picker";
-import { WorkspacePickerButton } from "~/components/input/workspace-picker";
+import { WorkspacePickerButton, WorkspaceTerminalButton } from "~/components/input/workspace-picker";
+import { TavernPickerButton } from "~/components/input/tavern-picker";
 import { useChatInputStore, useSettingsStore } from "~/stores";
 import { Button } from "~/components/ui/button";
 import {
@@ -39,10 +46,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { Switch } from "~/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Textarea } from "~/components/ui/textarea";
 import { resolveFileUrl } from "~/lib/files";
 import { cn } from "~/lib/utils";
+import { createLongPress } from "@overlay/lib/long-press";
+import { FileManagerPickDialog } from "@overlay/components/file-manager/file-manager-pick-dialog";
+import { updateQubaguConfig } from "@overlay/lib/qubagu";
 import { useWorkspaceFileCompletion } from "@overlay/hooks/use-workspace-file-completion";
 import { WorkspaceCompletionPopup } from "@overlay/components/input/workspace-completion-popup";
 import {
@@ -58,8 +68,17 @@ import {
   type PromptPolishState,
 } from "@overlay/lib/prompt-polish";
 import { getModelDisplayName } from "~/lib/display";
+import {
+  isCliControlForbiddenError,
+  isUnsupportedWebCliInput,
+  parseCliInput,
+  restartConversationCli,
+  runConversationCliShell,
+} from "~/lib/cli";
 import api from "~/services/api";
 import type { ConversationDto, UIMessagePart, UploadFilesResponseDto } from "~/types";
+
+export { isUnsupportedWebCliInput, parseCliInput };
 
 export interface ChatInputProps {
   value: string;
@@ -85,8 +104,8 @@ export interface ChatInputProps {
   onExportConversation?: (includeReasoning: boolean) => void;
   /** Opens the compress-history dialog; absent when not applicable. */
   onCompressConversation?: () => void;
-  /** Fresh conversation after the workspace picker changed its cwd / scope. */
-  onConversationUpdated?: (conversation: ConversationDto) => void;
+  /** Opens the context-usage breakdown dialog; absent when not applicable. */
+  onOpenContextBreakdown?: () => void;
   /**
    * Desktop chat pane: size the toolbar by the pane's own width (container queries) instead of
    * the viewport, so a narrow resizable pane wraps the send cluster to a second row rather than
@@ -97,6 +116,139 @@ export interface ChatInputProps {
 }
 
 const IMAGE_UPLOAD_ACCEPT = "image/*";
+const MORE_TILE_CLASS = "h-auto min-h-20 flex-col gap-2 rounded-xl bg-muted px-1 py-3 text-xs font-normal hover:bg-accent";
+
+/**
+ * A tile of the + menu. Tap runs [onClick]; long-press or right-click opens [onOpenSettings] when given.
+ * With [checked] it is a switch tile and is highlighted while on.
+ */
+function MoreTile({
+  icon: Icon,
+  label,
+  testId,
+  disabled,
+  checked,
+  onClick,
+  onOpenSettings,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  testId: string;
+  disabled: boolean;
+  checked?: boolean;
+  onClick: () => void;
+  onOpenSettings?: () => void;
+}) {
+  const callbacks = React.useRef({ onClick, onLongPress: onOpenSettings ?? onClick });
+  callbacks.current = { onClick, onLongPress: onOpenSettings ?? onClick };
+  const press = React.useMemo(() => createLongPress(() => callbacks.current), []);
+  React.useEffect(() => press.cancel, [press]);
+  React.useEffect(() => { if (disabled) press.cancel(); }, [disabled, press]);
+
+  return (
+    <Button
+      type="button"
+      role={checked === undefined ? undefined : "switch"}
+      aria-checked={checked}
+      data-testid={testId}
+      variant="ghost"
+      disabled={disabled}
+      className={cn(MORE_TILE_CLASS, checked && "bg-primary/10 text-primary hover:bg-primary/15")}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        press.down(event);
+      }}
+      onPointerMove={(event) => press.move(event)}
+      onPointerUp={() => press.up()}
+      onPointerCancel={() => press.cancel()}
+      onLostPointerCapture={() => press.cancel()}
+      onClick={(event) => { if (event.detail === 0) onClick(); }}
+      onContextMenu={(event) => {
+        if (!onOpenSettings) return;
+        event.preventDefault();
+        press.cancel();
+        onOpenSettings();
+      }}
+    >
+      <Icon className="size-6" />
+      <span className="max-w-full truncate">{label}</span>
+    </Button>
+  );
+}
+
+/** A + menu tile that switches a global setting: tap toggles, long-press or right-click opens its settings page. */
+function SettingToggleTile({
+  enabled,
+  update,
+  icon,
+  label,
+  testId,
+  disabled,
+  onOpenSettings,
+}: {
+  enabled: boolean;
+  update: (next: boolean) => Promise<unknown>;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  testId: string;
+  disabled: boolean;
+  onOpenSettings: () => void;
+}) {
+  const mutation = useMutation({
+    mutationFn: update,
+    onError: (error) => toast.error(error instanceof Error ? error.message : String(error)),
+  });
+  const busy = disabled || mutation.isPending;
+  return (
+    <MoreTile
+      icon={icon}
+      label={label}
+      testId={testId}
+      disabled={busy}
+      checked={enabled}
+      onClick={() => { if (!busy) mutation.mutate(!enabled); }}
+      onOpenSettings={onOpenSettings}
+    />
+  );
+}
+
+function CacheKeepAliveTile({ disabled, onOpenSettings }: { disabled: boolean; onOpenSettings: () => void }) {
+  const { t } = useTranslation("input");
+  const enabled = useSettingsStore((state) => state.settings?.cacheKeepAliveConfig?.enabled ?? false);
+  return (
+    <SettingToggleTile
+      enabled={enabled}
+      update={(next) => updateCacheKeepAlive({ enabled: next })}
+      icon={Flame}
+      label={t("chat.cache_warm_menu")}
+      testId="chat-more-cache-keep-alive"
+      disabled={disabled}
+      onOpenSettings={onOpenSettings}
+    />
+  );
+}
+
+function QubaguTile({ disabled, onOpenSettings }: { disabled: boolean; onOpenSettings: () => void }) {
+  const { t } = useTranslation("input");
+  const enabled = useSettingsStore((state) => state.settings?.qubagu?.enabled ?? false);
+  return (
+    <SettingToggleTile
+      enabled={enabled}
+      update={(next) =>
+        updateQubaguConfig({ enabled: next }).then((response) => {
+          if (next && !response.config.merge && !response.config.packs.some((pack) => pack.enabled && pack.rules.some((rule) => rule.enabled))) {
+            toast.info(t("chat.qubagu_no_rules"));
+          }
+        })
+      }
+      icon={Eraser}
+      label={t("chat.qubagu_menu")}
+      testId="chat-more-qubagu"
+      disabled={disabled}
+      onOpenSettings={onOpenSettings}
+    />
+  );
+}
 
 const ALLOWED_DOCUMENT_MIMES = new Set([
   "application/pdf",
@@ -234,7 +386,7 @@ function ChatInputInner({
   onSuggestionClick,
   onExportConversation,
   onCompressConversation,
-  onConversationUpdated,
+  onOpenContextBreakdown,
   adaptiveToolbar = false,
   className,
 }: ChatInputProps) {
@@ -250,9 +402,7 @@ function ChatInputInner({
     (state) => state.settings?.displaySetting.pasteLongTextThreshold ?? 1000,
   );
   const { currentAssistant, settings } = useCurrentAssistant();
-  const cacheKeepAliveEnabled = useSettingsStore(
-    (state) => state.settings?.cacheKeepAliveConfig?.enabled ?? false,
-  );
+  const isCliSession = Boolean(conversation?.cliSession);
 
   const quickMessages = React.useMemo(() => {
     const ids = currentAssistant?.quickMessageIds;
@@ -276,6 +426,8 @@ function ChatInputInner({
   const [submitting, setSubmitting] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [uploadMenuOpen, setUploadMenuOpen] = React.useState(false);
+  const [fileManagerOpen, setFileManagerOpen] = React.useState(false);
+  const [promptSwitchesOpen, setPromptSwitchesOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [dragActive, setDragActive] = React.useState(false);
   const dragDepthRef = React.useRef(0);
@@ -446,33 +598,92 @@ function ChatInputInner({
     [onAddParts, ready, t],
   );
 
+  const handleWebCliInput = React.useCallback(async (): Promise<boolean> => {
+    if (!isCliSession || isEditing) {
+      return false;
+    }
+    if (isUnsupportedWebCliInput(value)) {
+      setError(t("chat.cli_command_unsupported"));
+      return true;
+    }
+    const parsed = parseCliInput(value);
+    if (parsed.kind !== "shell" && !(parsed.kind === "local" && parsed.command === "/restart")) {
+      return false;
+    }
+    if (parsed.kind === "shell" && isGenerating) {
+      setError(t("chat.cli_shell_busy"));
+      return true;
+    }
+    if (!conversation?.id) {
+      setError(t("chat.send_failed"));
+      return true;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (parsed.kind === "shell") {
+        await runConversationCliShell(conversation.id, parsed.command);
+      } else {
+        await restartConversationCli(conversation.id);
+        toast.success(t("chat.cli_restarted"));
+      }
+      onValueChange("");
+    } catch (submitError) {
+      const message = isCliControlForbiddenError(submitError)
+        ? t("common:cli_control_forbidden")
+        : submitError instanceof Error
+          ? submitError.message
+          : t("chat.send_failed");
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
+    return true;
+  }, [conversation?.id, isCliSession, isEditing, isGenerating, onValueChange, t, value]);
+
   const handlePrimaryAction = React.useCallback(async () => {
     if (actionDisabled) {
       return;
     }
 
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      if (canStop) {
+    if (canStop) {
+      setSubmitting(true);
+      setError(null);
+      try {
         await onStop?.();
+      } catch (submitError) {
+        const message = submitError instanceof Error ? submitError.message : t("chat.send_failed");
+        setError(message);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    if (canSend) {
+      if (await handleWebCliInput()) {
         return;
       }
 
-      if (canSend) {
+      setSubmitting(true);
+      setError(null);
+      try {
         await onSend();
+      } catch (submitError) {
+        const message = submitError instanceof Error ? submitError.message : t("chat.send_failed");
+        setError(message);
+      } finally {
+        setSubmitting(false);
       }
-    } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : t("chat.send_failed");
-      setError(message);
-    } finally {
-      setSubmitting(false);
     }
-  }, [actionDisabled, canSend, canStop, onSend, onStop, t]);
+  }, [actionDisabled, canSend, canStop, handleWebCliInput, onSend, onStop, t]);
 
   const handleSecondaryAction = React.useCallback(async () => {
     if (!canSend || !onSendNoAnswer || polishing) {
+      return;
+    }
+
+    if (await handleWebCliInput()) {
       return;
     }
 
@@ -487,7 +698,7 @@ function ChatInputInner({
     } finally {
       setSubmitting(false);
     }
-  }, [canSend, onSendNoAnswer, polishing, t]);
+  }, [canSend, handleWebCliInput, onSendNoAnswer, polishing, t]);
 
   const handleTextChange = React.useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -651,6 +862,8 @@ function ChatInputInner({
   let placeholder: string;
   if (!ready) {
     placeholder = t("chat.placeholder_not_ready");
+  } else if (isCliSession) {
+    placeholder = t("chat.placeholder_ready");
   } else if (cacheWarm?.state === "scheduled" && cacheWarm.nextWarmAt != null) {
     placeholder = formatCacheWarmCountdown(cacheWarm.nextWarmAt - clockNow);
   } else if (cacheWarm?.state === "refreshing") {
@@ -844,7 +1057,7 @@ function ChatInputInner({
                 adaptiveToolbar ? "max-w-full shrink-0" : "min-w-0",
               )}
             >
-              <DropdownMenu open={uploadMenuOpen} onOpenChange={setUploadMenuOpen}>
+              <Popover open={uploadMenuOpen} onOpenChange={setUploadMenuOpen}>
                 <input
                   ref={fileInputRef}
                   className="hidden"
@@ -860,105 +1073,152 @@ function ChatInputInner({
                   onChange={handleUploadInputChange}
                   type="file"
                 />
-                <DropdownMenuTrigger asChild>
+                <PopoverTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
                     disabled={!canUpload}
+                    aria-label={t("chat.more_options")}
+                    data-testid="chat-more"
                     className="size-8 rounded-full text-muted-foreground hover:text-foreground"
                   >
                     <Plus
                       className={cn("size-4 transition-transform", uploadMenuOpen && "rotate-45")}
                     />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="min-w-36" side="top" align="start">
-                  <DropdownMenuItem
-                    onClick={() => {
-                      imageInputRef.current?.click();
-                    }}
-                  >
-                    <Image className="size-4" />
-                    {t("chat.upload_image")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    <File className="size-4" />
-                    {t("chat.upload_document")}
-                  </DropdownMenuItem>
-                  {onExportConversation && (
-                    <DropdownMenuItem
+                </PopoverTrigger>
+                <PopoverContent className="w-[min(92vw,24rem)] space-y-2 p-3" side="top" align="start">
+                  <div className="grid grid-cols-4 gap-2" data-testid="chat-more-grid">
+                    <Button variant="ghost" className={MORE_TILE_CLASS} onClick={() => imageInputRef.current?.click()}>
+                      <Image className="size-6" />
+                      <span className="max-w-full truncate">{t("chat.upload_image")}</span>
+                    </Button>
+                    <Button variant="ghost" className={MORE_TILE_CLASS} onClick={() => fileInputRef.current?.click()}>
+                      <File className="size-6" />
+                      <span className="max-w-full truncate">{t("chat.upload_document")}</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className={MORE_TILE_CLASS}
+                      data-testid="chat-more-file-manager"
                       onClick={() => {
+                        setUploadMenuOpen(false);
+                        setFileManagerOpen(true);
+                      }}
+                    >
+                      <FolderOpen className="size-6" />
+                      <span className="max-w-full truncate">{t("chat.file_manager")}</span>
+                    </Button>
+                    {!isCliSession ? <ReasoningPickerButton disabled={!canSwitchModel} /> : null}
+                    {!isCliSession ? (
+                      <CacheKeepAliveTile
+                        disabled={!ready || disabled}
+                        onOpenSettings={() => {
+                          setUploadMenuOpen(false);
+                          navigate("/settings/cache-keep-alive");
+                        }}
+                      />
+                    ) : null}
+                    {!isCliSession ? (
+                      <QubaguTile
+                        disabled={!ready || disabled}
+                        onOpenSettings={() => {
+                          setUploadMenuOpen(false);
+                          navigate("/settings/qubagu");
+                        }}
+                      />
+                    ) : null}
+                    <MoreTile
+                      icon={MessageSquareText}
+                      label={t("chat.prompt_menu")}
+                      testId="chat-more-prompt"
+                      disabled={!ready || disabled || !currentAssistant}
+                      onClick={() => {
+                        setUploadMenuOpen(false);
+                        setPromptSwitchesOpen(true);
+                      }}
+                      onOpenSettings={() => {
+                        setUploadMenuOpen(false);
+                        navigate(`/settings/assistants/${currentAssistant?.id}`);
+                      }}
+                    />
+                    {!isCliSession && onCompressConversation && (
+                      <MoreTile
+                        icon={Shrink}
+                        label={t("chat.compress_conversation")}
+                        testId="chat-more-compress"
+                        disabled={false}
+                        onClick={() => {
+                          setUploadMenuOpen(false);
+                          onCompressConversation();
+                        }}
+                      />
+                    )}
+                    {!isCliSession && onOpenContextBreakdown && (
+                      <MoreTile
+                        icon={BarChart3}
+                        label={t("chat.context_breakdown")}
+                        testId="chat-input-context-breakdown"
+                        disabled={false}
+                        onClick={() => {
+                          setUploadMenuOpen(false);
+                          onOpenContextBreakdown();
+                        }}
+                      />
+                    )}
+                  </div>
+                  {onExportConversation && (
+                    <Button variant="ghost" className="w-full justify-start"
+                      onClick={() => {
+                        setUploadMenuOpen(false);
                         onExportConversation(false);
                       }}
                     >
                       <FileDown className="size-4" />
                       {t("chat.export_conversation")}
-                    </DropdownMenuItem>
+                    </Button>
                   )}
                   {onExportConversation && (
-                    <DropdownMenuItem
+                    <Button variant="ghost" className="w-full justify-start"
                       onClick={() => {
+                        setUploadMenuOpen(false);
                         onExportConversation(true);
                       }}
                     >
                       <FileDown className="size-4" />
                       {t("chat.export_conversation_with_reasoning")}
-                    </DropdownMenuItem>
+                    </Button>
                   )}
-                  {onCompressConversation && (
-                    <DropdownMenuItem onSelect={onCompressConversation}>
-                      <Shrink className="size-4" />
-                      {t("chat.compress_conversation")}
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      navigate("/settings/cache-keep-alive");
-                    }}
-                  >
-                    <Flame className="size-4" />
-                    {t("chat.cache_warm_menu")}
-                    <Switch
-                      size="sm"
-                      className="ml-auto"
-                      checked={cacheKeepAliveEnabled}
-                      // 开关只切换启停，不得触发菜单项 onSelect（跳转配置页）。
-                      // Radix MenuItem 未见 pointerdown 时会在 pointerup 合成 click，
-                      // 因此 pointerdown / pointerup / click 三者都截断冒泡。
-                      onClick={(event) => {
-                        event.stopPropagation();
-                      }}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                      }}
-                      onPointerUp={(event) => {
-                        event.stopPropagation();
-                      }}
-                      onCheckedChange={(checked) => {
-                        void updateCacheKeepAlive({ enabled: checked }).catch((error) =>
-                          toast.error(error instanceof Error ? error.message : String(error)),
-                        );
-                      }}
-                    />
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <SearchPickerButton disabled={!canSwitchModel} />
-              <McpPickerButton disabled={!canSwitchModel} />
+                </PopoverContent>
+              </Popover>
+              <FileManagerPickDialog
+                open={fileManagerOpen}
+                onOpenChange={setFileManagerOpen}
+                onPicked={(files) => onAddParts(files.map(toMessagePart))}
+              />
+              <AssistantQuickConfigDialog
+                open={promptSwitchesOpen}
+                onClose={() => setPromptSwitchesOpen(false)}
+                onOpenSettings={(assistantId) => {
+                  setPromptSwitchesOpen(false);
+                  navigate(`/settings/assistants/${assistantId}`);
+                }}
+              />
+              {!isCliSession ? <SearchPickerButton disabled={!canSwitchModel} /> : null}
+              {!isCliSession ? <McpPickerButton disabled={!canSwitchModel} /> : null}
               <ExtensionPickerButton
                 conversationId={conversation?.id ?? null}
                 conversationModeInjectionIds={conversation?.modeInjectionIds}
                 conversationLorebookIds={conversation?.lorebookIds}
                 draftKey={draftKey}
+                isCliSession={isCliSession}
                 disabled={!canSwitchModel}
               />
+              {!isCliSession ? (
+                <TavernPickerButton conversationId={conversation?.id ?? null} disabled={!canSwitchModel} />
+              ) : null}
               <WorkspacePickerButton
                 conversation={conversation}
-                onConversationUpdated={onConversationUpdated}
                 disabled={!canSwitchModel}
                 labelClassName={adaptiveToolbar ? "@2xl/composer:inline" : undefined}
               />
@@ -975,58 +1235,57 @@ function ChatInputInner({
                   : "shrink-0 gap-0.5 sm:gap-1",
               )}
             >
-              <ModelList
-                disabled={!canSwitchModel}
-                className={adaptiveToolbar ? "max-w-56 shrink" : "max-w-[120px] sm:max-w-56"}
-                popoverAlign={toolbarWrapped ? "start" : "end"}
-              />
-              <ReasoningPickerButton
-                disabled={!canSwitchModel}
-                className={adaptiveToolbar ? "shrink-0" : undefined}
-                labelClassName={adaptiveToolbar ? "@[25rem]/send:block" : undefined}
-                popoverAlign={toolbarWrapped ? "start" : "end"}
-              />
-              <Button
-                type="button"
-                data-testid="chat-polish-button"
-                aria-label={
-                  polishState.phase === "running"
-                    ? t("chat.polish_cancel")
-                    : polishState.phase === "done"
-                      ? t("chat.polish_undo")
-                      : t("chat.polish")
-                }
-                title={
-                  polishState.phase === "running"
-                    ? t("chat.polish_cancel")
-                    : polishState.phase === "done"
-                      ? t("chat.polish_undo")
-                      : polishModel
-                        ? t("chat.polish_with", { model: getModelDisplayName(polishModel.displayName, polishModel.modelId) })
+              {!isCliSession ? (
+                <ModelList
+                  disabled={!canSwitchModel}
+                  className={adaptiveToolbar ? "max-w-56 shrink" : "max-w-[120px] sm:max-w-56"}
+                  popoverAlign={toolbarWrapped ? "start" : "end"}
+                />
+              ) : null}
+              <WorkspaceTerminalButton disabled={!ready || disabled} />
+              {!isCliSession ? (
+                <Button
+                  type="button"
+                  data-testid="chat-polish-button"
+                  aria-label={
+                    polishState.phase === "running"
+                      ? t("chat.polish_cancel")
+                      : polishState.phase === "done"
+                        ? t("chat.polish_undo")
                         : t("chat.polish")
-                }
-                onClick={() => {
-                  if (polishState.phase === "running") polisher.cancel();
-                  else if (polishState.phase === "done") polisher.undo();
-                  else if (canPolish) void polisher.start();
-                }}
-                disabled={polishState.phase === "idle" && !canPolish}
-                size="icon"
-                variant="ghost"
-                className={cn(
-                  "size-9 shrink-0 rounded-full",
-                  polishState.phase === "done" ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                  toolbarWrapped && "ml-auto",
-                )}
-              >
-                {polishState.phase === "running" ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : polishState.phase === "done" ? (
-                  <Undo2 className="size-4" />
-                ) : (
-                  <WandSparkles className="size-4" />
-                )}
-              </Button>
+                  }
+                  title={
+                    polishState.phase === "running"
+                      ? t("chat.polish_cancel")
+                      : polishState.phase === "done"
+                        ? t("chat.polish_undo")
+                        : polishModel
+                          ? t("chat.polish_with", { model: getModelDisplayName(polishModel.displayName, polishModel.modelId) })
+                          : t("chat.polish")
+                  }
+                  onClick={() => {
+                    if (polishState.phase === "running") polisher.cancel();
+                    else if (polishState.phase === "done") polisher.undo();
+                    else if (canPolish) void polisher.start();
+                  }}
+                  disabled={polishState.phase === "idle" && !canPolish}
+                  size="icon"
+                  variant="ghost"
+                  className={cn(
+                    "size-9 shrink-0 rounded-full",
+                    polishState.phase === "done" ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                    toolbarWrapped && "ml-auto",
+                  )}
+                >
+                  {polishState.phase === "running" ? (
+                    <LoaderCircle className="size-4 animate-spin" />
+                  ) : polishState.phase === "done" ? (
+                    <Undo2 className="size-4" />
+                  ) : (
+                    <WandSparkles className="size-4" />
+                  )}
+                </Button>
+              ) : null}
               <Button
                 aria-label={canStop ? t("chat.stop_generating") : t("chat.send")}
                 title={sendHint}
@@ -1080,7 +1339,11 @@ function ChatInputInner({
           </div>
         </div>
         <p className="sr-only">{sendHint}</p>
-        {error ? <p className="mt-1 text-center text-xs text-destructive">{error}</p> : null}
+        {error ? (
+          <p role="alert" data-testid="chat-input-error" className="mt-1 text-center text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
       </div>
     </div>
   );

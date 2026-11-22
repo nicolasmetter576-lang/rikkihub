@@ -352,6 +352,7 @@ private fun HtmlParagraphContent(
     val colorScheme = MaterialTheme.colorScheme
     val textStyle = LocalTextStyle.current
     val quoteStyle = rememberQuotedTextStyle()
+    val findStyle = rememberFindHighlightStyle()
 
     val (annotatedString, inlineContents) = remember(
         element.outerHtml(),
@@ -361,6 +362,7 @@ private fun HtmlParagraphContent(
         textStyle,
         onClickCitation,
         quoteStyle,
+        findStyle,
     ) {
         val contents = mutableMapOf<String, InlineTextContent>()
         val text = buildAnnotatedString {
@@ -375,7 +377,7 @@ private fun HtmlParagraphContent(
                     onClickCitation = onClickCitation,
                 )
             }
-        }.withQuotedTextHighlight(quoteStyle)
+        }.withQuotedTextHighlight(quoteStyle).withFindHighlight(findStyle)
         text to contents
     }
 
@@ -709,6 +711,7 @@ private fun HtmlInlineGroup(nodes: List<Node>, onClickCitation: (String) -> Unit
     val textStyle = LocalTextStyle.current
     val density = LocalDensity.current
     val quoteStyle = rememberQuotedTextStyle()
+    val findStyle = rememberFindHighlightStyle()
 
     val key = remember(nodes) { nodes.joinToString("") { if (it is Element) it.outerHtml() else it.toString() } }
     val (annotatedString, inlineContents) = remember(
@@ -719,6 +722,7 @@ private fun HtmlInlineGroup(nodes: List<Node>, onClickCitation: (String) -> Unit
         textStyle,
         onClickCitation,
         quoteStyle,
+        findStyle,
     ) {
         val contents = mutableMapOf<String, InlineTextContent>()
         val text = buildAnnotatedString {
@@ -733,7 +737,7 @@ private fun HtmlInlineGroup(nodes: List<Node>, onClickCitation: (String) -> Unit
                     onClickCitation = onClickCitation,
                 )
             }
-        }.withQuotedTextHighlight(quoteStyle)
+        }.withQuotedTextHighlight(quoteStyle).withFindHighlight(findStyle)
         text to contents
     }
 

@@ -1,5 +1,10 @@
 package me.rerere.rikkihub.data.ai.tools
 
+import me.rerere.tavern.regex.RegexScript
+import me.rerere.rikkihub.data.model.regexScripts
+import me.rerere.rikkihub.data.model.withRegexScripts
+import me.rerere.rikkihub.data.model.mainPromptText
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
@@ -13,7 +18,6 @@ import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.workspace.WorkspaceRequestCapabilities
 import me.rerere.rikkihub.data.workspace.workspaceReminderPrompt
 import me.rerere.rikkihub.data.model.Assistant
-import me.rerere.rikkihub.data.model.AssistantRegex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -142,19 +146,17 @@ class WorkspaceSubagentTest {
     @Test
     fun workerAssistantIsStripped() {
         val parent = Assistant(
-            systemPrompt = "You are a pirate",
+            promptPreset = AssistantPresets.withSystemPrompt("You are a pirate")
+                .withRegexScripts(listOf(RegexScript(id = "r1", findRegex = "/a/g", replaceString = "b", placement = listOf(2)))),
             enableMemory = true,
             enableWebSearch = true,
             localTools = emptyList(),
             messageTemplate = "{{ role }} {{ message }}",
-            regexes = listOf(
-                AssistantRegex(id = Uuid.random(), findRegex = "a", replaceString = "b"),
-            ),
         )
         val worker = stripWorkerAssistant(parent)
-        assertEquals(SUBAGENT_WORKER_PREAMBLE, worker.systemPrompt)
+        assertEquals(SUBAGENT_WORKER_PREAMBLE, worker.mainPromptText)
         assertEquals("{{ message }}", worker.messageTemplate)
-        assertTrue(worker.regexes.isEmpty())
+        assertTrue(worker.promptPreset.regexScripts.isEmpty())
         assertFalse(worker.enableMemory)
         assertFalse(worker.enableWebSearch)
         assertTrue(worker.localTools.isEmpty())

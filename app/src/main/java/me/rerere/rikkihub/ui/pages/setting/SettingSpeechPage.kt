@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.StopCircle
@@ -23,16 +25,15 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
@@ -42,7 +43,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -62,7 +62,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -86,6 +85,10 @@ import me.rerere.tts.provider.TTSProviderSetting
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
 
 @Composable
 fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
@@ -98,11 +101,10 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val deleteFailure = stringResource(R.string.speech_delete_failed)
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(text = stringResource(R.string.speech_page_title))
                 },
@@ -125,8 +127,8 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors
+                colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         bottomBar = {
@@ -147,7 +149,6 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
                 )
             }
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         when (selectedPage) {
@@ -214,7 +215,7 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(AppSpacing.sm)
                     .fillMaxHeight(0.8f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -276,7 +277,7 @@ fun SettingSpeechPage(vm: SettingVM = koinViewModel()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(AppSpacing.sm)
                     .fillMaxHeight(0.8f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -344,11 +345,10 @@ private fun TTSProviderList(
         modifier = modifier
             .fillMaxSize()
             .imePadding(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(AppSpacing.sm),
         state = lazyListState
     ) {
-        items(settings.ttsProviders, key = { it.id }) { provider ->
+        itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
             ReorderableItem(
                 state = reorderableState,
                 key = provider.id
@@ -358,6 +358,8 @@ private fun TTSProviderList(
                         .scale(if (isDragging) 0.95f else 1f)
                         .fillMaxWidth(),
                     provider = provider,
+                    shape = cardGroupItemShape(index, settings.ttsProviders.size),
+                    divider = index > 0,
                     dragHandle = {
                         val haptic = LocalHapticFeedback.current
                         IconButton(
@@ -415,11 +417,10 @@ private fun ASRProviderList(
         modifier = modifier
             .fillMaxSize()
             .imePadding(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(AppSpacing.sm),
         state = lazyListState
     ) {
-        items(settings.asrProviders, key = { it.id }) { provider ->
+        itemsIndexed(settings.asrProviders, key = { _, provider -> provider.id }) { index, provider ->
             ReorderableItem(
                 state = reorderableState,
                 key = provider.id
@@ -429,6 +430,8 @@ private fun ASRProviderList(
                         .scale(if (isDragging) 0.95f else 1f)
                         .fillMaxWidth(),
                     provider = provider,
+                    shape = cardGroupItemShape(index, settings.asrProviders.size),
+                    divider = index > 0,
                     dragHandle = {
                         val haptic = LocalHapticFeedback.current
                         IconButton(
@@ -493,7 +496,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(AppSpacing.sm)
                     .fillMaxHeight(0.8f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -611,7 +614,7 @@ private fun AddASRProviderButton(onAdd: (ASRProviderSetting) -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(AppSpacing.sm)
                     .fillMaxHeight(0.8f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -659,6 +662,8 @@ private fun AddASRProviderButton(onAdd: (ASRProviderSetting) -> Unit) {
 @Composable
 private fun TTSProviderItem(
     provider: TTSProviderSetting,
+    shape: Shape,
+    divider: Boolean,
     modifier: Modifier = Modifier,
     isSelected: Boolean = false,
     dragHandle: @Composable () -> Unit,
@@ -673,6 +678,7 @@ private fun TTSProviderItem(
 
     Card(
         modifier = modifier,
+        shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer
@@ -681,8 +687,9 @@ private fun TTSProviderItem(
             }
         )
     ) {
+        if (divider) CardGroupDivider()
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
@@ -809,6 +816,8 @@ private fun TTSProviderItem(
 @Composable
 private fun ASRProviderItem(
     provider: ASRProviderSetting,
+    shape: Shape,
+    divider: Boolean,
     modifier: Modifier = Modifier,
     isSelected: Boolean = false,
     dragHandle: @Composable () -> Unit,
@@ -820,6 +829,7 @@ private fun ASRProviderItem(
 
     Card(
         modifier = modifier,
+        shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer
@@ -828,8 +838,9 @@ private fun ASRProviderItem(
             }
         )
     ) {
+        if (divider) CardGroupDivider()
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(

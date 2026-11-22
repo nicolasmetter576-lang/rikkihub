@@ -138,7 +138,7 @@ class CreatorToolSurface(
                     put("minItems", 1)
                     put("maxItems", CreatorManagementBridge.MAX_OPERATIONS_PER_CALL)
                     put("description", "ALL changes for this request, in order. Settings changes (assistants, tags, " +
-                        "quick messages, mode injections, lorebooks, providers, models, default slots, prompts) become one proposal; " +
+                        "quick messages, prompt library entries, lorebooks and their entries, prompt entries, regex scripts, tavern settings, providers, models, default slots, prompts) become one proposal; " +
                         "a later operation may reference an object created by an earlier one as \"\$<index>\".")
                     put("items", buildJsonObject {
                         put("type", "object")

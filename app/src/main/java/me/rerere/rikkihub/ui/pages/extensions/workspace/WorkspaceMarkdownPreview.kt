@@ -28,9 +28,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -75,7 +77,8 @@ fun WorkspaceMarkdownPreview(
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val headingSizes = LocalSettings.current.displaySetting.workspaceMarkdownHeadingSizes
-    val palette = WorkspaceMarkdownPalette(colors.tertiary, colors.primary, colors.onSurfaceVariant, colors.surfaceContainerHighest)
+    val palette = WorkspaceMarkdownPalette(colors.tertiary, colors.primary, colors.onSurfaceVariant, colors.surfaceContainerHighest,
+        quoted = workspaceQuotedTextColor())
     // Not keyed by content: the previous analysis stays on screen until the new one is ready, so an
     // edit (a 推敲 replacement) does not flash plain source, collapse tables or move the scroll position.
     var prepared by remember { mutableStateOf<Pair<WorkspaceMarkdownAnalysis, List<WorkspacePreviewBlock>>?>(null) }
@@ -138,7 +141,8 @@ private fun sourceSegment(
     headingSizes: Boolean,
     baseSize: TextUnit,
 ): AnnotatedString {
-    val builder = AnnotatedString.Builder(analysis.source.substring(block.start, block.end))
+    val segment = analysis.source.substring(block.start, block.end)
+    val builder = AnnotatedString.Builder(segment)
     fun clip(start: Int, end: Int, apply: (Int, Int) -> Unit) {
         val a = maxOf(start, block.start)
         val b = minOf(end, block.end)
@@ -148,6 +152,14 @@ private fun sourceSegment(
         clip(span.start, span.end) { a, b -> builder.addStyle(workspaceMarkdownSpanStyle(span, palette, headingSizes, baseSize), a, b) }
     }
     analysis.links.forEach { link -> clip(link.start, link.end) { a, b -> builder.addStringAnnotation(LINK_TAG, link.url, a, b) } }
+    if (palette.quoted.isSpecified) {
+        val code = analysis.spans.mapNotNull { span ->
+            val a = maxOf(span.start, block.start)
+            val b = minOf(span.end, block.end)
+            if (a < b) span.copy(start = a - block.start, end = b - block.start) else null
+        }
+        workspaceQuotedSpans(segment, code).forEach { builder.addStyle(SpanStyle(color = palette.quoted), it.start, it.end) }
+    }
     return builder.toAnnotatedString()
 }
 

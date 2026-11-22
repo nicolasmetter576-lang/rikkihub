@@ -6,8 +6,10 @@ import enUSInput from "./locales/en-US/input.json";
 import enUSMarkdown from "./locales/en-US/markdown.json";
 import enUSMessage from "./locales/en-US/message.json";
 import enUSPage from "./locales/en-US/page.json";
+import enUSFileManager from "./overlay/locales/en-US/fileManager.json";
 import enUSSettings from "./overlay/locales/en-US/settings.json";
 import enUSStorage from "./overlay/locales/en-US/storage.json";
+import enUSTavern from "./overlay/locales/en-US/tavern.json";
 import enUSTranslator from "./overlay/locales/en-US/translator.json";
 import enUSWorkspace from "./overlay/locales/en-US/workspace.json";
 import zhCNCommon from "./locales/zh-CN/common.json";
@@ -15,8 +17,10 @@ import zhCNInput from "./locales/zh-CN/input.json";
 import zhCNMarkdown from "./locales/zh-CN/markdown.json";
 import zhCNMessage from "./locales/zh-CN/message.json";
 import zhCNPage from "./locales/zh-CN/page.json";
+import zhCNFileManager from "./overlay/locales/zh-CN/fileManager.json";
 import zhCNSettings from "./overlay/locales/zh-CN/settings.json";
 import zhCNStorage from "./overlay/locales/zh-CN/storage.json";
+import zhCNTavern from "./overlay/locales/zh-CN/tavern.json";
 import zhCNTranslator from "./overlay/locales/zh-CN/translator.json";
 import zhCNWorkspace from "./overlay/locales/zh-CN/workspace.json";
 
@@ -44,8 +48,10 @@ void i18n.use(initReactI18next).init({
       markdown: zhCNMarkdown,
       message: zhCNMessage,
       page: zhCNPage,
+      fileManager: zhCNFileManager,
       settings: zhCNSettings,
       storage: zhCNStorage,
+      tavern: zhCNTavern,
       translator: zhCNTranslator,
       workspace: zhCNWorkspace,
     },
@@ -55,8 +61,10 @@ void i18n.use(initReactI18next).init({
       markdown: enUSMarkdown,
       message: enUSMessage,
       page: enUSPage,
+      fileManager: enUSFileManager,
       settings: enUSSettings,
       storage: enUSStorage,
+      tavern: enUSTavern,
       translator: enUSTranslator,
       workspace: enUSWorkspace,
     },
@@ -65,7 +73,7 @@ void i18n.use(initReactI18next).init({
   fallbackLng: "zh-CN",
   supportedLngs: [...SUPPORTED_LANGUAGES],
   defaultNS: "common",
-  ns: ["common", "input", "markdown", "message", "page", "settings", "storage", "translator", "workspace"],
+  ns: ["common", "fileManager", "input", "markdown", "message", "page", "settings", "storage", "tavern", "translator", "workspace"],
   interpolation: {
     escapeValue: false,
   },

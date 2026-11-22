@@ -1,6 +1,7 @@
 import type { TokenUsage } from "./core";
 import type { UIMessageAnnotation } from "./annotations";
-import type { ModelSnapshot } from "./message";
+import type { ConversationCliSession } from "./conversation";
+import type { ContextCheckpointMetadata, ModelSnapshot } from "./message";
 import type { UIMessagePart } from "./parts";
 
 export interface ConversationListDto {
@@ -101,18 +102,30 @@ export interface MessageDto {
   modelId?: string | null;
   /** 模型名称快照，模型被删除后用它显示来源 */
   modelSnapshot?: ModelSnapshot | null;
-  /** 多步工具调用时是各步累计值 */
+  contextLength?: number | null;
+  /** 同一消息各逻辑模型步骤已报告用量的累计 */
   usage?: TokenUsage | null;
-  /** 模型实际生成耗时（毫秒），不含首 token 延迟、工具执行和审批等待 */
+  /** true = 完整成功累计；false = 生成中或已知不完整；null/缺省 = 旧数据未知 */
+  usageComplete?: boolean | null;
+  /** 应用侧观测耗时（毫秒）：流式从首 chunk 起，非流式含请求等待；不含工具/审批 */
   generationTimeMs?: number | null;
-  /** 最后一次请求自己的 usage（上下文占用、缓存命中看这个） */
+  /** 最近逻辑模型步骤的 usage 参考，不是下一次请求的精确上下文容量 */
   lastUsage?: TokenUsage | null;
   stepCount?: number | null;
   /** Validated charts by part index; absent when the message has none. */
   charts?: ChartDto[] | null;
+  /**
+   * Text after the "display only" regex scripts, by part index (text and reasoning parts a script changed).
+   * The stored text in `parts` is untouched; absent when no script applies.
+   */
+  display?: Record<string, string> | null;
   translation?: string | null;
+  /** Per-turn title parsed from the reply's last-line `<rk-title>`; the tag itself is hidden when shown. */
+  title?: string | null;
   /** 压缩检查点：此消息是它之前全部历史的摘要，之前的消息不再发送给模型 */
   isContextCheckpoint?: boolean;
+  /** 检查点元数据（生成方式、模板、覆盖范围、用量等）；旧检查点缺省为 null */
+  checkpointMeta?: ContextCheckpointMetadata | null;
 }
 
 export interface MessageNodeDto {
@@ -136,6 +149,11 @@ export interface ConversationDto {
   /** 「仅此目录」：选了工作目录时模型只看得到该目录（服务端默认 true） */
   workspaceCwdScoped?: boolean;
   folderId?: string | null;
+  /** The character this conversation is with (a SillyTavern character card), if any. */
+  characterId?: string | null;
+  /** Workspace CLI session (read-only on Web). */
+  cliSession?: ConversationCliSession | null;
+  compression?: ConversationCompressionDto | null;
   createAt: number;
   updateAt: number;
   isGenerating: boolean;
@@ -207,19 +225,161 @@ export interface ConversationNodeUpdateEventDto {
 export interface ConversationErrorEventDto {
   type: "error";
   message: string;
+  /** "compress_and_retry": the reply overflowed the context window. */
+  solution?: string | null;
 }
 
 /** Background compression state: SSE `compress_state` and GET/POST .../compress. */
-export type CompressStatus = "running" | "succeeded" | "failed" | "cancelled";
+export type CompressStatus = "running" | "awaiting_review" | "succeeded" | "failed" | "cancelled";
 
 export interface CompressStateDto {
   conversationId: string;
   status: CompressStatus;
-  origin: "app" | "web";
+  /** "auto": started by automatic compression or an overflow retry. */
+  origin: "app" | "web" | "auto";
   startedAt: number;
   finishedAt?: number | null;
   errorCode?: string | null;
   errorMessage?: string | null;
+  /** The generated summary while status is "awaiting_review". */
+  reviewSummary?: string | null;
+  requestCount?: number;
+  completedChunks?: number;
+  totalChunks?: number;
+  chunked?: boolean;
+  fromOriginal?: boolean;
+  cacheBypassed?: boolean;
+  carriedCount?: number;
+  createNewConversation?: boolean;
+  targetConversationId?: string | null;
+  totalUsage?: TokenUsage | null;
+}
+
+export interface ContextRecordMessagePreviewDto {
+  nodeId: string;
+  messageId: string;
+  nodeIndex: number;
+  role: "user" | "assistant" | "system" | "tool";
+  previewText: string;
+}
+
+export interface ContextCheckpointRecordDto {
+  nodeId: string;
+  messageId: string;
+  nodeIndex: number;
+  createdAt: string;
+  isClear: boolean;
+  summaryText: string;
+  meta?: ContextCheckpointMetadata | null;
+  rangeStartIndex?: number | null;
+  rangeEndIndex?: number | null;
+  rangeStartNodeId?: string | null;
+  rangeEndNodeId?: string | null;
+  coveredMessageCount: number;
+  coveredPreviews: ContextRecordMessagePreviewDto[];
+  isActive: boolean;
+  laterCheckpointNodeIds: string[];
+  supersededByNodeId?: string | null;
+}
+
+export interface ContextRecordsResponse {
+  records: ContextCheckpointRecordDto[];
+  canClear: boolean;
+}
+
+export interface ClearContextResponse {
+  record: ContextCheckpointRecordDto;
+  canClear: boolean;
+}
+
+export interface RevokeCheckpointResponse {
+  removedNodeIds: string[];
+}
+
+export interface ContextUsageBreakdownDto {
+  totalTokens: number;
+  totalExact: boolean;
+  reportedContextTokens?: number | null;
+  estimatedTotalTokens: number;
+  contextLength?: number | null;
+  inputBudgetTokens?: number | null;
+  systemPromptTokens: number;
+  memoryTokens: number;
+  lorebookAndTavernTokens: number;
+  toolsLocalTokens: number;
+  toolsMcpTokens: number;
+  toolsSkillsTokens: number;
+  toolsWorkspaceTokens: number;
+  historyCheckpointTokens: number;
+  historyMessagesTokens: number;
+  attachmentsTokens: number;
+  draftTokens: number;
+  toolsLocalCount: number;
+  toolsMcpCount: number;
+  toolsSkillsCount: number;
+  toolsWorkspaceCount: number;
+  historyMessageCount: number;
+  hasActiveCheckpoint: boolean;
+  attachmentCount: number;
+  activeLorebookCount: number;
+  memoryFileCount: number;
+}
+
+export type AutoCompressMode = "off" | "notify" | "auto";
+
+export type CarryOriginalsMode = "off" | "recent" | "auto";
+
+export interface CarriedOriginalEditDto {
+  userText?: string | null;
+  replyText?: string | null;
+}
+
+export interface CarriedOriginalPreviewDto {
+  nodeId: string;
+  userText: string;
+  replyText?: string | null;
+  tokens: number;
+  edited?: boolean;
+}
+
+/** A conversation's own compression settings; a missing field follows the global setting. */
+export interface ConversationCompressionDto {
+  mode?: AutoCompressMode | null;
+  templateId?: string | null;
+}
+
+/** GET/POST .../compress/estimate: local estimate before compressing (no model call). */
+export interface CompressEstimateDto {
+  summarizedMessages: number;
+  summarizedChars: number;
+  summarizedTokens: number;
+  keptMessages: number;
+  keptTokens: number;
+  beforeTokens: number;
+  beforeExact: boolean;
+  afterMinTokens: number;
+  afterMaxTokens: number;
+  budgetTokens?: number | null;
+  carriedCount?: number;
+  carriedTokens?: number;
+  carriedOverBudget?: boolean;
+  carriedSkippedForBudget?: number;
+  carriedExcludedCount?: number;
+  carriedItems?: CarriedOriginalPreviewDto[];
+  hasPreviousCheckpoint?: boolean;
+  fromOriginal?: boolean;
+  willChunk?: boolean;
+  estimatedChunks?: number;
+  maxChunkRequests?: number;
+  willBreakCache?: boolean;
+}
+
+/** SSE `compress_suggestion` ("notify only" mode); percent null clears it. */
+export interface CompressSuggestionEventDto {
+  type: "compress_suggestion";
+  conversationId: string;
+  percent?: number | null;
+  exact: boolean;
 }
 
 export interface CompressStateResponse {

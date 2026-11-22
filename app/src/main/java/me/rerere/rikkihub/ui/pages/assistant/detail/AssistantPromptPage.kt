@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.assistant.detail
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
@@ -35,7 +36,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -43,7 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,7 +59,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -78,26 +77,18 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition
-import me.rerere.rikkihub.data.ai.transformers.DefaultPlaceholderProvider
 import me.rerere.rikkihub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkihub.data.ai.transformers.TransformerContext
 import me.rerere.rikkihub.data.datastore.Settings
+import me.rerere.rikkihub.data.datastore.findModelById
 import me.rerere.rikkihub.data.model.Assistant
-import me.rerere.rikkihub.data.model.AssistantAffectScope
-import me.rerere.rikkihub.data.model.AssistantRegex
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import me.rerere.rikkihub.data.model.regexScripts
+import me.rerere.rikkihub.data.model.newRegexScript
+import me.rerere.rikkihub.data.model.withRegexScripts
+import me.rerere.rikkihub.ui.components.prompt.RegexScriptCard
+import me.rerere.tavern.regex.RegexPlacement
+import me.rerere.tavern.regex.RegexScript
 import androidx.compose.runtime.rememberUpdatedState
-import me.rerere.rikkihub.data.model.SystemPromptMode
-import me.rerere.rikkihub.data.model.SystemPromptSection
-import me.rerere.rikkihub.data.model.composedSystemPrompt
-import me.rerere.rikkihub.data.model.switchSystemPromptMode
-import me.rerere.rikkihub.data.model.SYSTEM_PROMPT_SECTION_SEPARATOR
-import me.rerere.rikkihub.data.model.remapSystemPromptSegments
-import me.rerere.rikkihub.data.model.systemPromptSegments
-import me.rerere.rikkihub.data.model.withPromptSections
-import me.rerere.rikkihub.data.model.withSystemPromptSegments
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.data.model.toMessageNode
 import me.rerere.rikkihub.ui.components.message.ChatMessage
@@ -119,6 +110,7 @@ import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 import sh.calvin.reorderable.ReorderableColumn
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun AssistantPromptPage(id: String) {
@@ -129,22 +121,20 @@ fun AssistantPromptPage(id: String) {
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.assistant_page_tab_prompt))
                 },
                 navigationIcon = {
                     BackButton()
                 },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         AssistantPromptContent(
@@ -170,47 +160,39 @@ private fun AssistantPromptContent(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = AppSpacing.sm)
             .padding(innerPadding)
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        val currentAssistant by rememberUpdatedState(assistant)
         Card(
             colors = CustomColors.cardColorsOnSurfaceContainer
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val seedTitle = stringResource(R.string.assistant_page_prompt_section_seed_title)
-                val modes = listOf(
-                    SystemPromptMode.WHOLE to R.string.assistant_page_system_prompt_mode_whole,
-                    SystemPromptMode.SECTIONS to R.string.assistant_page_system_prompt_mode_sections,
-                )
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    modes.forEachIndexed { index, (mode, label) ->
-                        SegmentedButton(
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                            onClick = { onUpdate(currentAssistant.switchSystemPromptMode(mode, seedTitle)) },
-                            selected = assistant.systemPromptMode == mode,
-                        ) {
-                            Text(stringResource(label))
-                        }
-                    }
-                }
-
-                when (assistant.systemPromptMode) {
-                    SystemPromptMode.WHOLE -> WholeSystemPromptEditor(
-                        assistant = assistant,
-                        onUpdate = onUpdate,
-                    )
-
-                    SystemPromptMode.SECTIONS -> SystemPromptSectionsEditor(
-                        assistant = assistant,
-                        onUpdate = onUpdate,
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_tavern_mode))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_tavern_mode_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.tavernMode,
+                        onCheckedChange = { onUpdate(assistant.copy(tavernMode = it)) }
                     )
                 }
+            )
+        }
+
+        Card(
+            colors = CustomColors.cardColorsOnSurfaceContainer
+        ) {
+            Column(modifier = Modifier.padding(AppSpacing.sm)) {
+                val modelContextLength = remember(settings.providers, assistant.chatModelId, settings.chatModelId) {
+                    settings.findModelById(assistant.chatModelId ?: settings.chatModelId)?.contextLength?.takeIf { it > 0 }
+                }
+                PromptLayoutEditor(assistant = assistant, modelContextLength = modelContextLength, onUpdate = onUpdate)
             }
         }
 
@@ -361,8 +343,8 @@ private fun AssistantPromptContent(
                     style = MaterialTheme.typography.titleSmall
                 )
                 val rawMessages = listOf(
-                    UIMessage.user("你好啊"),
-                    UIMessage.assistant("你好，有什么我可以帮你的吗？"),
+                    UIMessage.user(stringResource(R.string.assistant_page_template_preview_user)),
+                    UIMessage.assistant(stringResource(R.string.assistant_page_template_preview_assistant)),
                 )
                 val preview by produceState<UiState<List<UIMessage>>>(
                     UiState.Success(rawMessages),
@@ -423,7 +405,7 @@ private fun AssistantPromptContent(
             )
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier.padding(AppSpacing.sm)
             ) {
                 assistant.presetMessages.fastForEachIndexed { index, presetMessage ->
                     Column(
@@ -504,7 +486,8 @@ private fun AssistantPromptContent(
                             )
                         )
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(HugeIcons.Add01, null)
                 }
@@ -528,30 +511,31 @@ private fun AssistantPromptContent(
                 modifier = Modifier.padding(horizontal = 8.dp)
             ) {
                 val haptic = LocalHapticFeedback.current
+                val scripts = assistant.promptPreset.regexScripts
+                fun updateScripts(next: List<RegexScript>) =
+                    onUpdate(assistant.copy(promptPreset = assistant.promptPreset.withRegexScripts(next)))
                 ReorderableColumn(
-                    list = assistant.regexes,
+                    list = scripts,
                     onSettle = { fromIndex, toIndex ->
-                        val regexes = assistant.regexes.toMutableList().apply {
-                            add(toIndex, removeAt(fromIndex))
-                        }
-                        onUpdate(assistant.copy(regexes = regexes))
+                        updateScripts(scripts.toMutableList().apply { add(toIndex, removeAt(fromIndex)) })
                     },
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) { index, regex, isDragging ->
-                    key(regex.id) {
+                    key(regex.id.ifEmpty { index.toString() }) {
                         ReorderableItem(
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            AssistantRegexCard(
-                                regex = regex,
-                                onUpdate = onUpdate,
+                            RegexScriptCard(
+                                script = regex,
+                                settings = settings,
                                 assistant = assistant,
-                                index = index,
+                                onChange = { changed -> updateScripts(scripts.mapIndexed { i, old -> if (i == index) changed else old }) },
+                                onDelete = { updateScripts(scripts.filterIndexed { i, _ -> i != index }) },
                                 modifier = Modifier.scale(if (isDragging) 0.95f else 1f),
                                 dragHandleModifier = Modifier
                                     .size(48.dp)
                                     .longPressDraggableHandle(
-                                        enabled = assistant.regexes.size > 1,
+                                        enabled = scripts.size > 1,
                                         onDragStarted = {
                                             haptic.performHapticFeedback(
                                                 HapticFeedbackType.GestureThresholdActivate
@@ -565,526 +549,15 @@ private fun AssistantPromptContent(
                         }
                     }
                 }
+                val newScriptName = stringResource(R.string.regex_script_new)
                 Button(
                     onClick = {
-                        onUpdate(
-                            assistant.copy(
-                                regexes = assistant.regexes + AssistantRegex(
-                                    id = Uuid.random()
-                                )
-                            )
-                        )
+                        updateScripts(scripts + newRegexScript(newScriptName))
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(HugeIcons.Add01, null)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WholeSystemPromptEditor(
-    assistant: Assistant,
-    onUpdate: (Assistant) -> Unit,
-) {
-    val currentAssistant by rememberUpdatedState(assistant)
-    // 整块视图显示分块的合并结果；输入经分段映射落到对应分块（没有分块时就是整块本身）
-    val systemPromptValue = rememberTextFieldState(
-        initialText = assistant.composedSystemPrompt(),
-    )
-    val fallbackSectionId = remember { Uuid.random() }
-    var segments by remember {
-        mutableStateOf(assistant.promptSections.takeIf { it.isNotEmpty() }?.let { assistant.systemPromptSegments(fallbackSectionId) })
-    }
-    var clearedSections by remember { mutableStateOf(emptySet<Uuid>()) }
-    LaunchedEffect(Unit) {
-        snapshotFlow { systemPromptValue.text.toString() }.collect { text ->
-            val current = segments
-            if (current == null) {
-                if (text != currentAssistant.systemPrompt) onUpdate(currentAssistant.copy(systemPrompt = text))
-            } else if (text != current.joinToString(SYSTEM_PROMPT_SECTION_SEPARATOR) { it.text }) {
-                val remap = remapSystemPromptSegments(current, text)
-                segments = remap.segments
-                clearedSections = clearedSections + remap.cleared
-                onUpdate(currentAssistant.withSystemPromptSegments(remap.segments, clearedSections))
-            }
-        }
-    }
-
-    TextArea(
-        state = systemPromptValue,
-        label = stringResource(R.string.assistant_page_system_prompt),
-        minLines = 5,
-        maxLines = 10
-    )
-
-    if (segments != null) {
-        Text(
-            text = stringResource(R.string.assistant_page_prompt_whole_merged_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
-    if (CreatorAssistantDefinition.isCreator(assistant.id)) {
-        var confirmRestore by remember { mutableStateOf(false) }
-        TextButton(
-            onClick = { confirmRestore = true },
-            enabled = systemPromptValue.text.toString() != CreatorAssistantDefinition.SYSTEM_PROMPT,
-        ) {
-            Text(stringResource(R.string.assistant_page_restore_default_prompt))
-        }
-        if (confirmRestore) {
-            me.rerere.rikkihub.ui.components.ui.AlertDialog(
-                onDismissRequest = { confirmRestore = false },
-                title = { Text(stringResource(R.string.assistant_page_restore_default_prompt)) },
-                text = { Text(stringResource(R.string.assistant_page_restore_default_prompt_desc)) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        confirmRestore = false
-                        systemPromptValue.setTextAndPlaceCursorAtEnd(CreatorAssistantDefinition.SYSTEM_PROMPT)
-                    }) { Text(stringResource(R.string.confirm)) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { confirmRestore = false }) { Text(stringResource(R.string.cancel)) }
-                },
-            )
-        }
-    }
-
-    PlaceholderTags(onInsert = { systemPromptValue.insertAtCursor(it) })
-}
-
-@Composable
-private fun PlaceholderTags(onInsert: (String) -> Unit) {
-    Column {
-        Text(
-            text = stringResource(R.string.assistant_page_available_variables),
-            style = MaterialTheme.typography.labelSmall
-        )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            DefaultPlaceholderProvider.placeholders.forEach { (k, info) ->
-                Tag(
-                    onClick = {
-                        onInsert("{{$k}}")
-                    }
-                ) {
-                    info.displayName()
-                    Text(": {{$k}}")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SystemPromptSectionsEditor(
-    assistant: Assistant,
-    onUpdate: (Assistant) -> Unit,
-) {
-    val currentAssistant by rememberUpdatedState(assistant)
-    val haptic = LocalHapticFeedback.current
-
-    Text(
-        text = stringResource(R.string.assistant_page_prompt_sections_desc),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-
-    ReorderableColumn(
-        list = assistant.promptSections,
-        onSettle = { fromIndex, toIndex ->
-            val sections = currentAssistant.promptSections.toMutableList().apply {
-                add(toIndex, removeAt(fromIndex))
-            }
-            onUpdate(currentAssistant.withPromptSections(sections))
-        },
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) { _, section, isDragging ->
-        key(section.id) {
-            ReorderableItem(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                SystemPromptSectionCard(
-                    section = section,
-                    onChange = { updated ->
-                        onUpdate(
-                            currentAssistant.withPromptSections(
-                                currentAssistant.promptSections.map {
-                                    if (it.id == updated.id) updated else it
-                                }
-                            )
-                        )
-                    },
-                    onDelete = {
-                        onUpdate(
-                            currentAssistant.withPromptSections(
-                                currentAssistant.promptSections.filterNot { it.id == section.id }
-                            )
-                        )
-                    },
-                    modifier = Modifier.scale(if (isDragging) 0.95f else 1f),
-                    dragHandleModifier = Modifier
-                        .size(48.dp)
-                        .longPressDraggableHandle(
-                            enabled = assistant.promptSections.size > 1,
-                            onDragStarted = {
-                                haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                            },
-                            onDragStopped = {
-                                haptic.performHapticFeedback(HapticFeedbackType.GestureEnd)
-                            }
-                        )
-                )
-            }
-        }
-    }
-
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Button(
-            onClick = {
-                onUpdate(
-                    currentAssistant.withPromptSections(currentAssistant.promptSections + SystemPromptSection())
-                )
-            },
-            modifier = Modifier.weight(1f)
-        ) {
-            Icon(HugeIcons.Add01, null)
-            Spacer(Modifier.width(4.dp))
-            Text(stringResource(R.string.assistant_page_prompt_section_add))
-        }
-    }
-}
-
-@Composable
-private fun SystemPromptSectionCard(
-    section: SystemPromptSection,
-    onChange: (SystemPromptSection) -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-    dragHandleModifier: Modifier = Modifier,
-) {
-    val currentSection by rememberUpdatedState(section)
-    val currentOnChange by rememberUpdatedState(onChange)
-    // 新加的空块直接展开，便于输入
-    var expanded by remember { mutableStateOf(section.title.isEmpty() && section.content.isEmpty()) }
-    ElevatedCard(
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(12.dp)
-                .animateContentSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = dragHandleModifier,
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = HugeIcons.DragDropVertical,
-                        contentDescription = null,
-                    )
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = section.title.ifBlank { stringResource(R.string.assistant_page_prompt_section_untitled) },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (!expanded && section.content.isNotBlank()) {
-                        Text(
-                            text = section.content.trim().lineSequence().first(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Switch(
-                    checked = section.enabled,
-                    onCheckedChange = { enabled -> onChange(section.copy(enabled = enabled)) },
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-                IconButton(
-                    onClick = {
-                        expanded = !expanded
-                    }
-                ) {
-                    Icon(
-                        imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
-                        contentDescription = null
-                    )
-                }
-            }
-
-            if (expanded) {
-                CommitOnDoneTextField(
-                    value = section.title,
-                    onCommit = { title -> currentOnChange(currentSection.copy(title = title)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.assistant_page_prompt_section_title)) }
-                )
-
-                val contentValue = rememberTextFieldState(initialText = section.content)
-                LaunchedEffect(Unit) {
-                    snapshotFlow { contentValue.text }.collect {
-                        val text = it.toString()
-                        if (text != currentSection.content) currentOnChange(currentSection.copy(content = text))
-                    }
-                }
-                TextArea(
-                    state = contentValue,
-                    label = stringResource(R.string.assistant_page_prompt_section_content),
-                    minLines = 3,
-                    maxLines = 10
-                )
-                PlaceholderTags(onInsert = { contentValue.insertAtCursor(it) })
-
-                TextButton(
-                    onClick = onDelete,
-                ) {
-                    Icon(HugeIcons.Delete01, null)
-                    Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.delete))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AssistantRegexCard(
-    regex: AssistantRegex,
-    onUpdate: (Assistant) -> Unit,
-    assistant: Assistant,
-    index: Int,
-    modifier: Modifier = Modifier,
-    dragHandleModifier: Modifier = Modifier,
-) {
-    var expanded by remember {
-        mutableStateOf(false)
-    }
-    ElevatedCard(
-        modifier = modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(12.dp)
-                .animateContentSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = dragHandleModifier,
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = HugeIcons.DragDropVertical,
-                        contentDescription = null,
-                    )
-                }
-                Text(
-                    text = regex.name,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .widthIn(max = 200.dp)
-                )
-                Switch(
-                    checked = regex.enabled,
-                    onCheckedChange = { enabled ->
-                        onUpdate(
-                            assistant.copy(
-                                regexes = assistant.regexes.mapIndexed { i, reg ->
-                                    if (i == index) {
-                                        reg.copy(enabled = enabled)
-                                    } else {
-                                        reg
-                                    }
-                                }
-                            )
-                        )
-                    },
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-                IconButton(
-                    onClick = {
-                        expanded = !expanded
-                    }
-                ) {
-                    Icon(
-                        imageVector = if (expanded) HugeIcons.ArrowUp01 else HugeIcons.ArrowDown01,
-                        contentDescription = null
-                    )
-                }
-            }
-
-            if (expanded) {
-
-                CommitOnDoneTextField(
-                    value = regex.name,
-                    onCommit = { name ->
-                        onUpdate(
-                            assistant.copy(
-                                regexes = assistant.regexes.mapIndexed { i, reg ->
-                                    if (i == index) {
-                                        reg.copy(name = name)
-                                    } else {
-                                        reg
-                                    }
-                                }
-                            )
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.assistant_page_regex_name)) }
-                )
-
-                CommitOnDoneTextField(
-                    value = regex.findRegex,
-                    onCommit = { findRegex ->
-                        onUpdate(
-                            assistant.copy(
-                                regexes = assistant.regexes.mapIndexed { i, reg ->
-                                    if (i == index) {
-                                        reg.copy(findRegex = findRegex)
-                                    } else {
-                                        reg
-                                    }
-                                }
-                            )
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.assistant_page_regex_find_regex)) },
-                    placeholder = { Text("e.g., \\b\\w+@\\w+\\.\\w+\\b") },
-                    transform = { it.trim() },
-                )
-
-                CommitOnDoneTextField(
-                    value = regex.replaceString,
-                    onCommit = { replaceString ->
-                        onUpdate(
-                            assistant.copy(
-                                regexes = assistant.regexes.mapIndexed { i, reg ->
-                                    if (i == index) {
-                                        reg.copy(replaceString = replaceString)
-                                    } else {
-                                        reg
-                                    }
-                                }
-                            )
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.assistant_page_regex_replace_string)) },
-                    placeholder = { Text("e.g., [EMAIL]") }
-                )
-
-                Column {
-                    Text(
-                        text = stringResource(R.string.assistant_page_regex_affecting_scopes),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        AssistantAffectScope.entries.forEach { scope ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Checkbox(
-                                    checked = scope in regex.affectingScope,
-                                    onCheckedChange = { checked ->
-                                        val newScopes = if (checked) {
-                                            regex.affectingScope + scope
-                                        } else {
-                                            regex.affectingScope - scope
-                                        }
-                                        onUpdate(
-                                            assistant.copy(
-                                                regexes = assistant.regexes.mapIndexed { i, reg ->
-                                                    if (i == index) {
-                                                        reg.copy(affectingScope = newScopes)
-                                                    } else {
-                                                        reg
-                                                    }
-                                                }
-                                            )
-                                        )
-                                    }
-                                )
-                                Text(
-                                    text = scope.name.lowercase().replaceFirstChar { it.uppercase() },
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Checkbox(
-                        checked = regex.visualOnly,
-                        onCheckedChange = { visualOnly ->
-                            onUpdate(
-                                assistant.copy(
-                                    regexes = assistant.regexes.mapIndexed { i, reg ->
-                                        if (i == index) {
-                                            reg.copy(visualOnly = visualOnly)
-                                        } else {
-                                            reg
-                                        }
-                                    }
-                                )
-                            )
-                        }
-                    )
-                    Text(
-                        text = stringResource(R.string.assistant_page_regex_visual_only),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-
-                TextButton(
-                    onClick = {
-                        onUpdate(
-                            assistant.copy(
-                                regexes = assistant.regexes.filterIndexed { i, _ ->
-                                    i != index
-                                }
-                            )
-                        )
-                    }
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Icon(HugeIcons.Delete01, null)
-                        Text(stringResource(R.string.delete))
-                    }
                 }
             }
         }

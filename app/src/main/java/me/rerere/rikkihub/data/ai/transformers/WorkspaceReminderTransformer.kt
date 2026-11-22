@@ -97,7 +97,7 @@ class WorkspaceReminderTransformer internal constructor(
     }
 }
 
-private fun UIMessage.appendText(extra: String): UIMessage {
+internal fun UIMessage.appendText(extra: String): UIMessage {
     val updatedParts = parts.toMutableList()
     val firstTextIndex = updatedParts.indexOfFirst { it is UIMessagePart.Text }
     if (firstTextIndex >= 0) {

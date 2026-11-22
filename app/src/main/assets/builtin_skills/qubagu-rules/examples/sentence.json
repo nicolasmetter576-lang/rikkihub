@@ -1,0 +1,186 @@
+{
+  "type": "rikkihub.qubagu.rules",
+  "version": 1,
+  "packs": [
+    {
+      "id": "sentence",
+      "name": "句式套路",
+      "description": "绕弯否定（不是……而是……）、结尾套话（夜还很长、一切才刚刚开始）",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "finale_sentence",
+          "name": "结尾套话（独立成句：删掉）",
+          "sample": "……他转身离开。夜还很长。",
+          "find": "/(?<=\\S[\\s\\S]*)(?<=[。.！？!?…”」』\"\\n])\\s*(?:(?:而|但|毕竟|只是|不过|然而|或许|也许)[，,]?\\s*|(?:because|for|as|and|but|after all),?\\s+)?(?:(?:(?:这|属于[^，。\\n]{1,8}的|他们的|她们的|今晚的|真正的)?(?:一切|故事|好戏|游戏|夜晚|旅程|冒险|较量|日子|生活)[，,]?(?:都)?才(?:刚刚|刚)(?:开始|开场|开幕|拉开序幕|拉开帷幕)(?:而已)?)|(?:(?:夜|夜色|长夜|今夜|这一夜|今晚)[，,]?还(?:很|太)?(?:长|漫长)(?:着呢)?)|(?:(?:未来|前路|以后的路|往后的日子|日子)[，,]?还(?:很)?长(?:着呢)?)|(?:(?:现在|接下来|而现在)?[，,]?(?:决定权|选择权|主动权)[，,]?(?:就|已经|已|全)?(?:在|交到了?|交给了?|握在|落在|回到了?)你(?:的)?(?:手里|手中|手上|这边)?了?)|(?:(?:球|皮球)[，,]?(?:已经|现在)?(?:在|踢到了?|传到了?|回到了?)你(?:的)?(?:脚下|这边|这里)了?)|(?:(?:至于)?(?:这|那)[，,]?(?:就|便|又|已经)?是(?:另一个|另外一个|后来的|以后的)故事了)|(?:(?:答案|结局|这一切)?[，,]?(?:只有|唯有|或许只有)时间(?:才)?(?:能|会|可以)(?:给出|告诉|证明|揭晓)(?:答案|一切|你)?了?)|(?:(?:那么|接下来|现在)[，,]\\s*(?:你|该你了[，,]\\s*你)(?:会|要|想|打算|准备)?(?:怎么|如何)(?:做|选|选择|回应|回答|应对)呢?)|(?:the ball (?:is|was) (?:now )?in (?:your|his|her|their) court)|(?:the (?:choice|decision) (?:is|was) (?:entirely |all )?(?:yours|his|hers|theirs))|(?:the night (?:is|was) still young)|(?:(?:it|this|everything) (?:is|was) (?:only )?just (?:the )?beginning)|(?:only time (?:will|would|could) tell))[。.！？!?…~～]*$/i",
+          "regex": true,
+          "replacements": [],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": true,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "finale_clause_mark",
+          "name": "结尾套话（逗号后：删到句末）",
+          "sample": "……他关上门，这一切才刚刚开始。",
+          "find": "/[，,]\\s*(?:(?:而|但|毕竟|只是|不过|然而|或许|也许)[，,]?\\s*|(?:because|for|as|and|but|after all),?\\s+)?(?:(?:(?:这|属于[^，。\\n]{1,8}的|他们的|她们的|今晚的|真正的)?(?:一切|故事|好戏|游戏|夜晚|旅程|冒险|较量|日子|生活)[，,]?(?:都)?才(?:刚刚|刚)(?:开始|开场|开幕|拉开序幕|拉开帷幕)(?:而已)?)|(?:(?:夜|夜色|长夜|今夜|这一夜|今晚)[，,]?还(?:很|太)?(?:长|漫长)(?:着呢)?)|(?:(?:未来|前路|以后的路|往后的日子|日子)[，,]?还(?:很)?长(?:着呢)?)|(?:(?:现在|接下来|而现在)?[，,]?(?:决定权|选择权|主动权)[，,]?(?:就|已经|已|全)?(?:在|交到了?|交给了?|握在|落在|回到了?)你(?:的)?(?:手里|手中|手上|这边)?了?)|(?:(?:球|皮球)[，,]?(?:已经|现在)?(?:在|踢到了?|传到了?|回到了?)你(?:的)?(?:脚下|这边|这里)了?)|(?:(?:至于)?(?:这|那)[，,]?(?:就|便|又|已经)?是(?:另一个|另外一个|后来的|以后的)故事了)|(?:(?:答案|结局|这一切)?[，,]?(?:只有|唯有|或许只有)时间(?:才)?(?:能|会|可以)(?:给出|告诉|证明|揭晓)(?:答案|一切|你)?了?)|(?:(?:那么|接下来|现在)[，,]\\s*(?:你|该你了[，,]\\s*你)(?:会|要|想|打算|准备)?(?:怎么|如何)(?:做|选|选择|回应|回答|应对)呢?)|(?:the ball (?:is|was) (?:now )?in (?:your|his|her|their) court)|(?:the (?:choice|decision) (?:is|was) (?:entirely |all )?(?:yours|his|hers|theirs))|(?:the night (?:is|was) still young)|(?:(?:it|this|everything) (?:is|was) (?:only )?just (?:the )?beginning)|(?:only time (?:will|would|could) tell))([。.！!…][。.！？!?…~～]*)$/i",
+          "regex": true,
+          "replacements": [
+            "$1"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": true,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "finale_clause_zh",
+          "name": "结尾套话（逗号后，补句号）",
+          "sample": "……他转身离开，夜还很长",
+          "find": "/[，,]\\s*(?:(?:而|但|毕竟|只是|不过|然而|或许|也许)[，,]?\\s*)?(?:(?:(?:这|属于[^，。\\n]{1,8}的|他们的|她们的|今晚的|真正的)?(?:一切|故事|好戏|游戏|夜晚|旅程|冒险|较量|日子|生活)[，,]?(?:都)?才(?:刚刚|刚)(?:开始|开场|开幕|拉开序幕|拉开帷幕)(?:而已)?)|(?:(?:夜|夜色|长夜|今夜|这一夜|今晚)[，,]?还(?:很|太)?(?:长|漫长)(?:着呢)?)|(?:(?:未来|前路|以后的路|往后的日子|日子)[，,]?还(?:很)?长(?:着呢)?)|(?:(?:现在|接下来|而现在)?[，,]?(?:决定权|选择权|主动权)[，,]?(?:就|已经|已|全)?(?:在|交到了?|交给了?|握在|落在|回到了?)你(?:的)?(?:手里|手中|手上|这边)?了?)|(?:(?:球|皮球)[，,]?(?:已经|现在)?(?:在|踢到了?|传到了?|回到了?)你(?:的)?(?:脚下|这边|这里)了?)|(?:(?:至于)?(?:这|那)[，,]?(?:就|便|又|已经)?是(?:另一个|另外一个|后来的|以后的)故事了)|(?:(?:答案|结局|这一切)?[，,]?(?:只有|唯有|或许只有)时间(?:才)?(?:能|会|可以)(?:给出|告诉|证明|揭晓)(?:答案|一切|你)?了?)|(?:(?:那么|接下来|现在)[，,]\\s*(?:你|该你了[，,]\\s*你)(?:会|要|想|打算|准备)?(?:怎么|如何)(?:做|选|选择|回应|回答|应对)呢?))(?:[？?~～][。.！？!?…~～]*)?$/i",
+          "regex": true,
+          "replacements": [
+            "。"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": true,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "finale_clause_en",
+          "name": "结尾套话（英文，逗号后，补句号）",
+          "sample": "She left the room, the night was still young",
+          "find": "/[，,]\\s*(?:(?:而|但|毕竟|只是|不过|然而|或许|也许)[，,]?\\s*|(?:because|for|as|and|but|after all),?\\s+)?(?:(?:(?:这|属于[^，。\\n]{1,8}的|他们的|她们的|今晚的|真正的)?(?:一切|故事|好戏|游戏|夜晚|旅程|冒险|较量|日子|生活)[，,]?(?:都)?才(?:刚刚|刚)(?:开始|开场|开幕|拉开序幕|拉开帷幕)(?:而已)?)|(?:(?:夜|夜色|长夜|今夜|这一夜|今晚)[，,]?还(?:很|太)?(?:长|漫长)(?:着呢)?)|(?:(?:未来|前路|以后的路|往后的日子|日子)[，,]?还(?:很)?长(?:着呢)?)|(?:(?:现在|接下来|而现在)?[，,]?(?:决定权|选择权|主动权)[，,]?(?:就|已经|已|全)?(?:在|交到了?|交给了?|握在|落在|回到了?)你(?:的)?(?:手里|手中|手上|这边)?了?)|(?:(?:球|皮球)[，,]?(?:已经|现在)?(?:在|踢到了?|传到了?|回到了?)你(?:的)?(?:脚下|这边|这里)了?)|(?:(?:至于)?(?:这|那)[，,]?(?:就|便|又|已经)?是(?:另一个|另外一个|后来的|以后的)故事了)|(?:(?:答案|结局|这一切)?[，,]?(?:只有|唯有|或许只有)时间(?:才)?(?:能|会|可以)(?:给出|告诉|证明|揭晓)(?:答案|一切|你)?了?)|(?:(?:那么|接下来|现在)[，,]\\s*(?:你|该你了[，,]\\s*你)(?:会|要|想|打算|准备)?(?:怎么|如何)(?:做|选|选择|回应|回答|应对)呢?)|(?:the ball (?:is|was) (?:now )?in (?:your|his|her|their) court)|(?:the (?:choice|decision) (?:is|was) (?:entirely |all )?(?:yours|his|hers|theirs))|(?:the night (?:is|was) still young)|(?:(?:it|this|everything) (?:is|was) (?:only )?just (?:the )?beginning)|(?:only time (?:will|would|could) tell))(?:[？?~～][。.！？!?…~～]*)?$/i",
+          "regex": true,
+          "replacements": [
+            "."
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": true,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_not_but",
+          "name": "不是……而是……",
+          "sample": "那不是愤怒，而是一种执念。",
+          "find": "(?<![是要岂莫还可无就都而却倒才又该能会算])(?:并|绝|也)?不是[^，。；！？!?,;\\n“”\"「」『』]{1,30}[，,]\\s*(?:(?:也|更|甚至|亦)不是[^，。；！？!?,;\\n“”\"「」『』]{1,30}[，,]\\s*)*(?:而是|是)(?=[^，。；！？!?,;\\s])(?!什么|谁|哪|怎|不是|否|吗|的)",
+          "regex": true,
+          "replacements": [
+            "是"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_not_period",
+          "name": "不是……。是……",
+          "sample": "这不是请求。是命令。",
+          "find": "(?<![是要岂莫还可无就都而却倒才又该能会算])(?:并|绝|也)?不是[^，。；！？!?,;\\n“”\"「」『』]{1,24}。[ \\t]*(?:而是|是)(?=[^，。；！？!?,;\\s])(?!什么|谁|哪|怎|不是|否|吗|的)",
+          "regex": true,
+          "replacements": [
+            "是"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_rather",
+          "name": "并非……而是……",
+          "sample": "这并非安慰，而是试探。",
+          "find": "并非[^，。；！？!?,;\\n“”\"「」『』]{1,30}[，,]\\s*而是(?=[^，。；！？!?,;\\s])(?!什么|谁|哪|怎|不是|否|吗|的)",
+          "regex": true,
+          "replacements": [
+            "是"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_rather_say",
+          "name": "与其说……不如说……",
+          "sample": "与其说是安慰，不如说是试探。",
+          "find": "与其说是?[^，。；！？!?,;\\n“”\"「」『』]{1,30}[，,]\\s*(?:倒|还|更|毋宁)?不如说是?(?=[^，。；！？!?,;\\s])(?!什么|谁|哪|怎|不是|否|吗|的)",
+          "regex": true,
+          "replacements": [
+            "更像是"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_less_more",
+          "name": "少了几分……多了几分……",
+          "sample": "她的眼神少了几分凌厉，却多了几分温柔。",
+          "find": "少了(?:几分|几许|些许|一些|一点|一丝|些|点)[^，。；！？!?,;\\n“”\"「」『』]{1,20}[，,]\\s*(?:却|反而|反倒|倒|而)?(?=多了)",
+          "regex": true,
+          "replacements": [],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_en_was",
+          "name": "It wasn't A, it was B",
+          "sample": "It wasn't anger, it was grief.",
+          "find": "(?:^|(?<=[.!?\\n]\\s?|[”\"]\\s))(?:It wasn't|It was not) (?:just |merely |only )?[^,.;!?\\n]{1,45}[,;—–-]\\s*it was (?=\\S)",
+          "regex": true,
+          "replacements": [
+            "It was "
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_en_is",
+          "name": "It's not A — it's B",
+          "sample": "It's not fear — it's resolve.",
+          "find": "(?:^|(?<=[.!?\\n]\\s?|[”\"]\\s))(?:It isn't|It is not|It's not) (?:just |merely |only )?[^,.;!?\\n]{1,45}[,;—–-]\\s*it(?: is|'s) (?=\\S)",
+          "regex": true,
+          "replacements": [
+            "It is "
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    }
+  ]
+}

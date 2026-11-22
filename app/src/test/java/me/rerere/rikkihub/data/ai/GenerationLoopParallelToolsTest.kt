@@ -19,14 +19,11 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.util.HttpException
 import me.rerere.rikkihub.data.ai.tools.ToolExecutionConfig
 import me.rerere.rikkihub.data.datastore.Settings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -34,8 +31,7 @@ import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 工具调用并行执行：保序分段、上限、逐个回写、进度合流、失败隔离、
- * 限流退避。工具都用固定 tools（无 snapshot provider），调度表即签发表。
+ * 工具调用并行执行：保序分段、上限、逐个回写、进度合流、失败隔离。工具都用固定 tools（无 snapshot provider），调度表即签发表。
  */
 class GenerationLoopParallelToolsTest {
 
@@ -53,7 +49,6 @@ class GenerationLoopParallelToolsTest {
 
         suspend fun run(
             tools: List<Tool>,
-            rateLimitRetry: RateLimitRetryPolicy? = null,
             onChunk: (GenerationChunk) -> Unit = {},
         ): List<GenerationChunk> = loop.generateTextObserved(
             settings = settings,
@@ -61,7 +56,6 @@ class GenerationLoopParallelToolsTest {
             messages = listOf(UIMessage.user("go")),
             assistant = testAssistant(),
             tools = tools,
-            rateLimitRetry = rateLimitRetry,
         ).toList().onEach(onChunk)
     }
 
@@ -315,60 +309,12 @@ class GenerationLoopParallelToolsTest {
     }
 
     @Test
-    fun `rate limited stream is retried only with a policy`() = runBlocking {
-        val limited = HttpException("slow down", statusCode = 429, retryAfterMillis = 10)
-        val policy = RateLimitRetryPolicy(maxRetries = 2, baseDelayMillis = 10, maxDelayMillis = 50)
-
-        val retried = Harness(
-            listOf(ScriptedAttempt(emptyList(), errorAfter = limited), textStepScript("after retry"))
-        )
-        val chunks = retried.run(emptyList(), rateLimitRetry = policy)
-        assertEquals(2, retried.provider.streamAttempts.size)
-        val text = chunks.filterIsInstance<GenerationChunk.Messages>().last().messages.last().toText()
-        assertEquals("after retry", text)
-
-        val noPolicy = Harness(
-            listOf(ScriptedAttempt(emptyList(), errorAfter = limited), textStepScript("unused"))
-        )
-        try {
-            noPolicy.run(emptyList())
-            fail("expected the 429 to surface without a retry policy")
-        } catch (expected: HttpException) {
-            assertEquals(429, expected.statusCode)
-        }
-        assertEquals(1, noPolicy.provider.streamAttempts.size)
-    }
-
-    @Test
-    fun `rate limit retries stop after the policy limit`() = runBlocking {
-        val limited = HttpException("busy", statusCode = 503)
-        val harness = Harness(List(3) { ScriptedAttempt(emptyList(), errorAfter = limited) })
-        try {
-            harness.run(emptyList(), rateLimitRetry = RateLimitRetryPolicy(maxRetries = 2, baseDelayMillis = 1))
-            fail("expected failure after retries")
-        } catch (expected: HttpException) {
-            assertEquals(503, expected.statusCode)
-        }
-        assertEquals(3, harness.provider.streamAttempts.size)
-    }
-
-    @Test
-    fun `rate limited status ignores other errors`() {
-        assertNull(rateLimitedStatus(HttpException("bad", statusCode = 400)))
-        assertNull(rateLimitedStatus(IllegalStateException("x")))
-        assertEquals(429, rateLimitedStatus(RuntimeException(HttpException("x", statusCode = 429)))?.statusCode)
-        assertEquals(
-            503,
-            rateLimitedStatus(me.rerere.ai.provider.providers.devin.DevinApiException(503, "x"))?.statusCode,
-        )
-    }
-
-    @Test
-    fun `tool output file names do not collide after sanitizing`() {
-        assertEquals("call_1.txt", toolOutputFileName("call_1"))
-        val a = toolOutputFileName("Bash:0#abc")
-        val b = toolOutputFileName("Bash#0:abc")
-        assertTrue(a.startsWith("Bash0abc_") && b.startsWith("Bash0abc_"))
-        assertFalse(a == b)
+    fun `tool output file names are sanitized and unique per save`() {
+        val first = toolOutputFileName("response:tool-0")
+        val second = toolOutputFileName("response:tool-0")
+        assertTrue(first.startsWith("responsetool-0_") && first.endsWith(".txt"))
+        assertFalse(first == second)
+        assertTrue(toolOutputFileName("call_1").startsWith("call_1_"))
+        assertTrue(toolOutputFileName("../:#").startsWith("tool_output_"))
     }
 }

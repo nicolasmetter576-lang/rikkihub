@@ -57,4 +57,25 @@ class EditorTypographyTest {
         val ids = Regex("\"([a-z_0-9]+)\"").findAll(block).map { it.groupValues[1] }.toList()
         assertEquals(EditorFontIds.ALL, ids)
     }
+
+    @Test
+    fun `text and quote colors round-trip per theme, follow the theme by default and survive clamping`() {
+        val default = EditorTypography.APP_DEFAULT
+        assertEquals(EditorColorPair(), default.textColor)
+        assertEquals(false, default.quoteHighlight)
+        val pair = EditorColorPair().with(dark = true, argb = 0xFFE0D0B0L)
+        assertEquals(null, pair.of(dark = false))
+        assertEquals(0xFFE0D0B0L, pair.of(dark = true))
+        assertEquals(EditorColorPair(light = 0xFF202020L, dark = 0xFFE0D0B0L), pair.with(dark = false, argb = 0xFF202020L))
+        val custom = default.copy(textColor = pair, quoteHighlight = true, quoteColor = EditorColorPair(light = 0xFF8B0000L), fontSize = 99f)
+        val decoded = JsonInstant.decodeFromString<DisplaySetting>(JsonInstant.encodeToString(DisplaySetting(workspaceEditorTypography = custom)))
+        assertEquals(custom.copy(fontSize = EditorTypography.MAX_FONT_SIZE), decoded.appEditorTypography)
+        // Typography saved before the colors existed reads them as unset
+        val legacy = JsonInstant.decodeFromString<DisplaySetting>(
+            """{"workspaceEditorTypography":{"font":"serif","fontSize":15,"letterSpacing":0,"lineHeight":1.5,"textBrightness":0.8}}""",
+        ).appEditorTypography
+        assertEquals(EditorColorPair(), legacy.textColor)
+        assertEquals(false, legacy.quoteHighlight)
+        assertEquals(0.8f, legacy.textBrightness)
+    }
 }

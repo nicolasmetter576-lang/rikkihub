@@ -12,6 +12,7 @@ import { Checkbox } from "~/components/ui/checkbox";
 import {
   ConfirmDeleteDialog,
   CreateNameDialog,
+  SettingsList,
   SettingsListCard,
   SettingsPageHeader,
   reportSettingsError,
@@ -80,7 +81,7 @@ export default function WorkspacesIndexPage() {
           <p className="text-sm text-muted-foreground">{t("list.empty")}</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <SettingsList>
           {workspaces.map((workspace) => (
             <SettingsListCard
               key={workspace.id}
@@ -129,7 +130,7 @@ export default function WorkspacesIndexPage() {
               }
             />
           ))}
-        </div>
+        </SettingsList>
       )}
 
       <CreateNameDialog

@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.ai.tools
 
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
@@ -84,7 +85,7 @@ class WorkspaceSubagentPresetWireTest {
             val runner = WorkspaceSubagentRunner(loop, { settings }, object : InputMessageTransformer {}, context)
             val parts = withTimeout(10_000) {
                 runner.run(
-                    parentAssistant = Assistant(systemPrompt = "PARENT SECRET", temperature = 1.9f, maxTokens = 99),
+                    parentAssistant = Assistant(promptPreset = AssistantPresets.withSystemPrompt("PARENT SECRET"), temperature = 1.9f, maxTokens = 99),
                     parentModel = model, cwd = null, harnessMinimal = false, allowContext = false,
                     subagentModelId = null,
                     args = JsonInstant.parseToJsonElement("""{"agent":"reviewer","prompt":"Review the task","description":"Wire check"}"""),

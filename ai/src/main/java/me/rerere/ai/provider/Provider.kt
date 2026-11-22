@@ -62,6 +62,8 @@ data class TextGenerationResult(
     val message: UIMessage,
     val finishReason: String? = null,
     val usage: TokenUsage? = null,
+    /** Provider-reported input/output completeness, not message lifecycle completion. */
+    val hasCompleteUsage: Boolean? = null,
 )
 
 @Serializable
@@ -99,6 +101,20 @@ data class TextGenerationParams(
      * 声明名同源，否则上游按未注册名校验）。非该 provider 的请求恒为空。
      */
     val toolWireRenames: Map<String, String> = emptyMap(),
+    /**
+     * 酒馆预设带来的采样参数。null = 不发（现有请求不变）；各协议只发自己认的：
+     * OpenAI 兼容接口发 top_k / 两个惩罚 / repetition_penalty / min_p / top_a / seed（非标准的几个由兼容服务器自己决定认不认），
+     * Claude 只发 top_k，Gemini 发 topK / 两个惩罚 / seed。
+     */
+    val topK: Int? = null,
+    val frequencyPenalty: Float? = null,
+    val presencePenalty: Float? = null,
+    val repetitionPenalty: Float? = null,
+    val minP: Float? = null,
+    val topA: Float? = null,
+    val seed: Long? = null,
+    /** In-process HTTP metadata only. Never serialized into settings, traces or request bodies. */
+    @kotlinx.serialization.Transient val requestTag: Any? = null,
 ) {
     /**
      * The default identity is a copy/codec-stable provenance marker, not a second

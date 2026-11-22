@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import kotlinx.coroutines.launch
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkihub.R
@@ -50,11 +51,13 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun AntigravityProviderConfigure(
     provider: ProviderSetting.Antigravity,
     onEdit: (ProviderSetting.Antigravity) -> Unit,
+    onModelsRefreshed: (List<Model>) -> Unit,
 ) {
     val repository = koinInject<AntigravityAccountRepository>()
     val oauthManager = koinInject<AntigravityOAuthManager>()
@@ -74,7 +77,7 @@ fun AntigravityProviderConfigure(
                 runCatching {
                     providerManager.getProviderByType(provider).listModels(provider)
                 }.onSuccess { models ->
-                    onEdit(provider.copy(models = mergeDevinModels(provider.models, models)))
+                    onModelsRefreshed(models)
                 }
                 toaster.show(context.getString(R.string.antigravity_oauth_success), type = ToastType.Success)
                 oauthManager.consumeResult()
@@ -93,7 +96,7 @@ fun AntigravityProviderConfigure(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(AppSpacing.sm),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         CustomHeaders(provider.customHeaders) { onEdit(provider.copy(customHeaders = it)) }
@@ -109,6 +112,7 @@ fun AntigravityProviderConfigure(
             onClick = oauthManager::startLogin,
             enabled = oauthStatus != AntigravityOAuthStatus.Completing,
             modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text(stringResource(R.string.antigravity_sign_in))
         }
@@ -212,6 +216,7 @@ fun AntigravityProviderConfigure(
                     }
                 },
                 enabled = accounts.isNotEmpty(),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(R.string.antigravity_check_status))
             }
@@ -224,7 +229,7 @@ fun AntigravityProviderConfigure(
             ) {
                 Text(
                     text = stringResource(R.string.antigravity_no_accounts),
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(AppSpacing.sm),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -296,7 +301,7 @@ private fun AntigravityAccountCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(

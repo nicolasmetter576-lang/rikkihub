@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.creator
 
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -81,7 +82,7 @@ class CreatorReadDomainTest {
             name = "with-secrets",
             customHeaders = listOf(CustomHeader("Authorization", "Bearer topsecret")),
             customBodies = listOf(CustomBody("key", JsonPrimitive("v"))),
-            systemPrompt = "prompt",
+            promptPreset = AssistantPresets.withSystemPrompt("prompt"),
         )
         val domain = domainWith(Settings(assistants = listOf(assistant), assistantId = assistant.id))
         val out = domain.read(CreatorObjectKind.ASSISTANT, assistant.id.toString()) as CreatorReadDomain.DetailResult.Ok

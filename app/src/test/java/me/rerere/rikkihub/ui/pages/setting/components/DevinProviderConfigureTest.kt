@@ -36,7 +36,7 @@ class DevinProviderConfigureTest {
         )
         val added = Model(modelId = "claude-opus-5")
 
-        val merged = mergeDevinModels(
+        val merged = mergeOAuthModels(
             existing = listOf(existing, missing),
             refreshed = listOf(refreshed, added),
         )

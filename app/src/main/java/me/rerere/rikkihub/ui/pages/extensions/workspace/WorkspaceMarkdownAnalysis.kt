@@ -1,6 +1,7 @@
 package me.rerere.rikkihub.ui.pages.extensions.workspace
 
 import java.net.URI
+import me.rerere.rikkihub.ui.components.richtext.quotedTextRanges
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes as E
 import org.intellij.markdown.MarkdownTokenTypes as T
@@ -12,7 +13,11 @@ import org.intellij.markdown.parser.CancellationToken
 import org.intellij.markdown.ExperimentalApi
 import org.intellij.markdown.parser.MarkdownParser
 
-internal enum class WorkspaceMarkdownStyle { HEADING, BOLD, ITALIC, STRIKE, CODE, LINK, QUOTE, LIST, TASK, TABLE, TABLE_HEADER, TABLE_DELIMITER, MARKER }
+internal enum class WorkspaceMarkdownStyle {
+    HEADING, BOLD, ITALIC, STRIKE, CODE, LINK, QUOTE, LIST, TASK, TABLE, TABLE_HEADER, TABLE_DELIMITER, MARKER,
+    /** Text in quotes (“…” 「…」), from [workspaceQuotedSpans] rather than the Markdown parser. */
+    QUOTED,
+}
 internal data class WorkspaceMarkdownSpan(val start: Int, val end: Int, val style: WorkspaceMarkdownStyle, val level: Int = 0)
 /**
  * Carries spans analysed on [old] over an edit that produced [new], so styling stays put while
@@ -37,6 +42,32 @@ internal fun List<WorkspaceMarkdownSpan>.rebased(old: CharSequence, new: CharSeq
         val end = end(span.end)
         if (start < end) span.copy(start = start, end = end) else null
     }
+}
+
+/**
+ * Closed quotes of [text] (the marks included) as [WorkspaceMarkdownStyle.QUOTED] spans, with the chat's
+ * pairs ([quotedTextRanges]) but paired within each line: a stray quote leaves the rest of a long document
+ * alone, and a quotation running over paragraphs (opened again on each, left open at its end) still colors
+ * every one. Quotes inside [code] spans neither open nor close.
+ */
+internal fun workspaceQuotedSpans(text: CharSequence, code: List<WorkspaceMarkdownSpan> = emptyList()): List<WorkspaceMarkdownSpan> {
+    val spans = mutableListOf<WorkspaceMarkdownSpan>()
+    val codeRanges = code.filter { it.style == WorkspaceMarkdownStyle.CODE }.sortedBy { it.start }
+    var codeIndex = 0
+    var lineStart = 0
+    while (lineStart <= text.length) {
+        val lineEnd = text.indexOf('\n', lineStart).let { if (it < 0) text.length else it }
+        while (codeIndex < codeRanges.size && codeRanges[codeIndex].end <= lineStart) codeIndex++
+        val skip = codeRanges.subList(codeIndex, codeRanges.size).asSequence()
+            .takeWhile { it.start < lineEnd }
+            .map { (maxOf(it.start, lineStart) - lineStart) until (minOf(it.end, lineEnd) - lineStart) }
+            .toList()
+        quotedTextRanges(text.subSequence(lineStart, lineEnd), skip).forEach {
+            spans += WorkspaceMarkdownSpan(lineStart + it.first, lineStart + it.last + 1, WorkspaceMarkdownStyle.QUOTED)
+        }
+        lineStart = lineEnd + 1
+    }
+    return spans
 }
 
 internal data class WorkspaceMarkdownLink(val start: Int, val end: Int, val url: String)

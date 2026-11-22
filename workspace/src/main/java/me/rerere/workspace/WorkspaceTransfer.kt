@@ -117,6 +117,40 @@ class WorkspaceFileTransfer(
         transferUnlocked(sourceRoot, path, targetRoot, targetDir, mode, itemIndex, itemCount, onProgress)
     }
 
+    /**
+     * 把 [sourceDir] 里的全部内容复制进 [targetDir] 下新建的文件夹 [name]（重名时 "name (n)"）。
+     * 用于整个存储根（如文件库里的工作区文件夹）：[transfer] 不接受根本身作源，且落点要用调用方给的名字。
+     */
+    suspend fun copyFolder(
+        sourceDir: File,
+        targetRoot: File,
+        targetDir: String,
+        name: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit = {},
+    ): WorkspaceTransferItemResult = WorkspaceFileMutations.withSuspendingLocks(listOf(sourceDir, targetRoot)) {
+        coroutineContext.ensureActive()
+        val source = sourceDir.canonicalFile
+        val dstRoot = targetRoot.canonicalFile
+        val dir = resolveTargetDir(dstRoot, targetDir)
+        if (dir.path == source.path || dir.path.startsWith(source.path + File.separator)) {
+            throw WorkspaceFileOperationException(
+                WorkspaceFileOperationException.TRANSFER_INTO_ITSELF,
+                "Cannot put a folder into itself: $name",
+            )
+        }
+        val target = freeTarget(dir, name, isDirectory = true)
+        onProgress(WorkspaceTransferProgress(0, 1, name))
+        val copy = CopyState(0, 1, name, onProgress)
+        copyTreeOrClean(source, target, dstRoot, copy)
+        WorkspaceTransferItemResult(
+            source = name,
+            target = relative(dstRoot, target),
+            isDirectory = true,
+            renamed = target.name != name,
+            skippedLinks = copy.skipped,
+        )
+    }
+
     private suspend fun transferUnlocked(
         sourceRoot: File,
         path: String,

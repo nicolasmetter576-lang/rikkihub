@@ -23,7 +23,7 @@ object SettingsJsonMigrator {
      * 对 settings JSON 字符串依次应用所有版本的迁移。
      * 若发生异常则返回原始 JSON，不中断恢复流程。
      */
-    fun migrate(settingsJson: String): String {
+    fun migrate(settingsJson: String, tavernAssistantIds: Set<String> = emptySet()): String {
         return runCatching {
             val root = JsonInstant.parseToJsonElement(settingsJson).jsonObject.toMutableMap()
 
@@ -71,6 +71,22 @@ object SettingsJsonMigrator {
                 root["searchServices"] = JsonInstant.parseToJsonElement(migrated)
                 root["searchServiceSelected"] = JsonPrimitive(newSelected)
             }
+
+            // V5: 助手提示词/正则 → 酒馆预设，模式注入 → 提示词库，世界书条目 → 酒馆条目，补全局酒馆设置
+            (root["assistants"] as? JsonArray)?.let { root["assistants"] = TavernSettingsMigration.migrateAssistants(it) }
+            (root["modeInjections"] as? JsonArray)?.let {
+                root["promptLibrary"] = TavernSettingsMigration.migrateModeInjections(it)
+                root.remove("modeInjections")
+            }
+            // V6: 助手预设补角色卡与用户设定的标记
+            (root["assistants"] as? JsonArray)?.let { root["assistants"] = TavernSettingsMigration.addCardMarkers(it) }
+            // V7: 助手的酒馆模式开关，按内容判断（会话里和角色聊过的助手由调用方从备份的数据库查出来）
+            (root["assistants"] as? JsonArray)?.let {
+                root["assistants"] = TavernSettingsMigration.addTavernMode(it, root["tavern"] as? JsonObject, tavernAssistantIds)
+            }
+            val lorebooks = root["lorebooks"] as? JsonArray
+            lorebooks?.let { root["lorebooks"] = TavernSettingsMigration.migrateLorebooks(it) }
+            if ("tavern" !in root) root["tavern"] = TavernSettingsMigration.defaultTavernSettings(!lorebooks.isNullOrEmpty())
 
             JsonInstant.encodeToString(JsonObject(root))
         }.onFailure {

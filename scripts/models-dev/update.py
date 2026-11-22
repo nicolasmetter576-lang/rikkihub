@@ -8,9 +8,12 @@ Python 3 standard library only.
     python3 scripts/models-dev/update.py --input api.json  # use a saved copy instead of downloading
     python3 scripts/models-dev/update.py --check         # exit 1 if the snapshot on disk is not what it would write
 
-Format: {"version": 1, "source": ..., "entries": {"<model id>": [flags, context]}}
+Format: {"version": 1, "source": ..., "entries": {"<model id>": [flags, context(, input, output, cache_read)]}}
   flags   bit 0 image input, bit 1 image output, bit 2 tool calls, bit 3 reasoning
   context context window in tokens, 0 when unknown
+  input / output / cache_read  reference price in USD per million tokens (cache_read may be null);
+          left out when no provider lists a price. The model maker's own price wins; otherwise the
+          price most providers agree on. The app only offers it as a one-tap "reference price".
 
 The same model is listed by many providers under different spellings (`claude-sonnet-4-5`,
 `anthropic/claude-sonnet-4.5`), so every record is filed under its full id, the part after the last
@@ -19,6 +22,7 @@ forget to mark a capability than to mark one that is not there, so a tie counts 
 """
 import argparse
 import json
+import math
 import sys
 import urllib.request
 from pathlib import Path
@@ -31,6 +35,12 @@ IMAGE_INPUT = 1
 IMAGE_OUTPUT = 2
 TOOL_CALL = 4
 REASONING = 8
+
+# The model makers' own listings: their price is the reference price
+OFFICIAL_PROVIDERS = {
+    "anthropic", "openai", "google", "deepseek", "xai", "mistral", "moonshotai", "zhipuai",
+    "alibaba", "minimax", "cohere",
+}
 
 # A snapshot this small means the download was cut off or the format changed; keep the old one.
 MIN_ENTRIES = 1000
@@ -57,6 +67,30 @@ class Votes:
         self.tool = 0
         self.reasoning = 0
         self.contexts = {}
+        self.official_prices = {}
+        self.prices = {}
+
+    def add_price(self, model, official):
+        cost = model.get("cost") or {}
+        if not isinstance(cost, dict):
+            return
+        values = []
+        for field in ("input", "output", "cache_read"):
+            value = cost.get(field)
+            values.append(float(value) if isinstance(value, (int, float)) and not isinstance(value, bool)
+                          and math.isfinite(value) and 0 <= value <= 1_000_000 else None)
+        if values[0] is None or values[1] is None:
+            return
+        price = tuple(round(v, 6) if v is not None else None for v in values)
+        bucket = self.official_prices if official else self.prices
+        bucket[price] = bucket.get(price, 0) + 1
+
+    def price(self):
+        for bucket in (self.official_prices, self.prices):
+            if bucket:
+                # most votes; on a tie the higher input price (resellers undercut, rarely overcharge)
+                return list(max(bucket.items(), key=lambda item: (item[1], item[0][0], item[0][1]))[0])
+        return None
 
     def add(self, model):
         modalities = model.get("modalities") or {}
@@ -88,19 +122,25 @@ class Votes:
             flags |= REASONING
         # most providers agree on one window; on a tie take the larger
         context = max(self.contexts.items(), key=lambda item: (item[1], item[0]))[0] if self.contexts else 0
-        return [flags, context]
+        price = self.price()
+        if price is None:
+            return [flags, context]
+        return [flags, context] + [int(v) if v is not None and v == int(v) else v for v in price]
 
 
 def build_entries(api):
     votes = {}
-    for provider in api.values():
+    for provider_id, provider in api.items():
         if not isinstance(provider, dict):
             continue
+        official = provider_id in OFFICIAL_PROVIDERS
         for model_id, model in (provider.get("models") or {}).items():
             if not isinstance(model, dict):
                 continue
             for key in keys_for(model_id, model):
-                votes.setdefault(key, Votes()).add(model)
+                vote = votes.setdefault(key, Votes())
+                vote.add(model)
+                vote.add_price(model, official)
     return {key: votes[key].entry() for key in sorted(votes)}
 
 

@@ -35,6 +35,8 @@ object BuiltinToolIds {
     const val CALENDAR_QUERY = "calendar_query"
     const val CALENDAR_CREATE = "calendar_create"
     const val CHART_DISPLAY = "chart_display"
+    const val PSEUDO_READ = "read"
+    const val PSEUDO_WRITE = "write"
     const val WORKSPACE_READ_FILE = "workspace_read_file"
     const val WORKSPACE_WRITE_FILE = "workspace_write_file"
     const val WORKSPACE_EDIT_FILE = "workspace_edit_file"
@@ -55,6 +57,9 @@ object BuiltinToolIds {
     const val RECENT_CHATS = "recent_chats"
     const val CONVERSATION_SEARCH = "conversation_search"
     const val USE_SKILL = "use_skill"
+    const val QUBAGU_RULES_READ = "qubagu_rules_read"
+    const val QUBAGU_RULES_TEST = "qubagu_rules_test"
+    const val QUBAGU_RULES_WRITE = "qubagu_rules_write"
     const val CREATOR_LIST_OBJECTS = CreatorAssistantDefinition.ToolIds.LIST_OBJECTS
     const val CREATOR_READ_OBJECT = CreatorAssistantDefinition.ToolIds.READ_OBJECT
     const val CREATOR_DESCRIBE = CreatorAssistantDefinition.ToolIds.DESCRIBE
@@ -189,6 +194,34 @@ object BuiltinToolCatalog {
                 Limits: 12 series, 2000 values/points per series, 24000 total, 2000 labels; input <= 1 MiB UTF-8 JSON.
                 Titles <= 256 characters, names/labels <= 128. No unknown fields or nulls. Do not repeat raw data in your reply.
             """.trimIndent().replace("\n", " "),
+        ),
+        BuiltinToolSpec(
+            id = BuiltinToolIds.PSEUDO_READ,
+            category = BuiltinToolCategory.LOCAL,
+            defaultName = BuiltinToolIds.PSEUDO_READ,
+            defaultDescription = """
+                Wait for the user's next message and return it.
+                Takes no arguments. Call it in the same response as {{write_tool}}, after it, once your reply is complete.
+            """.trimIndent().replace("\n", " "),
+            defaultSystemPrompt = """
+                **Talking to the user**
+                In this conversation you talk to the user only through two tools:
+                - `{{write_tool}}` delivers your reply. The user sees nothing but its `content`; text outside the tool is not a reply.
+                - `{{read_tool}}` waits for the user's next message and returns it as the tool result.
+                Every turn: do whatever other work is needed first, then call `{{write_tool}}` once with the complete reply and `{{read_tool}}` in the same response.
+                The first user message arrives as an ordinary message; every later one is the result of `{{read_tool}}`.
+            """.trimIndent() + "\n",
+            placeholders = listOf("read_tool", "write_tool"),
+        ),
+        BuiltinToolSpec(
+            id = BuiltinToolIds.PSEUDO_WRITE,
+            category = BuiltinToolCategory.LOCAL,
+            defaultName = BuiltinToolIds.PSEUDO_WRITE,
+            defaultDescription = """
+                Deliver your reply to the user. `content` is shown to the user exactly as written and rendered as Markdown.
+                Put the whole reply into one call.
+            """.trimIndent().replace("\n", " "),
+            placeholders = listOf("read_tool", "write_tool"),
         ),
         BuiltinToolSpec(
             id = BuiltinToolIds.WORKSPACE_READ_FILE,
@@ -436,13 +469,47 @@ object BuiltinToolCatalog {
             placeholders = listOf("skills"),
         ),
         BuiltinToolSpec(
+            id = BuiltinToolIds.QUBAGU_RULES_READ,
+            category = BuiltinToolCategory.SKILLS,
+            defaultName = BuiltinToolIds.QUBAGU_RULES_READ,
+            defaultDescription = """
+                Read the user's 去八股 (cliché cleanup) rules. Without pack: an overview of the settings and every pack with its rules
+                (id, name, kind, enabled). With pack: that pack in full, as a rules file v1. Offered with the qubagu-rules skill.
+            """.trimIndent().replace("\n", " "),
+        ),
+        BuiltinToolSpec(
+            id = BuiltinToolIds.QUBAGU_RULES_TEST,
+            category = BuiltinToolCategory.SKILLS,
+            defaultName = BuiltinToolIds.QUBAGU_RULES_TEST,
+            defaultDescription = """
+                Run the real cleanup engine on sample text and return the cleaned text and every edit (rule, before, after).
+                packs are candidate packs (rules file v1 pack objects, treated as enabled): they replace current packs with the same id
+                and new ones run last, exactly as a write would; only=true runs just the candidates. Nothing is saved.
+                Invalid packs or regexes are reported as an error.
+            """.trimIndent().replace("\n", " "),
+        ),
+        BuiltinToolSpec(
+            id = BuiltinToolIds.QUBAGU_RULES_WRITE,
+            category = BuiltinToolCategory.SKILLS,
+            defaultName = BuiltinToolIds.QUBAGU_RULES_WRITE,
+            defaultDescription = """
+                Save rule packs after the user approves the call. packs: whole packs (rules file v1) that replace the pack with the
+                same id in place or are added last; delete: pack ids to remove; order: every pack id in the new order.
+                Rules only: mode, protection and AI refine settings are not changed. The whole call is rejected, with the reason,
+                when anything is invalid (including a regex). Tell the user what will change before calling it.
+            """.trimIndent().replace("\n", " "),
+        ),
+        BuiltinToolSpec(
             id = BuiltinToolIds.CREATOR_LIST_OBJECTS,
             category = BuiltinToolCategory.CREATOR,
             defaultName = BuiltinToolIds.CREATOR_LIST_OBJECTS,
             defaultDescription = """
                 List the objects of one kind as summaries (id, title). Use it to find ids: ids are UUIDs, never names.
-                Writable kinds: ASSISTANT, ASSISTANT_TAG, QUICK_MESSAGE, MODE_INJECTION, LOREBOOK, PROVIDER, MODEL_DEFINITION,
-                DEFAULT_SLOT, PROMPT, SUBAGENT_PRESET, SKILL, CONVERSATION. Read-only references: MCP_SERVER, WORKSPACE.
+                Writable kinds: ASSISTANT, ASSISTANT_TAG, PRESET_ENTRY, REGEX_SCRIPT, QUICK_MESSAGE, MODE_INJECTION (prompt library entries),
+                LOREBOOK, LOREBOOK_ENTRY, TAVERN_SETTINGS, PROVIDER, MODEL_DEFINITION, DEFAULT_SLOT, PROMPT, SUBAGENT_PRESET, SKILL,
+                CONVERSATION. Read-only references: MCP_SERVER, WORKSPACE. Objects inside a parent (entries, regex scripts) have ids
+                <parent id>/<id>; for them the filter may start with the parent id (a lorebook or assistant id, or global) followed by
+                text that is searched in titles, keywords and content.
                 Several list or read calls may be made in one reply.
             """.trimIndent().replace("\n", " "),
             renamable = false,

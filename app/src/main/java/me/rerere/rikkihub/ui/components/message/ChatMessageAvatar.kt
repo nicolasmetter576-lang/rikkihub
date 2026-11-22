@@ -16,10 +16,12 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.rikkihub.R
+import me.rerere.rikkihub.data.cli.displayModelOrNull
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.Avatar
 import me.rerere.rikkihub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkihub.ui.components.ui.UIAvatar
+import me.rerere.rikkihub.ui.pages.character.CharacterAvatar
 import me.rerere.rikkihub.ui.context.LocalSettings
 
 @Composable
@@ -60,9 +62,29 @@ fun ChatMessageAssistantAvatar(
     modifier: Modifier = Modifier,
 ) {
     val settings = LocalSettings.current
+    val resolvedModel = model ?: message.displayModelOrNull(settings.providers)
     val showIcon = settings.displaySetting.showModelIcon
     val useAssistantAvatar = assistant?.useAssistantAvatar == true
-    if (message.role == MessageRole.ASSISTANT && (model != null || useAssistantAvatar)) {
+    val character = LocalActiveCharacter.current
+    if (message.role == MessageRole.ASSISTANT && character != null) {
+        // 和角色聊天：头像与名字是角色的，不是模型的
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier,
+        ) {
+            if (showIcon) CharacterAvatar(character.id, character.name, character.record.avatarPath, size = 28.dp)
+            if (settings.displaySetting.showModelName) {
+                Text(
+                    text = character.name,
+                    style = MaterialTheme.typography.labelLargeEmphasized,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            MessageTitleLabel(message.title, Modifier.weight(1f, fill = false))
+        }
+    } else if (message.role == MessageRole.ASSISTANT && (resolvedModel != null || useAssistantAvatar)) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -89,11 +111,12 @@ fun ChatMessageAssistantAvatar(
                             maxLines = 1,
                         )
                     }
+                    MessageTitleLabel(message.title, Modifier.weight(1f, fill = false))
                 }
-            } else if (model != null) {
+            } else if (resolvedModel != null) {
                 if (showIcon) {
                     AutoAIIcon(
-                        name = model.modelId,
+                        name = resolvedModel.modelId,
                         modifier = Modifier.size(28.dp),
                         loading = loading
                     )
@@ -105,14 +128,29 @@ fun ChatMessageAssistantAvatar(
                 ) {
                     if (settings.displaySetting.showModelName) {
                         Text(
-                            text = model.displayName,
+                            text = resolvedModel.displayName,
                             style = MaterialTheme.typography.labelLargeEmphasized,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    MessageTitleLabel(message.title, Modifier.weight(1f, fill = false))
                 }
             }
         }
     }
+}
+
+/** 每轮标题：模型名右侧的浅色小字。 */
+@Composable
+private fun MessageTitleLabel(title: String?, modifier: Modifier = Modifier) {
+    if (title.isNullOrBlank()) return
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
 }

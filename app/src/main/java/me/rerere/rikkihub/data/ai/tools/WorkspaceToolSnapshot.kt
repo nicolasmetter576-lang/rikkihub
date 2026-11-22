@@ -31,6 +31,14 @@ import me.rerere.workspace.WorkspaceShellStatus
  * 执行判定一律走 [Tool.workspaceIdentity]，禁止用 ToolOverride/BuiltinToolCatalog 反查旧 alias。
  */
 
+/** 工具来源分类（用于上下文用量分项统计）。 */
+enum class ToolCategory {
+    LOCAL,
+    WORKSPACE,
+    SKILLS,
+    MCP,
+}
+
 /**
  * 一次生成请求的工具快照。由 [ChatToolFactory.createSnapshot] 产出；
  * [createTools] 保持兼容（等价于 `createSnapshot(...).tools`）。
@@ -61,6 +69,10 @@ data class ChatToolSnapshot(
      * 历史消息中的调用名在 wire 构建时按同一映射回放。
      */
     val wireRenames: Map<String, String> = emptyMap(),
+    /** 伪工具读写开着时两个工具的线上名；null = 本快照没有这两个工具。 */
+    val pseudoIo: me.rerere.rikkihub.data.ai.tools.local.PseudoIoNames? = null,
+    /** wireName → 工具来源分类（本地 / 工作区 / 技能 / MCP）。 */
+    val toolCategories: Map<String, ToolCategory> = emptyMap(),
     /**
      * 快照时效回调（请求一致性）：装配时由工厂捕获 gate epoch 读数，
      * 生成循环在请求构建完、发出前复查；false = 策略/视图已变化，本快照

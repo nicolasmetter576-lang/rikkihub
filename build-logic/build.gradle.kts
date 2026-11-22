@@ -14,6 +14,10 @@ gradlePlugin {
             id = "rikkihub.android.library"
             implementationClass = "AndroidLibraryConventionPlugin"
         }
+        register("jvmLibrary") {
+            id = "rikkihub.jvm.library"
+            implementationClass = "JvmLibraryConventionPlugin"
+        }
         register("androidLibraryCompose") {
             id = "rikkihub.android.library.compose"
             implementationClass = "AndroidLibraryComposeConventionPlugin"

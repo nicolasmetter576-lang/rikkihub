@@ -189,7 +189,7 @@ class WorkspaceTreeImporter(
 }
 
 /** provider 显示名 -> 安全路径段 的清洗与冲突命名, 只在 workspace 模块内部使用 */
-internal object WorkspaceNames {
+object WorkspaceNames {
     /** 斜线/反斜线/控制字符一律替换成 '_', 点号保留 (是合法文件名字符) */
     private val ILLEGAL_CHARS = Regex("[/\\\\\\u0000-\\u001F\\u007F]")
 

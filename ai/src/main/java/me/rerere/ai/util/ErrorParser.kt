@@ -87,3 +87,29 @@ fun JsonElement.parseErrorDetail(): HttpException {
         }
     }
 }
+
+private val CONTEXT_LENGTH_PHRASES = listOf(
+    "context_length",
+    "context length",
+    "context window",
+    "maximum context",
+    "max context",
+    "too many tokens",
+    "prompt is too long",
+    "prompt too long",
+    "input is too long",
+    "input too long",
+    "reduce the length of the messages",
+    "reduce the length of the prompt",
+    "exceeds the maximum number of tokens",
+)
+
+/**
+ * 输入超出模型上下文窗口的错误：各家的措辞不同，只认明确指向输入超长的短语（`max_tokens` 参数错误不算），
+ * 沿 cause 链查。限流（429）的措辞里也可能出现 token，直接排除。
+ */
+fun Throwable.isContextLengthError(): Boolean = generateSequence(this) { it.cause }.take(8).any { error ->
+    if (error is HttpException && error.statusCode == 429) return false
+    val text = error.message?.lowercase() ?: return@any false
+    CONTEXT_LENGTH_PHRASES.any { it in text }
+}

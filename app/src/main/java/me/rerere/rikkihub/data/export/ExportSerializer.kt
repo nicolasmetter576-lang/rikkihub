@@ -8,9 +8,14 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
-import me.rerere.rikkihub.data.model.InjectionPosition
+import me.rerere.rikkihub.data.datastore.migration.TavernSettingsMigration
 import me.rerere.rikkihub.data.model.Lorebook
-import me.rerere.rikkihub.data.model.PromptInjection
+import me.rerere.rikkihub.data.model.withLibraryMeta
+import me.rerere.tavern.prompt.PromptEntry
+import me.rerere.tavern.worldinfo.WorldInfoBook
+import me.rerere.tavern.worldinfo.WorldInfoCodec
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import me.rerere.rikkihub.utils.toLocalString
 import java.time.LocalDateTime
 import kotlin.uuid.Uuid
@@ -62,43 +67,43 @@ interface ExportSerializer<T> {
     }
 }
 
-object ModeInjectionSerializer : ExportSerializer<PromptInjection.ModeInjection> {
+/**
+ * 模式注入（提示词库条目）的导出文件。新格式 `version = 2`：数据就是酒馆格式的 `PromptEntry` JSON；
+ * 2.32.0 及更早导出的文件（`version = 1`，数据是旧的模式注入对象）导入时仍然认得，用迁移同一套规则转换。
+ */
+object ModeInjectionSerializer : ExportSerializer<PromptEntry> {
     override val type = "mode_injection"
 
-    override fun getExportFileName(data: PromptInjection.ModeInjection): String {
-        return "${data.name.ifEmpty { type }}.json"
+    override fun getExportFileName(data: PromptEntry): String {
+        return "${data.name.orEmpty().ifEmpty { type }}.json"
     }
 
-    override fun export(data: PromptInjection.ModeInjection): ExportData {
-        return ExportData(
-            type = type,
-            data = ExportSerializer.DefaultJson.encodeToJsonElement(data)
-        )
+    override fun export(data: PromptEntry): ExportData {
+        return ExportData(version = 2, type = type, data = data.toJson())
     }
 
-    override fun import(context: Context, uri: Uri): Result<PromptInjection.ModeInjection> {
+    override fun import(context: Context, uri: Uri): Result<PromptEntry> {
         return runCatching {
             val json = readUri(context, uri)
-            // 首先尝试解析为自己的格式
-            tryImportNative(json)
-                ?: throw IllegalArgumentException("Unsupported format")
+            tryImportNative(json) ?: throw IllegalArgumentException("Unsupported format")
         }
     }
 
-    private fun tryImportNative(json: String): PromptInjection.ModeInjection? {
+    internal fun tryImportNative(json: String): PromptEntry? {
         return runCatching {
-            val exportData = ExportSerializer.DefaultJson.decodeFromString(
-                ExportData.serializer(),
-                json
-            )
+            val exportData = ExportSerializer.DefaultJson.decodeFromString(ExportData.serializer(), json)
             if (exportData.type != type) return null
-            ExportSerializer.DefaultJson
-                .decodeFromJsonElement<PromptInjection.ModeInjection>(exportData.data)
-                .copy(id = Uuid.random())
+            val obj = exportData.data.jsonObject
+            val entry = if ("identifier" in obj) PromptEntry.fromJson(obj) else TavernSettingsMigration.modeInjectionToLibraryEntry(obj)
+            entry.copy(identifier = Uuid.random().toString())
         }.getOrNull()
     }
 }
 
+/**
+ * 世界书的导出文件。新格式 `version = 2`：书的 `id / name / description / enabled / entries`，条目是酒馆世界书条目 JSON
+ * （42 个字段原样）。导入认得三种：新格式、2.32.0 及更早的旧格式（条目按迁移规则转换）、酒馆世界书文件（`entries` 对象，无损）。
+ */
 object LorebookSerializer : ExportSerializer<Lorebook> {
     override val type = "lorebook"
 
@@ -107,99 +112,62 @@ object LorebookSerializer : ExportSerializer<Lorebook> {
     }
 
     override fun export(data: Lorebook): ExportData {
-        return ExportData(
-            type = type,
-            data = ExportSerializer.DefaultJson.encodeToJsonElement(data)
-        )
+        return ExportData(version = 2, type = type, data = ExportSerializer.DefaultJson.encodeToJsonElement(data))
     }
+
+    /** 酒馆世界书文件（`entries` 是以 uid 为键的对象），可以直接放进酒馆。 */
+    fun exportSillyTavern(data: Lorebook): String = WorldInfoBook(
+        entries = data.entries, name = data.name.ifEmpty { null }, description = data.description.ifEmpty { null },
+        extra = data.extra,
+    ).toJson().toString()
 
     override fun import(context: Context, uri: Uri): Result<Lorebook> {
         return runCatching {
             val json = readUri(context, uri)
-            // 首先尝试解析为自己的格式
             tryImportNative(json)
-            // 然后尝试解析为 SillyTavern 格式
                 ?: tryImportSillyTavern(json, getUriFileName(context, uri)?.removeSuffix(".json"))
                 ?: throw IllegalArgumentException("Unsupported format")
         }
     }
 
-    private fun tryImportNative(json: String): Lorebook? {
+    internal fun tryImportNative(json: String): Lorebook? {
         return runCatching {
-            val exportData = ExportSerializer.DefaultJson.decodeFromString(
-                ExportData.serializer(),
-                json
-            )
+            val exportData = ExportSerializer.DefaultJson.decodeFromString(ExportData.serializer(), json)
             if (exportData.type != type) return null
-            ExportSerializer.DefaultJson
-                .decodeFromJsonElement<Lorebook>(exportData.data)
-                .copy(
-                    id = Uuid.random(),
-                    entries = ExportSerializer.DefaultJson
-                        .decodeFromJsonElement<Lorebook>(exportData.data)
-                        .entries.map { it.copy(id = Uuid.random()) }
-                )
+            // 旧格式的条目是 RegexInjection（没有 uid / key），先按迁移规则转成酒馆条目
+            val book = TavernSettingsMigration.migrateLorebook(exportData.data.jsonObject)
+            ExportSerializer.DefaultJson.decodeFromJsonElement<Lorebook>(book).copy(id = Uuid.random())
         }.getOrNull()
     }
 
-    private fun tryImportSillyTavern(json: String, fileName: String?): Lorebook? {
+    internal fun tryImportSillyTavern(json: String, fileName: String?): Lorebook? {
         return runCatching {
-            val stLorebook = ExportSerializer.DefaultJson.decodeFromString(
-                SillyTavernLorebook.serializer(),
-                json
-            )
+            val book = WorldInfoCodec.decodeBook(json)
+            require(book.entries.isNotEmpty() || json.contains("\"entries\""))
             Lorebook(
                 id = Uuid.random(),
-                name = fileName ?: LocalDateTime.now().toLocalString(),
-                description = "",
+                name = book.name ?: fileName ?: LocalDateTime.now().toLocalString(),
+                description = book.description.orEmpty(),
                 enabled = true,
-                entries = stLorebook.entries.values.map { entry ->
-                    PromptInjection.RegexInjection(
-                        id = Uuid.random(),
-                        name = entry.comment.orEmpty().ifEmpty { entry.key.firstOrNull().orEmpty() },
-                        enabled = !entry.disable,
-                        priority = entry.order,
-                        position = mapSillyTavernPosition(entry.position),
-                        injectDepth = entry.depth,
-                        content = entry.content,
-                        keywords = entry.key,
-                        useRegex = false, // SillyTavern 格式不支持 useRegex
-                        caseSensitive = entry.caseSensitive ?: false,
-                        scanDepth = entry.scanDepth ?: 4,
-                        constantActive = entry.constant,
-                    )
-                }
+                entries = book.entries,
+                extra = book.extra,
             )
         }.getOrNull()
-    }
-
-    private fun mapSillyTavernPosition(position: Int): InjectionPosition {
-        return when (position) {
-            0 -> InjectionPosition.BEFORE_SYSTEM_PROMPT
-            1 -> InjectionPosition.AFTER_SYSTEM_PROMPT
-            2 -> InjectionPosition.TOP_OF_CHAT
-            3 -> InjectionPosition.TOP_OF_CHAT // After Examples -> 聊天历史开头
-            4 -> InjectionPosition.AT_DEPTH    // @Depth 模式
-            else -> InjectionPosition.AFTER_SYSTEM_PROMPT
-        }
     }
 }
 
-@Serializable
-private data class SillyTavernLorebook(
-    val entries: Map<String, SillyTavernEntry> = emptyMap(),
-)
+/**
+ * 把世界书导出成酒馆的世界书文件（`entries` 以 uid 为键的对象），可以直接放进酒馆；导入仍认 [LorebookSerializer] 的全部格式。
+ * 导出对话框用它给「导出为酒馆世界书」一个入口。
+ */
+object SillyTavernLorebookSerializer : ExportSerializer<Lorebook> {
+    override val type get() = LorebookSerializer.type
 
-@Serializable
-private data class SillyTavernEntry(
-    val key: List<String> = emptyList(),
-    val content: String = "",
-    val comment: String? = null,
-    val constant: Boolean = false,
-    val position: Int = 0,
-    val order: Int = 100,
-    val disable: Boolean = false,
-    val depth: Int = 4,
-    val scanDepth: Int? = null,
-    val caseSensitive: Boolean? = null,
-)
+    override fun getExportFileName(data: Lorebook): String = LorebookSerializer.getExportFileName(data)
+
+    override fun export(data: Lorebook): ExportData = LorebookSerializer.export(data)
+
+    override fun exportToJson(data: Lorebook, json: Json): String = LorebookSerializer.exportSillyTavern(data)
+
+    override fun import(context: Context, uri: Uri): Result<Lorebook> = LorebookSerializer.import(context, uri)
+}

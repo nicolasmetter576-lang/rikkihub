@@ -31,12 +31,24 @@ data class EditorTypography(
     val fontSize: Float = 13f,
     val letterSpacing: Float = 0f,
     val lineHeight: Float = 18f / 13f,
+    /** Body text strength: 1 = the theme's text color, lower blends it toward the background (App only). */
+    val textBrightness: Float = 1f,
+    /** Body text color per theme (App only); unset follows the theme. */
+    val textColor: EditorColorPair = EditorColorPair(),
+    /** Text in quotes (“…” 「…」 "…" 『…』) in [quoteColor], in Markdown and plain text files (App only). */
+    val quoteHighlight: Boolean = false,
+    /** Color of quoted text per theme; unset is the theme's tertiary, like the chat's quote highlight. */
+    val quoteColor: EditorColorPair = EditorColorPair(),
 ) {
     fun normalized(fallback: EditorTypography): EditorTypography = EditorTypography(
         font = font.takeIf { it in EditorFontIds.ALL } ?: fallback.font,
         fontSize = fontSize.clampOr(MIN_FONT_SIZE, MAX_FONT_SIZE, fallback.fontSize),
         letterSpacing = letterSpacing.clampOr(MIN_LETTER_SPACING, MAX_LETTER_SPACING, fallback.letterSpacing),
         lineHeight = lineHeight.clampOr(MIN_LINE_HEIGHT, MAX_LINE_HEIGHT, fallback.lineHeight),
+        textBrightness = textBrightness.clampOr(MIN_TEXT_BRIGHTNESS, 1f, fallback.textBrightness),
+        textColor = textColor,
+        quoteHighlight = quoteHighlight,
+        quoteColor = quoteColor,
     )
 
     companion object {
@@ -46,6 +58,7 @@ data class EditorTypography(
         const val MAX_LETTER_SPACING = 0.3f
         const val MIN_LINE_HEIGHT = 1f
         const val MAX_LINE_HEIGHT = 3f
+        const val MIN_TEXT_BRIGHTNESS = 0.4f
 
         /** What the App editor looked like before typography settings: JetBrains Mono 13sp, 18sp lines. */
         val APP_DEFAULT = EditorTypography()
@@ -56,6 +69,14 @@ data class EditorTypography(
         private fun Float.clampOr(min: Float, max: Float, fallback: Float): Float =
             if (isNaN() || isInfinite()) fallback else coerceIn(min, max)
     }
+}
+
+/** One ARGB color for light themes and one for dark themes; null follows the theme. */
+@Serializable
+data class EditorColorPair(val light: Long? = null, val dark: Long? = null) {
+    fun of(dark: Boolean): Long? = if (dark) this.dark else light
+
+    fun with(dark: Boolean, argb: Long?): EditorColorPair = if (dark) copy(dark = argb) else copy(light = argb)
 }
 
 val DisplaySetting.appEditorTypography: EditorTypography

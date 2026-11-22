@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
@@ -37,10 +39,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import kotlinx.datetime.toJavaLocalDateTime
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.UIMessage
 import me.rerere.hugeicons.HugeIcons
@@ -54,12 +56,11 @@ import me.rerere.rikkihub.ui.context.LocalSettings
 import me.rerere.rikkihub.utils.formatNumber
 import me.rerere.rikkihub.utils.toFixed
 import java.text.NumberFormat
-import java.time.Duration
 
 /**
  * 显示消息的技术统计信息（token 用量、速度），点击查看详情
  *
- * 多轮工具调用时 usage 是各步累计值，行内只显示最后一次请求的上下文占用，累计值放在详情里。
+ * usage 是各逻辑步骤已报告值的累计；上下文只是最近步骤的用量参考，不代表下一请求容量。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,15 +68,17 @@ fun ChatMessageNerdLine(
     message: UIMessage,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
+    onOpenContextBreakdown: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
     val usage = message.usage
     if (!settings.displaySetting.showTokenUsage || usage == null) return
 
     val stats = remember(message) { message.nerdStats(usage) }
-    // 模型快照不带上下文窗口，只能从设置里按 id 找；模型被删了就不显示窗口大小
-    val contextLength = remember(settings.providers, message.modelId) {
-        message.modelId?.let { settings.findModelById(it) }?.contextLength?.takeIf { it > 0 }
+    // 模型快照不带上下文窗口，按 id 从设置里找，找不到或无 modelId 时回退到消息自带的 contextLength
+    val contextLength = remember(settings.providers, message.modelId, message.contextLength) {
+        (message.modelId?.let { settings.findModelById(it) }?.contextLength?.takeIf { it > 0 }
+            ?: message.contextLength?.takeIf { it > 0 })
     }
     val tooltipState = rememberTooltipState(isPersistent = true)
     val scope = rememberCoroutineScope()
@@ -86,7 +89,16 @@ fun ChatMessageNerdLine(
             RichTooltip(
                 title = { Text(stringResource(R.string.chat_message_usage_title)) },
             ) {
-                UsageDetails(stats, contextLength)
+                UsageDetails(
+                    stats = stats,
+                    contextLength = contextLength,
+                    onOpenContextBreakdown = onOpenContextBreakdown?.let { callback ->
+                        {
+                            tooltipState.dismiss()
+                            callback()
+                        }
+                    },
+                )
             }
         },
         state = tooltipState,
@@ -115,11 +127,11 @@ fun ChatMessageNerdLine(
                             Text(
                                 text = stringResource(
                                     R.string.chat_message_usage_context_short,
-                                    stats.contextTokens.formatNumber()
+                                    stats.contextTokens?.formatNumber() ?: stringResource(R.string.chat_message_usage_unknown)
                                 )
                             )
-                            val cached = stats.lastUsage.cachedTokens
-                            if (cached > 0) {
+                            val cached = stats.lastUsage?.cachedTokens
+                            if (cached != null && cached > 0) {
                                 Text(text = stringResource(R.string.chat_message_usage_cached_short, cached.formatNumber()))
                             }
                         }
@@ -130,7 +142,7 @@ fun ChatMessageNerdLine(
                             Text(
                                 text = stringResource(
                                     R.string.chat_message_usage_output_short,
-                                    stats.total.completionTokens.formatNumber()
+                                    stats.outputTokens?.formatNumber() ?: stringResource(R.string.chat_message_usage_unknown)
                                 )
                             )
                         }
@@ -138,9 +150,15 @@ fun ChatMessageNerdLine(
                     if (stats.tps != null) {
                         StatsItem(
                             icon = { StatsIcon(HugeIcons.Zap, stringResource(R.string.chat_message_usage_speed)) },
-                            content = { Text(text = "${stats.tps.toFixed(1)} tok/s") }
+                            content = {
+                                Text(text = if (stats.estimated) {
+                                    stringResource(R.string.chat_message_usage_speed_estimated, stats.tps.toFixed(1))
+                                } else "${stats.tps.toFixed(1)} tok/s")
+                            }
                         )
                     }
+                    UsageStatus(stats)
+
                 }
             }
         }
@@ -148,41 +166,79 @@ fun ChatMessageNerdLine(
 }
 
 @Composable
-private fun UsageDetails(stats: NerdStats, contextLength: Int?) {
+private fun UsageDetails(
+    stats: NerdStats,
+    contextLength: Int?,
+    onOpenContextBreakdown: (() -> Unit)? = null,
+) {
     Column(
         verticalArrangement = Arrangement.spacedBy(2.dp),
         modifier = Modifier.padding(vertical = 4.dp),
     ) {
         val total = stats.total
-        ContextUsageBar(
-            lastUsage = stats.lastUsage,
-            contextLength = contextLength,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
+        val unknown = stringResource(R.string.chat_message_usage_unknown)
+        UsageStatus(stats)
+        if (stats.lastUsage != null) {
+            ContextUsageBar(
+                lastUsage = stats.lastUsage,
+                contextLength = contextLength,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        } else {
+            Text(stringResource(R.string.chat_message_usage_current_unknown))
+        }
         if (stats.steps > 1) {
             UsageDetailRow(stringResource(R.string.chat_message_usage_step_count), stats.steps.toString())
-            UsageDetailRow(stringResource(R.string.chat_message_usage_total_input), total.promptTokens.exact())
-            if (total.cachedTokens > 0) {
-                UsageDetailRow(stringResource(R.string.chat_message_usage_total_cached), total.cachedTokens.exact())
-            }
         }
-        UsageDetailRow(stringResource(R.string.chat_message_usage_total_output), total.completionTokens.exact())
+        UsageDetailRow(stringResource(R.string.chat_message_usage_total_input), stats.reportedTokens(total.promptTokens)?.exact() ?: unknown)
+        if (total.cachedTokens > 0) {
+            UsageDetailRow(stringResource(R.string.chat_message_usage_total_cached), total.cachedTokens.exact())
+        }
+        UsageDetailRow(stringResource(R.string.chat_message_usage_total_output), stats.outputTokens?.exact() ?: unknown)
+        stats.reportedTokens(total.totalTokens)?.let {
+            UsageDetailRow(stringResource(R.string.chat_message_usage_reported_total), it.exact())
+        }
         if (stats.tps != null) {
-            UsageDetailRow(stringResource(R.string.chat_message_usage_speed), "${stats.tps.toFixed(1)} tok/s")
+            UsageDetailRow(stringResource(R.string.chat_message_usage_speed), if (stats.estimated) {
+                stringResource(R.string.chat_message_usage_speed_estimated, stats.tps.toFixed(1))
+            } else "${stats.tps.toFixed(1)} tok/s")
         }
         if (stats.durationMillis != null) {
             UsageDetailRow(
-                stringResource(R.string.chat_message_usage_duration),
-                "${(stats.durationMillis / 1000f).toFixed(1)}s"
+                stringResource(if (stats.estimated) R.string.chat_message_usage_duration_estimated else R.string.chat_message_usage_duration),
+                "${(stats.durationMillis / 1000.0).toFixed(1)}s"
             )
         }
+        Text(stringResource(R.string.chat_message_usage_context_note), style = MaterialTheme.typography.labelSmall)
+        Text(stringResource(R.string.chat_message_usage_timing_note), style = MaterialTheme.typography.labelSmall)
+        if (onOpenContextBreakdown != null) {
+            TextButton(
+                onClick = onOpenContextBreakdown,
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                modifier = Modifier.testTag("nerd_line_open_context_breakdown"),
+            ) {
+                Text(
+                    text = stringResource(R.string.chat_page_context_usage_breakdown),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UsageStatus(stats: NerdStats) {
+    when (stats.usageComplete) {
+        false -> Text(stringResource(R.string.chat_message_usage_incomplete))
+        null -> Text(stringResource(R.string.chat_message_usage_legacy))
+        true -> Unit
     }
 }
 
 private data class UsageSegment(val label: String, val tokens: Int, val color: Color)
 
 /**
- * 最后一次请求的上下文占用：缓存命中、未命中的输入、输出依次排开，剩下的是窗口里的空余
+ * 最近逻辑模型步骤的参考用量对照模型窗口；空白不代表下一次请求的精确剩余容量
  */
 @Composable
 private fun ContextUsageBar(
@@ -315,35 +371,6 @@ fun StatsItem(
         icon()
         content()
     }
-}
-
-internal data class NerdStats(
-    val total: TokenUsage,
-    val lastUsage: TokenUsage,
-    val steps: Int,
-    val contextTokens: Int,
-    val durationMillis: Long?,
-    val tps: Float?,
-)
-
-internal fun UIMessage.nerdStats(usage: TokenUsage): NerdStats {
-    val last = lastRequestUsage() ?: usage
-    // 旧消息没有记录生成耗时，退回用创建到完成的总时长估算
-    val durationMillis = finishedAt?.let { finishedAt ->
-        generationTimeMs ?: Duration.between(
-            createdAt.toJavaLocalDateTime(),
-            finishedAt.toJavaLocalDateTime()
-        ).toMillis()
-    }?.takeIf { it > 0 }
-    return NerdStats(
-        total = usage,
-        lastUsage = last,
-        steps = stepCount ?: 1,
-        contextTokens = last.promptTokens + last.completionTokens,
-        durationMillis = durationMillis,
-        tps = durationMillis?.takeIf { usage.completionTokens > 0 }
-            ?.let { usage.completionTokens.toFloat() / it * 1000 },
-    )
 }
 
 private fun Int.exact(): String = NumberFormat.getIntegerInstance().format(this)

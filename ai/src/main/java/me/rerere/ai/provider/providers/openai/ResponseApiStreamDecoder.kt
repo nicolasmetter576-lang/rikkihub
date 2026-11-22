@@ -7,7 +7,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.stream.DecodeResult
 import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.provider.stream.StreamChunkDecoder
@@ -17,16 +16,18 @@ import me.rerere.ai.ui.ReasoningType
 import me.rerere.ai.ui.ServerToolStatus
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.toMetadata
+import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.json
 import me.rerere.ai.util.parseErrorDetail
 import me.rerere.common.http.jsonObjectOrNull
+import java.io.IOException
 
 internal class ResponseApiStreamDecoder : StreamChunkDecoder {
     private val state = ResponseStreamState()
 
     override fun accept(event: SseEvent): DecodeResult {
         if (state.finished) return DecodeResult(completed = true)
-        if (event.data == "[DONE]") return DecodeResult(state.finish(), completed = true)
+        if (event.data.trim() == "[DONE]") failMissingTerminal()
 
         val payload = try {
             json.parseToJsonElement(event.data).jsonObject
@@ -41,13 +42,18 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
             state.abort()
             throw e
         }
-        val eventType = payload["type"]?.jsonPrimitive?.contentOrNull
-        val completed = eventType == "response.completed" || eventType == "response.incomplete" ||
-            event.event == "response.completed" || event.event == "response.incomplete"
-        return DecodeResult(chunks, completed)
+        return DecodeResult(chunks, completed = state.finished)
     }
 
-    override fun onClosed(): List<StreamChunk> = state.finish()
+    override fun onClosed(): List<StreamChunk> {
+        if (state.finished) return emptyList()
+        failMissingTerminal()
+    }
+
+    private fun failMissingTerminal(): Nothing {
+        state.abort()
+        throw IOException("Responses stream ended without a terminal event")
+    }
 
     private fun parseEvent(payload: JsonObject): List<StreamChunk> {
         val chunkType = payload["type"]?.jsonPrimitive?.content ?: error("chunk type not found")
@@ -196,13 +202,14 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
             }
             "response.completed", "response.incomplete" -> parseTerminalResponse(payload)
             "response.failed" -> failWithResponseError(payload)
+            "response.cancelled" -> failCancelledResponse(payload)
             "error" -> failWithError(payload)
             else -> parseServerToolStatusEvent(chunkType, itemId)
         }
     }
 
     private fun parseTerminalResponse(payload: JsonObject): List<StreamChunk> {
-        val response = payload["response"]?.jsonObject
+        val response = payload["response"]?.jsonObjectOrNull
         val status = response?.get("status")?.jsonPrimitive?.contentOrNull
             ?: payload["type"]?.jsonPrimitive?.contentOrNull?.removePrefix("response.")
         val incompleteReason = response?.get("incomplete_details")?.jsonObjectOrNull
@@ -214,7 +221,7 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
         }
 
         return buildList {
-            parseUsage(response?.get("usage") as? JsonObject)?.let { add(StreamChunk.Usage(it)) }
+            parseResponsesUsage(response?.get("usage") as? JsonObject)?.let { add(StreamChunk.Usage(it)) }
             addAll(state.finish(
                 finishReason = finishReason,
                 responseId = response?.get("id")?.jsonPrimitive?.contentOrNull,
@@ -230,10 +237,16 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
     }
 
     private fun failWithResponseError(payload: JsonObject): Nothing {
-        val response = payload["response"]?.jsonObject
+        val response = payload["response"]?.jsonObjectOrNull
         return failWithError(response?.get("error")?.takeUnless { it is JsonNull }
             ?: response
             ?: payload)
+    }
+
+    private fun failCancelledResponse(payload: JsonObject): Nothing {
+        val error = payload["response"]?.jsonObjectOrNull?.get("error")?.takeUnless { it is JsonNull }
+        state.abort()
+        throw error?.parseErrorDetail() ?: HttpException("Response was cancelled by server")
     }
 
     private fun failWithError(error: JsonElement): Nothing {
@@ -253,17 +266,6 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
                 state.endServerTool(itemId, status = ServerToolStatus.FAILED)
             else -> state.startServerTool(itemId, itemType.removeSuffix("_call"))
         }
-    }
-
-    private fun parseUsage(usage: JsonObject?): TokenUsage? {
-        if (usage == null) return null
-        return TokenUsage(
-            promptTokens = usage["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = usage["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = usage["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = usage["input_tokens_details"]?.jsonObjectOrNull
-                ?.get("cached_tokens")?.jsonPrimitive?.intOrNull ?: 0,
-        )
     }
 
     private class ResponseStreamState {

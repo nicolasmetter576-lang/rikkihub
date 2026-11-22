@@ -115,7 +115,7 @@ export default function SettingsCacheKeepAlivePage() {
     <div className="space-y-6">
       <SettingsPageHeader title={t("cache_keep_alive.title")} />
 
-      <div className="space-y-3 rounded-xl border p-4">
+      <div className="space-y-3 rounded-xl border p-3">
         <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
           <div className="space-y-0.5">
             <p className="text-sm">{t("cache_keep_alive.enable")}</p>

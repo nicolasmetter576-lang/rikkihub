@@ -67,31 +67,33 @@ class SkillDetailVM(
         return if (target.isFile) target.readText() else ""
     }
 
-    // Returns null on success, error message on failure
-    fun saveFile(relativePath: String, content: String, onResult: (String?) -> Unit) {
+    enum class SaveError { ReadOnly, NameChanged, Failed }
+
+    // Returns null on success
+    fun saveFile(relativePath: String, content: String, onResult: (SaveError?) -> Unit) {
         viewModelScope.launch(ioDispatcher) {
             try {
                 val selection = _skill.value
                 if (selection == null || !skillManager.canModify(selection)) {
                     _readOnly.value = true
-                    withContext(resultDispatcher) { onResult("This skill is read-only or the selected origin changed") }
+                    withContext(resultDispatcher) { onResult(SaveError.ReadOnly) }
                     return@launch
                 }
                 if (relativePath == "SKILL.md") {
                     val name = SkillFrontmatterParser.parse(content)["name"]
                     if (name != skillName) {
-                        withContext(resultDispatcher) { onResult("不允许修改技能名称（name 字段必须为 \"$skillName\"）") }
+                        withContext(resultDispatcher) { onResult(SaveError.NameChanged) }
                         return@launch
                     }
                 }
                 val success = skillManager.saveSkillFile(skillName, relativePath, content, selection)
                 if (success) loadFiles()
-                withContext(resultDispatcher) { onResult(if (success) null else "保存失败") }
+                withContext(resultDispatcher) { onResult(if (success) null else SaveError.Failed) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 // 解析/保存过程中的意外异常转为失败反馈，不逃出协程
-                withContext(resultDispatcher) { onResult("保存失败") }
+                withContext(resultDispatcher) { onResult(SaveError.Failed) }
             }
         }
     }

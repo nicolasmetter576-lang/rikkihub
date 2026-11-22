@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import android.content.ClipData
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -28,16 +28,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import me.rerere.rikkihub.ui.components.ui.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -53,7 +51,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
@@ -83,6 +80,10 @@ import me.rerere.rikkihub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
+import me.rerere.rikkihub.ui.components.ui.CardGroupCorner
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 private val themeJson = Json {
     ignoreUnknownKeys = true
@@ -93,7 +94,6 @@ private val themeJson = Json {
 @Composable
 fun SettingThemePage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val clipboardManager = LocalClipboard.current
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
@@ -107,20 +107,19 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.setting_page_theme_setting)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors
+                colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding + PaddingValues(8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = innerPadding + PaddingValues(AppSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             if (settings.dynamicColor) {
                 item("dynamicColorHint") {
@@ -141,9 +140,7 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
 
             if (!settings.dynamicColor) {
                 item("presetThemes") {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    ) {
+                    Column {
                         Text(
                             text = stringResource(R.string.setting_theme_page_preset_themes),
                             style = MaterialTheme.typography.titleSmall,
@@ -153,7 +150,7 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(20.dp))
+                                .clip(RoundedCornerShape(CardGroupCorner))
                                 .background(MaterialTheme.colorScheme.surfaceBright)
                         ) {
                             PresetThemeButtonGroup(
@@ -171,7 +168,7 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp),
+                            .padding(start = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
@@ -219,30 +216,39 @@ fun SettingThemePage(vm: SettingVM = koinViewModel()) {
                     }
                 }
 
-                items(settings.customThemes, key = { it.id }) { theme ->
-                    CustomThemeItem(
-                        theme = theme,
-                        isSelected = settings.themeId == theme.id,
-                        onSelect = {
-                            vm.updateSettings { latest -> latest.copy(themeId = theme.id) }
-                        },
-                        onExport = {
-                            val json = themeJson.encodeToString(theme)
-                            scope.launch {
-                                clipboardManager.setClipEntry(
-                                    ClipEntry(ClipData.newPlainText("theme", json))
-                                )
-                            }
-                            toaster.show(exportSuccessMsg, type = ToastType.Success)
-                        },
-                        onEdit = {
-                            editingTheme = theme
-                            showEditSheet = true
-                        },
-                        onDelete = {
-                            deletingTheme = theme
+                if (settings.customThemes.isNotEmpty()) item("customThemes") {
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(CardGroupCorner))
+                            .background(CustomColors.listItemColors.containerColor)
+                    ) {
+                        settings.customThemes.forEachIndexed { index, theme ->
+                            if (index > 0) CardGroupDivider()
+                            CustomThemeItem(
+                                theme = theme,
+                                isSelected = settings.themeId == theme.id,
+                                onSelect = {
+                                    vm.updateSettings { latest -> latest.copy(themeId = theme.id) }
+                                },
+                                onExport = {
+                                    val json = themeJson.encodeToString(theme)
+                                    scope.launch {
+                                        clipboardManager.setClipEntry(
+                                            ClipEntry(ClipData.newPlainText("theme", json))
+                                        )
+                                    }
+                                    toaster.show(exportSuccessMsg, type = ToastType.Success)
+                                },
+                                onEdit = {
+                                    editingTheme = theme
+                                    showEditSheet = true
+                                },
+                                onDelete = {
+                                    deletingTheme = theme
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             }
         }
@@ -316,11 +322,8 @@ private fun CustomThemeItem(
     val darkMode = LocalDarkMode.current
     val scheme = theme.generateColorScheme(darkMode)
 
-    ListItem(
-        modifier = Modifier
-            .padding(horizontal = 8.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .clickable { onSelect() },
+    CompactListItem(
+        modifier = Modifier.clickable { onSelect() },
         headlineContent = { Text(theme.name.ifEmpty { "Unnamed" }) },
         leadingContent = {
             Box(contentAlignment = Alignment.Center) {
@@ -478,7 +481,8 @@ private fun CustomThemeEditSheet(
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = { onSave(currentTheme) },
-                    enabled = currentTheme.name.isNotBlank()
+                    enabled = currentTheme.name.isNotBlank(),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(stringResource(R.string.setting_theme_page_save))
                 }
@@ -525,7 +529,8 @@ private fun ImportThemeDialog(
                         errorMessage = e.message
                     }
                 },
-                enabled = jsonText.isNotBlank()
+                enabled = jsonText.isNotBlank(),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(R.string.setting_theme_page_import_theme))
             }
@@ -538,19 +543,36 @@ private fun ImportThemeDialog(
     )
 }
 
+/** HSL sliders and an hsl() code field for one color; also used by the workspace editor's text colors. */
 @Composable
-private fun ColorPickerRow(
+internal fun ColorPickerRow(
     color: Color,
     onColorChange: (Color) -> Unit,
 ) {
-    val hsl = remember(color) {
-        FloatArray(3).also { ColorUtils.colorToHSL(color.toArgb(), it) }
+    var hue by remember { mutableFloatStateOf(0f) }
+    var saturation by remember { mutableFloatStateOf(0f) }
+    var lightness by remember { mutableFloatStateOf(0f) }
+    var hslCode by remember { mutableStateOf("") }
+    var hslCodeError by remember { mutableStateOf(false) }
+    // The color the sliders and the code field stand for. Only a color changed from outside (reset, another
+    // theme) is read back into them: our own color coming back would go HSL → RGB → HSL, which loses the hue
+    // at zero saturation and rewrites the hsl() text being typed, moving the cursor.
+    var shown by remember { mutableStateOf<Color?>(null) }
+    if (color != shown) {
+        val hsl = FloatArray(3).also { ColorUtils.colorToHSL(color.toArgb(), it) }
+        hue = hsl[0]
+        saturation = hsl[1]
+        lightness = hsl[2]
+        hslCode = formatHslCode(hsl[0], hsl[1], hsl[2])
+        hslCodeError = false
+        shown = color
     }
-    var hue by remember(color) { mutableFloatStateOf(hsl[0]) }
-    var saturation by remember(color) { mutableFloatStateOf(hsl[1]) }
-    var lightness by remember(color) { mutableFloatStateOf(hsl[2]) }
-    var hslCode by remember(color) { mutableStateOf(formatHslCode(hsl[0], hsl[1], hsl[2])) }
-    var hslCodeError by remember(color) { mutableStateOf(false) }
+
+    fun emit(hsl: FloatArray) {
+        val newColor = Color(ColorUtils.HSLToColor(hsl))
+        shown = newColor
+        onColorChange(newColor)
+    }
 
     fun updateColor(newHue: Float, newSaturation: Float, newLightness: Float) {
         hue = newHue
@@ -558,7 +580,7 @@ private fun ColorPickerRow(
         lightness = newLightness
         hslCode = formatHslCode(newHue, newSaturation, newLightness)
         hslCodeError = false
-        onColorChange(Color(ColorUtils.HSLToColor(floatArrayOf(newHue, newSaturation, newLightness))))
+        emit(floatArrayOf(newHue, newSaturation, newLightness))
     }
 
     Column(
@@ -622,7 +644,7 @@ private fun ColorPickerRow(
                     hue = parsedHsl[0]
                     saturation = parsedHsl[1]
                     lightness = parsedHsl[2]
-                    onColorChange(Color(ColorUtils.HSLToColor(parsedHsl)))
+                    emit(parsedHsl)
                 }
             },
             label = { Text("HSL") },
@@ -686,9 +708,9 @@ private fun ThemePreview(theme: CustomTheme) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(CardGroupCorner))
                 .background(scheme.surface)
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             ColorSwatch(scheme.primary, "P")

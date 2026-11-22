@@ -23,7 +23,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,16 +30,18 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
-import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.provider.accumulateUsage
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.rotationStrategyOrDefault
 import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.provider.providers.PartGroup
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
+import me.rerere.ai.provider.providers.splitSystemPrompt
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.OpenAIReasoningMetadata
@@ -52,18 +53,20 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
-import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.CredentialLogTag
+import me.rerere.ai.util.CredentialPool
+import me.rerere.ai.util.HttpException
+import me.rerere.ai.util.apiKeyCandidates
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
+import me.rerere.ai.util.parseRetryAfterMillis
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.common.http.await
-import me.rerere.common.http.jsonObjectOrNull
-import me.rerere.common.http.jsonPrimitiveOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -75,7 +78,6 @@ import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import kotlin.time.Clock
 
-
 /** OpenAI Responses API 的 `max_output_tokens` 最小值。 */
 private const val RESPONSES_MIN_OUTPUT_TOKENS = 16
 
@@ -83,7 +85,7 @@ private const val TAG = "ResponseAPI"
 
 class ResponseAPI(
     private val client: OkHttpClient,
-    private val keyRoulette: KeyRoulette = KeyRoulette.default()
+    private val credentialPool: CredentialPool = CredentialPool(),
 ) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
@@ -97,30 +99,44 @@ class ResponseAPI(
             stream = false,
         )
         val encodedBody = json.encodeToString(requestBody)
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.responsesPath}")
-            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-            .post(encodedBody.toRequestBody("application/json".toMediaType()))
-            .addHeader(
-                "Authorization",
-                "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}"
-            )
-            .configureReferHeaders(providerSetting.baseUrl)
-            .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
-            .build()
-
         Log.i(TAG, "generateText: $encodedBody")
 
-        // await() waits for the response headers; reading the body can still block.
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
-            }
+        credentialPool.executeWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = providerSetting.apiKeyCandidates(),
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            val request = Request.Builder()
+                .tag(Any::class.java, params.requestTag)
+                .apply {
+                    if (cred.displayLabel.isNotBlank()) {
+                        tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                    }
+                }
+                .url("${providerSetting.baseUrl}${providerSetting.responsesPath}")
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(encodedBody.toRequestBody("application/json".toMediaType()))
+                .addHeader("Authorization", "Bearer ${cred.value}")
+                .configureReferHeaders(providerSetting.baseUrl)
+                .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
+                .build()
 
-            val bodyStr = response.body.string()
-            Log.i(TAG, "generateText: $bodyStr")
-            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-            parseResponseOutput(bodyJson)
+            // await() waits for the response headers; reading the body can still block.
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) {
+                    throw HttpException(
+                        "Failed to get response: ${response.code} ${response.body.string()}",
+                        statusCode = response.code,
+                        retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                    )
+                }
+
+                val bodyStr = response.body.string()
+                Log.i(TAG, "generateText: $bodyStr")
+                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+                parseResponseOutput(bodyJson)
+            }
         }
     }
 
@@ -128,7 +144,7 @@ class ResponseAPI(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams
-    ): Flow<StreamChunk> = callbackFlow {
+    ): Flow<StreamChunk> {
         val requestBody = buildRequestBody(
             providerSetting = providerSetting,
             messages = messages,
@@ -136,19 +152,39 @@ class ResponseAPI(
             stream = true,
         )
         val encodedBody = json.encodeToString(requestBody)
+        Log.i(TAG, "streamText: $encodedBody")
+
+        return credentialPool.streamWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = providerSetting.apiKeyCandidates(),
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            streamSingleRequest(providerSetting, params, encodedBody, cred.value, cred.displayLabel)
+        }
+    }
+
+    private fun streamSingleRequest(
+        providerSetting: ProviderSetting.OpenAI,
+        params: TextGenerationParams,
+        encodedBody: String,
+        apiKey: String,
+        credentialLabel: String,
+    ): Flow<StreamChunk> = callbackFlow {
         val request = Request.Builder()
+            .tag(Any::class.java, params.requestTag)
+            .apply {
+                if (credentialLabel.isNotBlank()) {
+                    tag(CredentialLogTag::class.java, CredentialLogTag(credentialLabel))
+                }
+            }
             .url("${providerSetting.baseUrl}${providerSetting.responsesPath}")
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .post(encodedBody.toRequestBody("application/json".toMediaType()))
-            .addHeader(
-                "Authorization",
-                "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}"
-            )
+            .addHeader("Authorization", "Bearer $apiKey")
             .configureReferHeaders(providerSetting.baseUrl)
             .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
             .build()
-
-        Log.i(TAG, "streamText: $encodedBody")
 
         val decoder = ResponseApiStreamDecoder()
 
@@ -175,10 +211,12 @@ class ResponseAPI(
                     if (result.completed) close()
                 } catch (e: Throwable) {
                     close(e)
+                    eventSource.cancel()
                 }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                if (isClosedForSend) return
                 var exception = t
 
                 Log.e(TAG, "[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response", t)
@@ -199,8 +237,12 @@ class ResponseAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                sendChunks(decoder.onClosed())
-                close()
+                try {
+                    sendChunks(decoder.onClosed())
+                    close()
+                } catch (e: Throwable) {
+                    close(e)
+                }
             }
         }
 
@@ -238,11 +280,11 @@ class ResponseAPI(
             }
 
             // system instructions
-            if (messages.any { it.role == MessageRole.SYSTEM }) {
-                val parts = messages.first { it.role == MessageRole.SYSTEM }.parts
+            val systemMessages = messages.splitSystemPrompt().system
+            if (systemMessages.isNotEmpty()) {
                 put(
                     "instructions",
-                    parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text })
+                    systemMessages.flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }.joinToString("\n") { it.text })
             }
 
             // messages
@@ -320,14 +362,12 @@ class ResponseAPI(
     }
 
     internal fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
-        messages
+        messages.splitSystemPrompt().conversation
             .filter { message ->
-                message.role != MessageRole.SYSTEM && (
-                    message.isValidToUpload() || message.parts.any { part ->
-                        part is UIMessagePart.Reasoning &&
-                            part.metadataAs<OpenAIReasoningMetadata>()?.encryptedContent != null
-                    }
-                )
+                message.isValidToUpload() || message.parts.any { part ->
+                    part is UIMessagePart.Reasoning &&
+                        part.metadataAs<OpenAIReasoningMetadata>()?.encryptedContent != null
+                }
             }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
@@ -667,6 +707,7 @@ class ResponseAPI(
             }
         }
 
+        val usage = parseResponsesUsage(jsonObject["usage"] as? JsonObject).accumulateUsage()
         return TextGenerationResult(
             id = jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: "",
             model = jsonObject["model"]?.jsonPrimitive?.contentOrNull ?: "",
@@ -675,18 +716,8 @@ class ResponseAPI(
                 parts = parts,
             ),
             finishReason = jsonObject["status"]?.jsonPrimitive?.contentOrNull,
-            usage = parseTokenUsage(jsonObject["usage"]?.jsonObject)
-        )
-    }
-
-    private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
-        if (jsonObject == null) return null
-        return TokenUsage(
-            promptTokens = jsonObject["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = jsonObject["input_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: 0
+            usage = usage.snapshot,
+            hasCompleteUsage = usage.hasCompleteUsage,
         )
     }
 }

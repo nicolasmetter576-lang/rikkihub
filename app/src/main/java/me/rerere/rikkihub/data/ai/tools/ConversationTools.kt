@@ -63,10 +63,14 @@ fun createConversationTools(
             listOf(UIMessagePart.Text(JsonInstantPretty.encodeToString(payload)))
         }
     ),
-    conversationSearchTool { query -> conversationRepo.searchMessages(query, MessageSearchSort.RELEVANCE) },
+    conversationSearchTool { query, limit ->
+        conversationRepo.searchMessages(query, MessageSearchSort.RELEVANCE).take(limit)
+    },
 )
 
-private fun conversationSearchTool(search: suspend (query: String) -> List<MessageSearchResult>) = Tool(
+private fun conversationSearchTool(
+    search: suspend (query: String, limit: Int) -> List<MessageSearchResult>,
+) = Tool(
     name = BuiltinToolIds.CONVERSATION_SEARCH,
     description = BuiltinToolCatalog.require(BuiltinToolIds.CONVERSATION_SEARCH).defaultDescription,
     parameters = {
@@ -91,7 +95,7 @@ private fun conversationSearchTool(search: suspend (query: String) -> List<Messa
         val query = it.jsonObject["query"]?.jsonPrimitive?.contentOrNull
             ?: error("query is required")
         val limit = (it.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 15).coerceIn(1, 50)
-        val results = search(query).take(limit)
+        val results = search(query, limit)
         val payload = buildJsonArray {
             results.forEach { result ->
                 add(buildJsonObject {
@@ -114,14 +118,43 @@ private const val READ_MESSAGE_LENGTH = 12_000
 const val CONVERSATION_READ_TOOL = "conversation_read"
 
 /**
- * 给后台记忆整理用的对话查询工具，只能看到 [assistantIds] 这些助手的对话：
- * 独立记忆库的助手不该读到别的助手的对话内容。
+ * 给后台记忆整理用的对话查询工具，只能看到 [assistantIds] 这些助手的非 CLI 对话：
+ * 独立记忆库的助手不该读到别的助手的对话内容，CLI 工作区会话也不进入长期记忆。
  */
 fun createMemoryConversationTools(
     conversationRepo: ConversationRepository,
     assistantIds: Set<Uuid>,
+): List<Tool> = createMemoryConversationTools(
+    searchMessages = conversationRepo::searchMessagesOfAssistants,
+    getConversationById = conversationRepo::getConversationById,
+    assistantIds = assistantIds,
+)
+
+internal fun createMemoryConversationTools(
+    searchMessages: suspend (query: String, assistantIds: Set<Uuid>) -> List<MessageSearchResult>,
+    getConversationById: suspend (Uuid) -> Conversation?,
+    assistantIds: Set<Uuid>,
 ): List<Tool> = listOf(
-    conversationSearchTool { query -> conversationRepo.searchMessagesOfAssistants(query, assistantIds) },
+    conversationSearchTool { query, limit ->
+        val allowedByConversation = HashMap<String, Boolean>()
+        val raw = searchMessages(query, assistantIds)
+        val filtered = ArrayList<MessageSearchResult>(minOf(raw.size, limit))
+        for (result in raw) {
+            val allowed = allowedByConversation.getOrPut(result.conversationId) {
+                val conversation = runCatching { Uuid.parse(result.conversationId) }
+                    .getOrNull()
+                    ?.let { id -> getConversationById(id) }
+                conversation != null &&
+                    conversation.assistantId in assistantIds &&
+                    conversation.cliSession == null
+            }
+            if (allowed) {
+                filtered.add(result)
+                if (filtered.size >= limit) break
+            }
+        }
+        filtered
+    },
     Tool(
         name = CONVERSATION_READ_TOOL,
         description = """
@@ -156,8 +189,8 @@ fun createMemoryConversationTools(
             val args = it.jsonObject
             val conversation = args["conversation_id"]?.jsonPrimitive?.contentOrNull
                 ?.let { id -> runCatching { Uuid.parse(id) }.getOrNull() }
-                ?.let { id -> conversationRepo.getConversationById(id) }
-                ?.takeIf { conversation -> conversation.assistantId in assistantIds }
+                ?.let { id -> getConversationById(id) }
+                ?.takeIf { conversation -> conversation.assistantId in assistantIds && conversation.cliSession == null }
                 ?: error("conversation not found")
             val offset = (args["offset"]?.jsonPrimitive?.intOrNull ?: 0).coerceAtLeast(0)
             val limit = (args["limit"]?.jsonPrimitive?.intOrNull ?: READ_DEFAULT_LIMIT).coerceIn(1, READ_MAX_LIMIT)

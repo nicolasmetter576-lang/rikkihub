@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.data.ai.tools
 
+import me.rerere.rikkihub.data.model.mainPromptText
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -240,12 +242,12 @@ class WorkspaceSubagentPresetRuntimeTest {
     }
 
     @Test fun `preset resets every parent generation field and role injection surface`() {
-        val parent = Assistant(systemPrompt = "parent secret", temperature = 1.8f, topP = 0.9f,
+        val parent = Assistant(promptPreset = AssistantPresets.withSystemPrompt("parent secret"), temperature = 1.8f, topP = 0.9f,
             maxTokens = 99, contextMessageLimit = 1, reasoningLevel = ReasoningLevel.HIGH,
             enableMemory = true, useGlobalMemory = true, enableWebSearch = true,
             customBodies = listOf(CustomBody("temperature", JsonPrimitive(2))),
             enabledSkills = setOf("secret"), mcpServers = setOf(kotlin.uuid.Uuid.random()),
-            modeInjectionIds = setOf(kotlin.uuid.Uuid.random()), lorebookIds = setOf(kotlin.uuid.Uuid.random()),
+            libraryEntryIds = setOf(kotlin.uuid.Uuid.random()), lorebookIds = setOf(kotlin.uuid.Uuid.random()),
             presetMessages = listOf(UIMessage.user("parent message")), messageTemplate = "PARENT {{ message }}",
             allowConversationSystemPrompt = true, allowConversationPromptInjection = true)
         val worker = presetWorkerAssistant(parent, testChatModel(), role())
@@ -254,10 +256,10 @@ class WorkspaceSubagentPresetRuntimeTest {
         assertNull(worker.maxTokens)
         assertEquals(0, worker.contextMessageLimit)
         assertEquals(ReasoningLevel.AUTO, worker.reasoningLevel)
-        assertEquals(SUBAGENT_WORKER_PREAMBLE + "\n\nPRIVATE ROLE PROMPT", worker.systemPrompt)
+        assertEquals(SUBAGENT_WORKER_PREAMBLE + "\n\nPRIVATE ROLE PROMPT", worker.mainPromptText)
         assertFalse(worker.enableMemory || worker.useGlobalMemory || worker.enableWebSearch)
         assertTrue(worker.enabledSkills.isEmpty() && worker.mcpServers.isEmpty() && worker.customBodies.isEmpty())
-        assertTrue(worker.modeInjectionIds.isEmpty() && worker.lorebookIds.isEmpty() && worker.presetMessages.isEmpty())
+        assertTrue(worker.libraryEntryIds.isEmpty() && worker.lorebookIds.isEmpty() && worker.presetMessages.isEmpty())
         assertFalse(worker.allowConversationSystemPrompt || worker.allowConversationPromptInjection)
         assertEquals("{{ message }}", worker.messageTemplate)
         val configured = role().copy(generationConfig = SubagentPresetGenerationConfig(0.3f, 0.7f, 123, ReasoningLevel.LOW))

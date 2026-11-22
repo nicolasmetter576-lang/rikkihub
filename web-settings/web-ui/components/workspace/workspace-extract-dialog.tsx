@@ -17,10 +17,9 @@ import { Spinner } from "~/components/ui/spinner";
 import { SettingsSelectField } from "@overlay/components/settings/settings-ui";
 import {
   WORKSPACE_EXTRACT_ENCODINGS,
-  workspaceApi,
   workspaceExtractErrorKey,
 } from "@overlay/lib/workspace";
-import type { WorkspaceExtractResult, WorkspaceFileEntry } from "@overlay/types/workspace";
+import type { WorkspaceExtractResult } from "@overlay/types/workspace";
 
 const AUTO = "auto";
 
@@ -29,13 +28,14 @@ const AUTO = "auto";
  * a missing/wrong password or other archive error is shown in place so the user can retry.
  */
 export function WorkspaceExtractDialog({
-  workspaceId,
+  extract,
   entry,
   onOpenChange,
   onExtracted,
 }: {
-  workspaceId: string;
-  entry: WorkspaceFileEntry | null;
+  /** Runs the extraction of [entry] (workspace files or the file manager). */
+  extract: (path: string, password: string | null, nameEncoding: string | null) => Promise<WorkspaceExtractResult>;
+  entry: { path: string; name: string } | null;
   onOpenChange: (open: boolean) => void;
   onExtracted: (result: WorkspaceExtractResult) => void | Promise<void>;
 }) {
@@ -60,8 +60,7 @@ export function WorkspaceExtractDialog({
     setRunning(true);
     setErrorKey(null);
     try {
-      const result = await workspaceApi.extract(
-        workspaceId,
+      const result = await extract(
         entry.path,
         password || null,
         encoding === AUTO ? null : encoding,

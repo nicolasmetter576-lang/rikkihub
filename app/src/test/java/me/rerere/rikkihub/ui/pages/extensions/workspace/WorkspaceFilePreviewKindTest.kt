@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.extensions.workspace
 
+import me.rerere.workspace.WorkspaceFileEntry
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -58,5 +59,13 @@ class WorkspaceFilePreviewKindTest {
         assertEquals(WorkspaceFilePreviewKind.NONE, workspaceFilePreviewKind("main.kt"))
         // 图片(非 svg)不进入 Web 预览
         assertEquals(WorkspaceFilePreviewKind.NONE, workspaceFilePreviewKind("pic.png"))
+    }
+
+    @Test
+    fun `svg opens in the editor with its web preview, other images in the image viewer`() {
+        fun type(name: String) = WorkspaceFileEntry(name, name, isDirectory = false, sizeBytes = 1, updatedAt = 0).detectFileType()
+        assertEquals(WorkspaceFileType.TEXT, type("icon.svg"))
+        assertEquals(WorkspaceFileType.TEXT, type("ICON.SVG"))
+        assertEquals(WorkspaceFileType.IMAGE, type("pic.png"))
     }
 }

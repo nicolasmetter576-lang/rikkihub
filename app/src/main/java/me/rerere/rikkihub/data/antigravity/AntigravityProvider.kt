@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.antigravity
 
+import me.rerere.rikkihub.data.ai.reportUsageAccount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -69,7 +70,8 @@ class AntigravityProvider(
             model = params.model.modelId,
             message = message,
             finishReason = finish?.finishReason,
-            usage = message.usage,
+            usage = handler.usage,
+            hasCompleteUsage = handler.hasCompleteUsage,
         )
     }
 
@@ -81,6 +83,7 @@ class AntigravityProvider(
         refreshVersionInBackground()
         val modelId = params.model.modelId
         val account = repository.acquireAccount(modelId)
+        reportUsageAccount(account.id)
         val modelIdsByUuid = providerSetting.models.associate { it.id to it.modelId }
         val body = api.buildGenerateBody(messages, params, account.projectId) { message ->
             message.modelId?.let(modelIdsByUuid::get)

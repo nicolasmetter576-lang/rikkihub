@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,7 +65,7 @@ import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 
 @Composable
-fun WorkspaceTerminalPage(id: String) {
+fun WorkspaceTerminalPage(id: String, command: String? = null) {
     val vm: WorkspaceDetailVM = koinViewModel(parameters = { parametersOf(id) })
     val state by vm.state.collectAsStateWithLifecycle()
     val sessionManager: WorkspaceTerminalSessionManager = koinInject()
@@ -78,8 +79,16 @@ fun WorkspaceTerminalPage(id: String) {
     var pendingCloseTabId by remember(root) { mutableStateOf<Long?>(null) }
 
     val shellCompatibilityMode = state.workspace?.shellCompatibilityMode ?: false
+    // A command opens its own tab once; otherwise make sure there is a shell.
+    var commandStarted by rememberSaveable(id, command) { mutableStateOf(false) }
     LaunchedEffect(root, shellCompatibilityMode) {
-        root?.let { sessionManager.ensureSession(it, shellCompatibilityMode) }
+        val workspaceRoot = root ?: return@LaunchedEffect
+        if (command != null && !commandStarted) {
+            commandStarted = true
+            sessionManager.createTab(workspaceRoot, shellCompatibilityMode, initialCommand = command)
+        } else {
+            sessionManager.ensureSession(workspaceRoot, shellCompatibilityMode)
+        }
     }
 
     RikkihubTheme(colorMode = ColorMode.DARK) {
@@ -434,7 +443,7 @@ private fun TerminalExtraKey(
                 } else {
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                 },
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(8.dp),
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),

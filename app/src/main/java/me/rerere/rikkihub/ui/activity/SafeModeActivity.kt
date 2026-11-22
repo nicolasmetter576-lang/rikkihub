@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.activity
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -79,7 +80,7 @@ class SafeModeActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     topBar = {
-                        TopAppBar(title = { Text(stringResource(R.string.safe_mode_title)) })
+                        TopAppBar(title = { Text(stringResource(R.string.safe_mode_title)) }, expandedHeight = AppTopBarHeight)
                     }
                 ) { innerPadding ->
                     Column(
@@ -104,7 +105,8 @@ class SafeModeActivity : ComponentActivity() {
 
                         Button(
                             onClick = { showAssistantPicker = true },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(stringResource(R.string.safe_mode_switch_assistant))
                         }
@@ -114,7 +116,8 @@ class SafeModeActivity : ComponentActivity() {
                                 startActivity(Intent(this@SafeModeActivity, RouteActivity::class.java))
                                 finish()
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(stringResource(R.string.safe_mode_enter_app))
                         }
@@ -132,7 +135,8 @@ class SafeModeActivity : ComponentActivity() {
                                     onClick = {
                                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         cm.setPrimaryClip(ClipData.newPlainText("crash", stackTrace))
-                                    }
+                                    },
+                                    shape = MaterialTheme.shapes.medium,
                                 ) {
                                     Text(stringResource(R.string.safe_mode_copy))
                                 }

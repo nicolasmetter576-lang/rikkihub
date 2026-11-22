@@ -1,6 +1,6 @@
 package me.rerere.rikkihub.ui.pages.extensions.workspace
 
-import me.rerere.rikkihub.ui.theme.amoledOutlineBorder
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,22 +12,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvMirror
 import androidx.compose.material3.Card
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,7 +35,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -56,23 +54,27 @@ import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
 
 @Composable
 fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     val navController = LocalNavController.current
     val workspaces by vm.workspaces.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.workspace_page_title)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         floatingActionButton = {
@@ -80,13 +82,11 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                 Icon(HugeIcons.Add01, contentDescription = null)
             }
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = innerPadding + PaddingValues(AppSpacing.sm),
         ) {
             if (workspaces.isEmpty()) {
                 item {
@@ -94,9 +94,11 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                 }
             }
 
-            items(workspaces, key = { it.id }) { workspace ->
+            itemsIndexed(workspaces, key = { _, workspace -> workspace.id }) { index, workspace ->
                 WorkspaceCard(
                     workspace = workspace,
+                    shape = cardGroupItemShape(index, workspaces.size),
+                    divider = index > 0,
                     onRename = { editTarget = workspace },
                     onDelete = { deleteTarget = workspace },
                     onOpen = { navController.navigate(Screen.WorkspaceDetail(workspace.id)) },
@@ -111,9 +113,10 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
             initialName = "",
             existingNames = workspaces.map { it.name.trim() }.toSet(),
             showHarnessMinimalOption = true,
+            initialEnvMirror = vm.lastEnvMirror,
             onDismiss = { showAddDialog = false },
-            onConfirm = { name, harnessMinimal ->
-                vm.create(name, harnessMinimal)
+            onConfirm = { name, harnessMinimal, envMirror ->
+                vm.create(name, harnessMinimal, envMirror)
                 showAddDialog = false
             },
         )
@@ -125,7 +128,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
             initialName = workspace.name,
             existingNames = workspaces.filter { it.id != workspace.id }.map { it.name.trim() }.toSet(),
             onDismiss = { editTarget = null },
-            onConfirm = { name, _ ->
+            onConfirm = { name, _, _ ->
                 vm.rename(workspace, name)
                 editTarget = null
             },
@@ -178,6 +181,8 @@ private fun EmptyWorkspaceState() {
 @Composable
 private fun WorkspaceCard(
     workspace: WorkspaceEntity,
+    shape: Shape,
+    divider: Boolean,
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onOpen: () -> Unit,
@@ -188,16 +193,17 @@ private fun WorkspaceCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen),
+        shape = shape,
         colors = CustomColors.cardColorsOnSurfaceContainer,
-        border = amoledOutlineBorder(),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
         ) {
+            if (divider) CardGroupDivider()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                    .padding(start = AppSpacing.sm, top = 10.dp, bottom = 10.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
@@ -275,11 +281,16 @@ private fun EditWorkspaceDialog(
     initialName: String,
     existingNames: Set<String>,
     showHarnessMinimalOption: Boolean = false,
+    /** Non-null on the create dialog: offers "install the system and set up the environment". */
+    initialEnvMirror: WorkspaceEnvMirror? = null,
     onDismiss: () -> Unit,
-    onConfirm: (String, Boolean) -> Unit,
+    /** name, harnessMinimal, mirror of the environment setup to run (null = none). */
+    onConfirm: (String, Boolean, WorkspaceEnvMirror?) -> Unit,
 ) {
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
     var harnessMinimal by rememberSaveable { mutableStateOf(false) }
+    var setupEnvironment by rememberSaveable { mutableStateOf(false) }
+    var envMirror by rememberSaveable { mutableStateOf(initialEnvMirror ?: WorkspaceEnvMirror.OFFICIAL) }
     val trimmedName = name.trim()
     val isDuplicate = trimmedName.isNotEmpty() && trimmedName in existingNames
 
@@ -325,11 +336,21 @@ private fun EditWorkspaceDialog(
                         )
                     }
                 }
+                if (initialEnvMirror != null) {
+                    WorkspaceEnvSetupOption(
+                        title = stringResource(R.string.workspace_env_setup_on_create),
+                        description = stringResource(R.string.workspace_env_setup_on_create_desc),
+                        checked = setupEnvironment,
+                        onCheckedChange = { setupEnvironment = it },
+                        mirror = envMirror,
+                        onMirrorChange = { envMirror = it },
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(trimmedName, harnessMinimal) },
+                onClick = { onConfirm(trimmedName, harnessMinimal, envMirror.takeIf { setupEnvironment }) },
                 enabled = name.isNotBlank() && !isDuplicate,
             ) {
                 Text(stringResource(R.string.common_save))

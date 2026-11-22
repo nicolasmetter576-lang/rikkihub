@@ -13,6 +13,8 @@ import me.rerere.rikkihub.data.management.proposal.Provenance
 import me.rerere.rikkihub.data.management.recovery.AesGcmPayloadCipher
 import me.rerere.rikkihub.data.management.runtime.AppSkillsBackend
 import me.rerere.rikkihub.data.management.runtime.ManagementRuntime
+import me.rerere.rikkihub.data.model.CharacterLocalSettings
+import me.rerere.rikkihub.data.model.CharacterRecord
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.data.mutation.ConversationCommandApplier
 import me.rerere.rikkihub.data.mutation.ConversationCommandContext
@@ -22,7 +24,9 @@ import me.rerere.rikkihub.data.mutation.ConversationVersion
 import me.rerere.rikkihub.data.mutation.MutationConflictException
 import me.rerere.rikkihub.data.mutation.MutationDomain
 import me.rerere.rikkihub.data.mutation.MutationRuntime
+import me.rerere.tavern.card.CharacterCard
 import java.io.File
+import java.time.Instant
 import java.nio.file.Files
 import javax.crypto.KeyGenerator
 import kotlin.uuid.Uuid
@@ -67,6 +71,19 @@ internal class FakeManagementRoom(private val epochSource: suspend () -> Long) :
     }
     override suspend fun receiptAfter(operationId: String) = receipts[operationId]
     override suspend fun writeReceipt(operationId: String, objectKey: String, after: String) { receipts[operationId] = after }
+    val characters = linkedMapOf<Uuid, CharacterRecord>()
+    override suspend fun characterIds() = characters.keys.map { it.toString() }
+    override suspend fun character(id: Uuid) = characters[id]
+    override suspend fun characterCreate(id: Uuid, card: CharacterCard, extraBookIds: List<Uuid>) {
+        check(id !in characters) { "character exists" }
+        val now = Instant.now()
+        characters[id] = CharacterRecord(id, card, "", "", now, now, CharacterLocalSettings(extraBookIds = extraBookIds), revision = 0)
+    }
+    override suspend fun characterPatch(id: Uuid, expectedRevision: Long, transform: (CharacterRecord) -> CharacterRecord) {
+        val current = characters[id] ?: throw MutationConflictException("missing")
+        if (current.revision != expectedRevision) throw MutationConflictException("stale")
+        characters[id] = transform(current).copy(revision = current.revision + 1)
+    }
     val libraryPresets = mutableListOf<WorkspaceSubagentPreset>()
     val workspaceRows = mutableListOf<RoomManagementBackend.WorkspaceRow>()
     var libraryRev = 0L
@@ -94,13 +111,14 @@ internal class ManagementFixture {
     val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
     val room = FakeManagementRoom { mutation.epochs.epoch(MutationDomain.ROOM_CONVERSATION) }
     var gateOpen = true
+    var definitionVersion = 1
     val filesRoot = File(root, "files").also { File(it, "skills").mkdirs() }
     fun newRuntime() = ManagementRuntime(
         root = File(root, "management"), settingsStore = settings, mutationRuntime = mutation,
         roomBackend = room,
         skillsBackend = AppSkillsBackend(filesRoot, File(root, "management/receipts/files"), mutation),
         cipher = AesGcmPayloadCipher { key },
-        mutationAccepted = { gateOpen }, definitionVersion = { 1 },
+        mutationAccepted = { gateOpen }, definitionVersion = { definitionVersion },
     )
     var runtime = newRuntime()
     val source = Provenance("session-1", "run-1", "call-1")

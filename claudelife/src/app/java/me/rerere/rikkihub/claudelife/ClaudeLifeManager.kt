@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.claudelife
 
+import me.rerere.rikkihub.data.ai.UsageRecorder
+import me.rerere.rikkihub.data.ai.UsageSource
+import me.rerere.rikkihub.data.ai.UsageTag
+import me.rerere.rikkihub.data.ai.wrapOrSelf
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -19,8 +23,7 @@ import me.rerere.ai.claudelife.CacheWarmRequest
 import me.rerere.ai.claudelife.CacheWarmer
 import me.rerere.ai.claudelife.WarmTicker
 import me.rerere.ai.claudelife.forCacheWarmReplay
-import me.rerere.ai.core.TokenUsage
-import me.rerere.ai.core.merge
+import me.rerere.ai.core.UsageAccumulator
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
@@ -54,6 +57,7 @@ class ClaudeLifeManager(
     appScope: AppScope,
     private val settingsStore: SettingsStore,
     private val providerManager: ProviderManager,
+    private val usageRecorder: UsageRecorder? = null,
 ) {
     private val ticker: WarmTicker = productionWarmTicker()
 
@@ -146,7 +150,7 @@ class ClaudeLifeManager(
             ?: return CacheWarmReplayResult.Failed("provider not found")
         if (!provider.enabled) return CacheWarmReplayResult.Failed("provider disabled")
         val impl = try {
-            providerManager.getProviderByType(provider)
+            usageRecorder.wrapOrSelf(providerManager.getProviderByType(provider), UsageTag(UsageSource.KEEPALIVE))
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -179,7 +183,7 @@ internal suspend fun runCacheWarmReplay(
     onNote: (String) -> Unit = {},
 ): CacheWarmReplayResult {
     val params = request.params.forCacheWarmReplay()
-    var usage: TokenUsage? = null
+    val usage = UsageAccumulator()
     var finished = false
     return try {
         impl.streamText(
@@ -188,13 +192,13 @@ internal suspend fun runCacheWarmReplay(
             params = params,
         ).collect { chunk ->
             when (chunk) {
-                is StreamChunk.Usage -> usage = usage.merge(chunk.usage)
+                is StreamChunk.Usage -> usage.update(chunk.update)
                 is StreamChunk.Finish -> finished = true
                 else -> Unit
             }
         }
         if (!finished) onNote("replay stream ended without finish event")
-        CacheWarmReplayResult.Succeeded(usage)
+        CacheWarmReplayResult.Succeeded(usage.snapshot)
     } catch (e: CancellationException) {
         throw e
     } catch (t: Throwable) {

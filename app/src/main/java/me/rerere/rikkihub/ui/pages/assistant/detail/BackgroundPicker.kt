@@ -69,7 +69,8 @@ fun BackgroundPicker(
             onClick = {
                 showPickOption = true
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text(
                 text = if (background != null) {
@@ -128,7 +129,8 @@ fun BackgroundPicker(
                             showPickOption = false
                             imagePickerLauncher.launch("image/*")
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(stringResource(R.string.assistant_page_select_from_gallery))
                     }
@@ -138,7 +140,8 @@ fun BackgroundPicker(
                             urlInput = ""
                             showUrlInput = true
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(stringResource(R.string.assistant_page_enter_image_url))
                     }
@@ -148,7 +151,8 @@ fun BackgroundPicker(
                                 showPickOption = false
                                 onUpdate(null)
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(stringResource(R.string.assistant_page_remove_background))
                         }

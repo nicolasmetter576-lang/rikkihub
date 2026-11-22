@@ -17,6 +17,30 @@ class ChatInputStateTest {
     }
 
     @Test
+    fun `appendText starts a new line only after existing unterminated text`() {
+        listOf(
+            "" to "quick",
+            "  \n " to "quick",
+            "draft" to "draft\nquick",
+            "draft\n" to "draft\nquick",
+            "line1\nline2" to "line1\nline2\nquick",
+        ).forEach { (current, expected) ->
+            val state = ChatInputState()
+            state.textContent.setTextAndPlaceCursorAtEnd(current)
+            state.appendText("quick")
+            assertEquals("current=${current.replace("\n", "\\n")}", expected, state.textContent.text.toString())
+        }
+    }
+
+    @Test
+    fun `setMessageText replaces the existing draft`() {
+        val state = ChatInputState()
+        state.textContent.setTextAndPlaceCursorAtEnd("draft")
+        state.setMessageText("quick")
+        assertEquals("quick", state.textContent.text.toString())
+    }
+
+    @Test
     fun `reasoning and text message allows editing reasoning in place`() {
         val reasoning = UIMessagePart.Reasoning("old thought")
         val state = editing(listOf(reasoning, UIMessagePart.Text("answer")))

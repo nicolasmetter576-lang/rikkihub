@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkihub.AppScope
@@ -12,7 +13,9 @@ import me.rerere.rikkihub.data.db.AppDatabaseFactory
 import me.rerere.rikkihub.data.db.fts.MessageFtsManager
 import me.rerere.rikkihub.data.files.FilesManager
 import me.rerere.rikkihub.data.model.Conversation
+import me.rerere.rikkihub.data.model.FavoriteType
 import me.rerere.rikkihub.data.model.MessageNode
+import me.rerere.rikkihub.data.model.NodeFavoriteTarget
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -99,6 +102,65 @@ class ConversationDeleteLifecycleInstrumentedTest {
         assertEquals(0, nodeCount(deleted.id))
         assertNotNull(repository.getConversationById(live.id))
     }
+
+    @Test fun favoritesAreHiddenWhileDeletedBackOnUndoAndGoneAfterPurge() = runBlocking {
+        val kept = conversation("kept")
+        val deleted = conversation("gone")
+        repository.insertConversation(kept)
+        repository.insertConversation(deleted)
+        val keptKey = favorite(kept, kept.messageNodes[0])
+        val deletedKey = favorite(deleted, deleted.messageNodes[0])
+        assertEquals(setOf(keptKey, deletedKey), listedFavorites())
+
+        repository.deleteConversation(deleted)
+        assertEquals("hidden while deleted", setOf(keptKey), listedFavorites())
+
+        repository.restoreConversation(deleted.id)
+        assertEquals("back after undo", setOf(keptKey, deletedKey), listedFavorites())
+
+        repository.deleteConversation(deleted)
+        val afterWindow = System.currentTimeMillis() + ConversationRepository.RETENTION_TTL_MILLIS + 1_000
+        repository.purgeExpiredDeletedConversations(now = afterWindow)
+        assertNull("purged with the conversation", database.favoriteDao().getByRefKey(deletedKey))
+        assertNotNull(database.favoriteDao().getByRefKey(keptKey))
+    }
+
+    @Test fun removingANodeDeletesOnlyItsFavorite() = runBlocking {
+        val first = MessageNode.of(UIMessage.user("first"))
+        val second = MessageNode.of(UIMessage.user("second"))
+        val original = conversation("nodes").copy(messageNodes = listOf(first, second))
+        repository.insertConversation(original)
+        val firstKey = favorite(original, first)
+        val secondKey = favorite(original, second)
+
+        repository.updateConversation(original.copy(revision = 1, messageNodes = listOf(first)))
+
+        assertNotNull(database.favoriteDao().getByRefKey(firstKey))
+        assertNull(database.favoriteDao().getByRefKey(secondKey))
+    }
+
+    @Test fun purgeSweepsFavoritesOfMissingNodesButKeepsDeletedConversations() = runBlocking {
+        val deleted = conversation("tombstone")
+        repository.insertConversation(deleted)
+        val deletedKey = favorite(deleted, deleted.messageNodes[0])
+        repository.deleteConversation(deleted)
+        // 更早版本删会话/节点时留下的收藏
+        val orphan = conversation("orphan")
+        val orphanKey = favorite(orphan, orphan.messageNodes[0])
+
+        repository.purgeExpiredDeletedConversations()
+
+        assertNull(database.favoriteDao().getByRefKey(orphanKey))
+        assertNotNull("restorable conversation keeps its favorite", database.favoriteDao().getByRefKey(deletedKey))
+    }
+
+    private suspend fun favorite(conversation: Conversation, node: MessageNode): String =
+        FavoriteRepository(database.favoriteDao()).addNodeFavorite(
+            NodeFavoriteTarget(conversation.id, conversation.title, node.id, node)
+        ).refKey
+
+    private suspend fun listedFavorites(): Set<String> =
+        database.favoriteDao().listByType(FavoriteType.NODE.value).first().mapTo(HashSet()) { it.refKey }
 
     private fun conversation(word: String, updatedAt: Instant = Instant.now()) = Conversation(
         id = Uuid.random(),

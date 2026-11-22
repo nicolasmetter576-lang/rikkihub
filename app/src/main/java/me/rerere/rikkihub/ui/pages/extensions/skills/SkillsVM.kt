@@ -79,7 +79,7 @@ class SkillsVM(
                 val fileName = FileUtils.getFileNameFromUri(appContext, uri).orEmpty()
                 val bytes = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: run {
-                        withContext(Dispatchers.Main) { onResult(false, "无法读取文件") }
+                        withContext(Dispatchers.Main) { onResult(false, appContext.getString(R.string.skills_import_read_failed)) }
                         return@launch
                     }
                 val importedNames = importService.importFile(fileName, bytes)
@@ -90,7 +90,7 @@ class SkillsVM(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { onResult(false, e.message ?: "未知错误") }
+                withContext(Dispatchers.Main) { onResult(false, e.message ?: context.getString(R.string.error_unknown)) }
             }
         }
     }
@@ -107,12 +107,12 @@ class SkillsVM(
                 val message = if (e.code == SkillImportException.CODE_GITHUB_RATE_LIMIT) {
                     context.getString(R.string.skills_github_rate_limit)
                 } else {
-                    e.message ?: "未知错误"
+                    e.message ?: context.getString(R.string.error_unknown)
                 }
                 withContext(Dispatchers.Main) { onResult(false, message) }
             } catch (e: Exception) {
                 e.printStackTrace()
-                withContext(Dispatchers.Main) { onResult(false, e.message ?: "未知错误") }
+                withContext(Dispatchers.Main) { onResult(false, e.message ?: context.getString(R.string.error_unknown)) }
             }
         }
     }

@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.debug
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -45,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import kotlinx.coroutines.launch
-import me.rerere.common.android.Logging
 import me.rerere.rikkihub.data.model.Avatar
 import me.rerere.rikkihub.ui.components.ui.UIAvatar
 import me.rerere.rikkihub.ui.components.nav.BackButton
@@ -72,11 +72,12 @@ fun DebugPage(vm: DebugVM = koinViewModel()) {
                 },
                 navigationIcon = {
                     BackButton()
-                }
+                },
+                expandedHeight = AppTopBarHeight,
             )
         }
     ) { contentPadding ->
-        val state = rememberPagerState { 3 }
+        val state = rememberPagerState { 2 }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -107,17 +108,6 @@ fun DebugPage(vm: DebugVM = koinViewModel()) {
                         Text("Colors")
                     }
                 )
-                Tab(
-                    selected = state.currentPage == 2,
-                    onClick = {
-                        scope.launch {
-                            state.animateScrollToPage(2)
-                        }
-                    },
-                    text = {
-                        Text("Logging")
-                    }
-                )
             }
             HorizontalPager(
                 state = state,
@@ -128,7 +118,6 @@ fun DebugPage(vm: DebugVM = koinViewModel()) {
                 when (page) {
                     0 -> MainPage(vm)
                     1 -> ColorsPage()
-                    2 -> Box {}
                 }
             }
         }
@@ -187,7 +176,8 @@ private fun MainPage(vm: DebugVM) {
                 toaster.show("测试 ${counter++}")
                 toaster.show("测试 ${counter++}", type = ToastType.Info)
                 toaster.show("测试 ${counter++}", type = ToastType.Error)
-            }
+            },
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text("toast")
         }
@@ -196,7 +186,8 @@ private fun MainPage(vm: DebugVM) {
                 vm.updateSettings { latest -> latest.copy(
                         chatModelId = Uuid.random()
                     ) }
-            }
+            },
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text("重置Chat模型")
         }
@@ -204,7 +195,8 @@ private fun MainPage(vm: DebugVM) {
         Button(
             onClick = {
                 error("测试崩溃 ${Random.nextInt(0..1000)}")
-            }
+            },
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text("崩溃")
         }
@@ -217,7 +209,7 @@ private fun MainPage(vm: DebugVM) {
                 text = "Conversation 数量: ${conversationCount?.toString() ?: "..."}",
                 modifier = Modifier.weight(1f),
             )
-            Button(onClick = { vm.refreshConversationCount() }) {
+            Button(onClick = { vm.refreshConversationCount() }, shape = MaterialTheme.shapes.medium) {
                 Text("刷新")
             }
         }
@@ -228,7 +220,8 @@ private fun MainPage(vm: DebugVM) {
             onClick = {
                 vm.createOversizedConversation(30)
                 toaster.show("正在创建 30MB 超大对话...")
-            }
+            },
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text("创建超大对话 (30MB)")
         }
@@ -237,7 +230,8 @@ private fun MainPage(vm: DebugVM) {
             onClick = {
                 vm.createConversationWithMessages(1024)
                 toaster.show("正在创建 1024 条消息对话...")
-            }
+            },
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text("创建 1024 个消息的聊天")
         }
@@ -263,7 +257,7 @@ private fun MainPage(vm: DebugVM) {
             )
             Button(onClick = {
                 launchCountInput.toIntOrNull()?.let(vm::setLaunchCount)
-            }) {
+            }, shape = MaterialTheme.shapes.medium) {
                 Text("Set")
             }
         }
@@ -286,7 +280,7 @@ private fun MainPage(vm: DebugVM) {
                 dismissedAtInput.toIntOrNull()?.let {
                     vm.updateSettings { latest -> latest.copy(sponsorAlertDismissedAt = it) }
                 }
-            }) {
+            }, shape = MaterialTheme.shapes.medium) {
                 Text("Set")
             }
         }

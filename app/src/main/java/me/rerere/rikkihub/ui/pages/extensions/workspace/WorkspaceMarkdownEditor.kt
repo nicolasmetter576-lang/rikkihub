@@ -51,8 +51,16 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -72,7 +80,15 @@ import me.rerere.rikkihub.R
 import me.rerere.rikkihub.ui.context.LocalSettings
 import me.rerere.rikkihub.ui.theme.JetbrainsMono
 
-internal data class WorkspaceMarkdownPalette(val marker: Color, val link: Color, val quote: Color, val code: Color, val tableHeader: Color = Color.Unspecified)
+/** [quoted]: color of text in quotes (“…” 「…」); unspecified while that highlight is off. */
+internal data class WorkspaceMarkdownPalette(
+    val marker: Color,
+    val link: Color,
+    val quote: Color,
+    val code: Color,
+    val tableHeader: Color = Color.Unspecified,
+    val quoted: Color = Color.Unspecified,
+)
 internal fun workspaceMarkdownSpanStyle(span: WorkspaceMarkdownSpan, palette: WorkspaceMarkdownPalette, headingSizes: Boolean, baseSize: TextUnit): SpanStyle = when (span.style) {
     WorkspaceMarkdownStyle.HEADING -> SpanStyle(fontWeight = FontWeight.Bold,
         fontSize = if (headingSizes) baseSize * when (span.level) { 1 -> 1.6f; 2 -> 1.4f; 3 -> 1.2f; else -> 1.1f } else TextUnit.Unspecified)
@@ -88,6 +104,7 @@ internal fun workspaceMarkdownSpanStyle(span: WorkspaceMarkdownSpan, palette: Wo
     WorkspaceMarkdownStyle.TABLE_HEADER -> SpanStyle(background = palette.tableHeader)
     WorkspaceMarkdownStyle.TABLE_DELIMITER -> SpanStyle(color = palette.marker.copy(alpha = 0.6f))
     WorkspaceMarkdownStyle.MARKER -> SpanStyle(color = palette.marker)
+    WorkspaceMarkdownStyle.QUOTED -> SpanStyle(color = palette.quoted)
 }
 
 /** Highlight inputs held in snapshot state. The [OutputTransformation] is a SINGLE remembered
@@ -99,12 +116,18 @@ internal fun workspaceMarkdownSpanStyle(span: WorkspaceMarkdownSpan, palette: Wo
  */
 private class WorkspaceMarkdownHighlightState {
     var analysis by mutableStateOf<WorkspaceMarkdownAnalysis?>(null)
+    /** Quoted-text spans and the source they were found in (re-anchored like [analysis]). */
+    var quotes by mutableStateOf<Pair<String, List<WorkspaceMarkdownSpan>>?>(null)
     var markdown by mutableStateOf(false)
     var match by mutableStateOf(SpanStyle())
     var currentMatch by mutableStateOf(SpanStyle())
     var palette by mutableStateOf(WorkspaceMarkdownPalette(Color.Unspecified, Color.Unspecified, Color.Unspecified, Color.Unspecified))
     var headingSizes by mutableStateOf(false)
     var baseSize by mutableStateOf(13.sp)
+    var qubagu by mutableStateOf<List<WorkspaceQubaguMark>>(emptyList())
+    var qubaguPending by mutableStateOf(SpanStyle())
+    var qubaguPendingAlt by mutableStateOf(SpanStyle())
+    var qubaguApplied by mutableStateOf(SpanStyle())
 }
 
 /** One state per loaded document, supplied by VM (never rememberTextFieldState / full Bundle).
@@ -130,11 +153,24 @@ internal fun WorkspaceMarkdownEditor(
     onZaizao: ((start: Int, end: Int) -> Unit)? = null,
     /** False while the editor is the off-screen side of the editor page: its find bar leaves the back key alone. */
     active: Boolean = true,
+    /** Non-null offers 八股 in the toolbar; while its marks are shown the text is read-only and a tap on a mark opens it. */
+    qubagu: WorkspaceEditorQubagu? = null,
 ) {
+    val qubaguActive = qubagu?.active == true
+    val locked = readOnly || qubaguActive
+    // Taps on marks focus the read-only field; drop that focus when the marks close, or the keyboard would pop up.
+    val focusManager = LocalFocusManager.current
+    var wasQubaguActive by remember { mutableStateOf(false) }
+    LaunchedEffect(qubaguActive) {
+        if (wasQubaguActive && !qubaguActive) focusManager.clearFocus()
+        wasQubaguActive = qubaguActive
+    }
     val headingSizes = LocalSettings.current.displaySetting.workspaceMarkdownHeadingSizes
     val autoPair = LocalSettings.current.displaySetting.workspaceEditorAutoPair
     val colors = MaterialTheme.colorScheme
-    val palette = WorkspaceMarkdownPalette(colors.tertiary, colors.primary, colors.onSurfaceVariant, colors.surfaceContainerHighest, colors.secondaryContainer)
+    val quotedColor = workspaceQuotedTextColor()
+    val palette = WorkspaceMarkdownPalette(colors.tertiary, colors.primary, colors.onSurfaceVariant, colors.surfaceContainerHighest,
+        colors.secondaryContainer, quotedColor)
     val sourceChanged by rememberUpdatedState(onSourceChange)
     val highlight = remember(state) { WorkspaceMarkdownHighlightState() }
     val find = remember(state) { WorkspaceFindState() }
@@ -178,6 +214,26 @@ internal fun WorkspaceMarkdownEditor(
                         WorkspaceMarkdownAnalysis(analyzed, emptyList(), emptyList(), true)
                     }
                 }
+            }
+    }
+
+    // Quoted text of prose files (Markdown, plain text): found off the main thread once input pauses and
+    // re-anchored meanwhile, like the Markdown spans; code spans of the latest analysis are skipped.
+    val quotesOn = formatKind != null && quotedColor.isSpecified
+    LaunchedEffect(state, quotesOn) {
+        highlight.quotes = null
+        if (!quotesOn) return@LaunchedEffect
+        snapshotFlow { state.text }
+            .distinctUntilChanged { a, b -> a === b || (a.length == b.length && a.contentEquals(b)) }
+            .collectLatest { source ->
+                if (source.length > WorkspaceMarkdownAnalyzer.MAX_SOURCE_CHARS) {
+                    highlight.quotes = null
+                    return@collectLatest
+                }
+                if (highlight.quotes != null) delay(120)
+                val text = source.toString()
+                val code = highlight.analysis?.let { it.spans.rebased(it.source, text) }.orEmpty()
+                highlight.quotes = text to withContext(Dispatchers.Default) { workspaceQuotedSpans(text, code) }
             }
     }
 
@@ -313,6 +369,10 @@ internal fun WorkspaceMarkdownEditor(
                 for (span in result.spans.rebased(result.source, asCharSequence())) addStyle(
                     workspaceMarkdownSpanStyle(span, currentPalette, highlight.headingSizes, highlight.baseSize), span.start, span.end)
             }
+            highlight.quotes?.let { (source, spans) ->
+                val quoted = SpanStyle(color = highlight.palette.quoted)
+                for (span in spans.rebased(source, asCharSequence())) addStyle(quoted, span.start, span.end)
+            }
             if (find.open) {
                 val length = find.matchLength
                 val query = find.query.text
@@ -330,6 +390,21 @@ internal fun WorkspaceMarkdownEditor(
                     }
                 }
             }
+            val length = asCharSequence().length
+            // Two pending marks back to back would read as one: the second of such a pair gets the lighter tint.
+            var previousEnd = -1
+            var lighter = false
+            for (mark in highlight.qubagu) {
+                if (mark.end > length || mark.start >= mark.end) continue
+                lighter = mark.start == previousEnd && !lighter
+                previousEnd = mark.end
+                val style = when {
+                    mark.applied != null -> highlight.qubaguApplied
+                    lighter -> highlight.qubaguPendingAlt
+                    else -> highlight.qubaguPending
+                }
+                addStyle(style, mark.start, mark.end)
+            }
         }
     }
     highlight.markdown = markdown
@@ -337,12 +412,17 @@ internal fun WorkspaceMarkdownEditor(
     highlight.headingSizes = headingSizes
     highlight.match = SpanStyle(background = colors.tertiaryContainer)
     highlight.currentMatch = SpanStyle(background = colors.tertiary, color = colors.onTertiary)
+    highlight.qubagu = qubagu?.marks.orEmpty()
+    highlight.qubaguPending = SpanStyle(background = colors.errorContainer)
+    highlight.qubaguPendingAlt = SpanStyle(background = colors.errorContainer.copy(alpha = 0.45f))
+    highlight.qubaguApplied = SpanStyle(textDecoration = TextDecoration.Underline, color = colors.primary)
     val textStyle = rememberWorkspaceEditorTextStyle(MaterialTheme.typography.bodySmall)
     highlight.baseSize = textStyle.fontSize
     val tuiqiaoLabel = stringResource(R.string.tuiqiao_title)
     val zaizaoLabel = stringResource(R.string.zaizao_title)
     val currentOnTuiqiao by rememberUpdatedState(onTuiqiao)
     val currentOnZaizao by rememberUpdatedState(onZaizao)
+    val currentQubagu by rememberUpdatedState(qubagu)
     val oversized by remember(state) { derivedStateOf { state.text.length > WorkspaceMarkdownAnalyzer.MAX_SOURCE_CHARS } }
     // Half the default top/bottom padding: the toolbar and the status bar already frame the text.
     val contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(top = 8.dp, bottom = 8.dp)
@@ -354,14 +434,14 @@ internal fun WorkspaceMarkdownEditor(
     val toolbar: @Composable () -> Unit = {
         if (!readOnly) WorkspaceEditorToolbar(
             state,
-            WorkspaceEditorToolbarActions(markdown, formatKind, onTuiqiao, onZaizao, onFind = ::openFind),
+            WorkspaceEditorToolbarActions(markdown, formatKind, onTuiqiao, onZaizao, onFind = ::openFind, qubagu = qubagu),
             onEdited = pairs::clear,
         )
     }
     val findBar: @Composable () -> Unit = {
         if (find.open) WorkspaceEditorFindBar(
             find,
-            canReplace = !readOnly,
+            canReplace = !locked,
             onPrevious = { step(-1) },
             onNext = { step(1) },
             onReplace = ::replaceCurrent,
@@ -380,6 +460,24 @@ internal fun WorkspaceMarkdownEditor(
             state = state,
             modifier = Modifier.fillMaxWidth().weight(1f).onSizeChanged { size ->
                 layout.viewportHeight = size.height - verticalPaddingPx
+            }.pointerInput(qubaguActive) {
+                // 八股 marks: a tap (not a drag or long press) on a marked sentence opens it. Watched on the Initial
+                // pass without consuming, so the read-only field still places the caret and selects as usual.
+                if (!qubaguActive) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        waitForUpOrCancellation(PointerEventPass.Initial)
+                    } ?: return@awaitEachGesture
+                    if ((up.position - down.position).getDistance() > viewConfiguration.touchSlop) return@awaitEachGesture
+                    val result = layout.get() ?: return@awaitEachGesture
+                    val marks = currentQubagu ?: return@awaitEachGesture
+                    val position = Offset(
+                        up.position.x - contentPadding.calculateLeftPadding(layoutDirection).toPx(),
+                        up.position.y - contentPadding.calculateTopPadding().toPx() + scroll.value,
+                    )
+                    WorkspaceQubaguMarks(marks.marks).indexAt(result.getOffsetForPosition(position))?.let(marks.onOpen)
+                }
             }.drawWithContent {
                 drawContent()
                 val box = pairs.boxes.lastOrNull() ?: return@drawWithContent
@@ -396,7 +494,7 @@ internal fun WorkspaceMarkdownEditor(
                 val tuiqiao = currentOnTuiqiao
                 val zaizao = currentOnZaizao
                 val selection = state.selection
-                if ((tuiqiao == null && zaizao == null) || selection.collapsed) return@appendTextContextMenuComponents
+                if ((tuiqiao == null && zaizao == null) || selection.collapsed || currentQubagu?.active == true) return@appendTextContextMenuComponents
                 separator()
                 if (tuiqiao != null) item(key = TuiqiaoMenuKey, label = tuiqiaoLabel) {
                     tuiqiao(selection.min, selection.max)
@@ -408,6 +506,7 @@ internal fun WorkspaceMarkdownEditor(
                 }
             }.onPreviewKeyEvent { event ->
                 if (readOnly || event.type != KeyEventType.KeyDown || !event.isCtrlPressed) return@onPreviewKeyEvent false
+                if (qubaguActive && event.key != Key.F) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.Z, Key.Y -> {
                         if (event.key == Key.Y || event.isShiftPressed) state.undoState.redo() else state.undoState.undo()
@@ -421,7 +520,7 @@ internal fun WorkspaceMarkdownEditor(
                     else -> false
                 }
             },
-            readOnly = readOnly,
+            readOnly = locked,
             lineLimits = TextFieldLineLimits.MultiLine(),
             inputTransformation = pairTransformation,
             outputTransformation = transformation,

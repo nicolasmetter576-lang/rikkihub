@@ -161,12 +161,12 @@ class CreatorProviderTester(
         const val MAX_ERROR_CHARS = 600
         const val MAX_REMOTE_MODELS = 200
 
-        /** Every key (several may be stored, separated like KeyRoulette does) and header value. */
         internal fun secretsOf(provider: ProviderSetting): List<String> {
             val keys = when (provider) {
-                is ProviderSetting.OpenAI -> listOf(provider.apiKey)
-                is ProviderSetting.Google -> listOf(provider.apiKey, provider.privateKey)
-                is ProviderSetting.Claude -> listOf(provider.apiKey)
+                is ProviderSetting.OpenAI -> listOf(provider.apiKey) + provider.apiKeys.map { it.key }
+                is ProviderSetting.Google -> listOf(provider.apiKey, provider.privateKey) +
+                    provider.apiKeys.map { it.key } + provider.serviceAccounts.map { it.privateKey }
+                is ProviderSetting.Claude -> listOf(provider.apiKey) + provider.apiKeys.map { it.key }
                 else -> emptyList()
             }
             return (keys.flatMap { it.split(Regex("[\\s,]+")) } + provider.customHeaders.map { it.value })

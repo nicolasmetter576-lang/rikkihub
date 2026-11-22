@@ -495,15 +495,6 @@ class GenerationLoopToolWriteBackTest {
     // ---------------------------------------------------------------
     @Test
     fun `step usage preserves reported totals that prompt plus completion cannot derive`() = runBlocking {
-        // helper 级
-        val totalOnly = mergeStepUsage(null, TokenUsage(0, 0, totalTokens = 55))
-        assertEquals(55, totalOnly.totalTokens)
-        val accumulated = mergeStepUsage(totalOnly, TokenUsage(40, 0, totalTokens = 0))
-        assertEquals(40, accumulated.promptTokens)
-        assertEquals(55, accumulated.totalTokens)
-        val highTotal = mergeStepUsage(null, TokenUsage(40, 15, totalTokens = 200))
-        assertEquals(200, highTotal.totalTokens)
-
         // 真实循环: provider 只上报 totalTokens 的分片, StepFinished 不归零
         val harness = StreamHarness(
             listOf(
@@ -512,7 +503,7 @@ class GenerationLoopToolWriteBackTest {
                         me.rerere.ai.ui.StreamChunk.ToolCallStart(id = "t-1", toolName = "echo_tool"),
                         me.rerere.ai.ui.StreamChunk.ToolCallDelta(id = "t-1", inputDelta = "{}"),
                         me.rerere.ai.ui.StreamChunk.ToolCallEnd(id = "t-1"),
-                        me.rerere.ai.ui.StreamChunk.Usage(TokenUsage(0, 0, totalTokens = 55)),
+                        me.rerere.ai.ui.StreamChunk.Usage(me.rerere.ai.core.UsageUpdate(totalTokens = 55)),
                         me.rerere.ai.ui.StreamChunk.Finish(finishReason = "tool_calls"),
                     )
                 ),

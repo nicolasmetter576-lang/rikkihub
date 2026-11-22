@@ -27,20 +27,24 @@ fun QRCode(
 
     val qrCodeWriter = remember { QRCodeWriter() }
     val bitMatrix = remember(value) {
-        qrCodeWriter.encode(value, BarcodeFormat.QR_CODE, size, size)
+        runCatching { qrCodeWriter.encode(value, BarcodeFormat.QR_CODE, size, size) }.getOrNull()
     }
     val bitmap = remember(bitMatrix) {
-        createBitmap(size, size).apply {
-            for (x in 0 until size) {
-                for (y in 0 until size) {
-                    this[x, y] = if (bitMatrix[x, y]) actualColor.toArgb() else actualBackgroundColor.toArgb()
+        bitMatrix?.let { matrix ->
+            createBitmap(size, size).apply {
+                for (x in 0 until size) {
+                    for (y in 0 until size) {
+                        this[x, y] = if (matrix[x, y]) actualColor.toArgb() else actualBackgroundColor.toArgb()
+                    }
                 }
             }
         }
     }
-    Image(
-        bitmap = bitmap.asImageBitmap(),
-        contentDescription = "qrcode:$value",
-        modifier = modifier
-    )
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = "qrcode:$value",
+            modifier = modifier
+        )
+    }
 }

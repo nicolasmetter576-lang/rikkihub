@@ -208,7 +208,7 @@ class CreatorManagementBridge(
             "BAD_COMMAND", "BAD_INPUT", "FORBIDDEN_FIELD", "INVALID", "INVALID_VALUE" ->
                 "Call creator_describe {kind:\"$kind\", command:\"${op.command}\"} for the exact format and an example."
             "NOT_FOUND", "UNKNOWN_OBJECT" -> "Call creator_list_objects {kind:\"$kind\"} for valid ids (ids are UUIDs, not names)."
-            "BAD_REFERENCE" -> "\"\$n\" may only name a Create/Clone of assistants, tags, quick messages, mode injections, " +
+            "BAD_REFERENCE" -> "\"\$n\" may only name a Create/Clone of assistants, tags, quick messages, prompt library entries, " +
                 "lorebooks, providers or models that comes EARLIER in the same operations list."
             "TOKEN_CONFLICT", "STALE_READSET", "STALE_EPOCH" -> "The data changed meanwhile: read the object again and resend."
             "RESERVED_ID" -> "The creator assistant and its conversations cannot be managed."
@@ -369,11 +369,14 @@ class CreatorManagementBridge(
 
         private val LABEL = Regex("^\\$(\\d+)$")
         /** Keys whose string values are object ids (where `"$n"` references are allowed). */
-        private val ID_KEY = Regex("^(assistantId|modelId|chatModelId|targetId|providerId|tags|lorebookIds|modeInjectionIds|quickMessageIds|mcpServers|orderedIds|moveToAssistantId|workspaceId|workspaceIds|presetId|orderedPresetIds)$")
+        private val ID_KEY = Regex("^(assistantId|bookId|modelId|chatModelId|targetId|providerId|tags|lorebookIds|modeInjectionIds|quickMessageIds|mcpServers|orderedIds|moveToAssistantId|workspaceId|workspaceIds|presetId|orderedPresetIds)$")
 
         private val SETTINGS_KINDS = setOf(CreatorObjectKind.ASSISTANT, CreatorObjectKind.ASSISTANT_TAG,
             CreatorObjectKind.QUICK_MESSAGE, CreatorObjectKind.MODE_INJECTION, CreatorObjectKind.LOREBOOK,
-            CreatorObjectKind.PROVIDER, CreatorObjectKind.MODEL_DEFINITION, CreatorObjectKind.DEFAULT_SLOT, CreatorObjectKind.PROMPT)
-        private val REFERENCEABLE = SETTINGS_KINDS - CreatorObjectKind.DEFAULT_SLOT - CreatorObjectKind.PROMPT
+            CreatorObjectKind.PROVIDER, CreatorObjectKind.MODEL_DEFINITION, CreatorObjectKind.DEFAULT_SLOT, CreatorObjectKind.PROMPT,
+            CreatorObjectKind.LOREBOOK_ENTRY, CreatorObjectKind.PRESET_ENTRY, CreatorObjectKind.REGEX_SCRIPT, CreatorObjectKind.TAVERN_SETTINGS)
+        /** Kinds whose Create/Clone can be named by a later operation of the same call (`"$n"`). */
+        private val REFERENCEABLE = SETTINGS_KINDS - CreatorObjectKind.DEFAULT_SLOT - CreatorObjectKind.PROMPT -
+            CreatorObjectKind.LOREBOOK_ENTRY - CreatorObjectKind.PRESET_ENTRY - CreatorObjectKind.REGEX_SCRIPT - CreatorObjectKind.TAVERN_SETTINGS
     }
 }

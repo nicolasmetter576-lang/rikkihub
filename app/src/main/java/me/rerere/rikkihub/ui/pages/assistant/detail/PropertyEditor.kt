@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.assistant.detail
 
+import androidx.compose.material3.MaterialTheme
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Delete01
@@ -68,7 +69,7 @@ fun CustomHeaders(headers: List<CustomHeader>, onUpdate: (List<CustomHeader>) ->
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Box {
-                                Button(onClick = { chooseName = true }) { Text(stringResource(R.string.header_common_names)) }
+                                Button(onClick = { chooseName = true }, shape = MaterialTheme.shapes.medium) { Text(stringResource(R.string.header_common_names)) }
                                 DropdownMenu(expanded = chooseName, onDismissRequest = { chooseName = false }) {
                                     listOf("Authorization", "User-Agent", "Content-Type", "Accept", "x-api-key", "x-goog-api-key", "anthropic-version", "anthropic-beta", "X-Session-ID", "HTTP-Referer", "X-Title").forEach { name ->
                                         DropdownMenuItem(text = { Text(name) }, onClick = {
@@ -127,7 +128,8 @@ fun CustomHeaders(headers: List<CustomHeader>, onUpdate: (List<CustomHeader>) ->
                 updatedHeaders.add(CustomHeader("", ""))
                 onUpdate(updatedHeaders)
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.assistant_page_add_header))
             Spacer(Modifier.width(4.dp))
@@ -232,7 +234,8 @@ fun CustomBodies(customBodies: List<CustomBody>, onUpdate: (List<CustomBody>) ->
                 updatedBodies.add(CustomBody("", JsonPrimitive("")))
                 onUpdate(updatedBodies)
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.assistant_page_add_body))
             Spacer(Modifier.width(4.dp))

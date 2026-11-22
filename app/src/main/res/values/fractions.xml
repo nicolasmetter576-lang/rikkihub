@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动图标前景每边往里缩的比例：图案缩到 72%，最远点离中心 30dp，在自适应图标 33dp 安全区内，任何遮罩形状都不会切到 -->
+    <fraction name="launcher_foreground_inset">14%</fraction>
+</resources>

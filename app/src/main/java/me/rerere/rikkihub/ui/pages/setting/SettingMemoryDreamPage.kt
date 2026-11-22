@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,12 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -21,45 +24,57 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ai.provider.ModelType
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowRight01
+import me.rerere.hugeicons.stroke.Globe02
 import me.rerere.rikkihub.R
+import me.rerere.rikkihub.Screen
 import me.rerere.rikkihub.data.ai.MemoryDreamConfig
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_MEMORY_DREAM_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_MEMORY_FULL_REVIEW_PROMPT
 import me.rerere.rikkihub.data.datastore.findModelById
+import me.rerere.rikkihub.data.repository.MemoryRepository
 import me.rerere.rikkihub.ui.components.ai.ModelSelector
 import me.rerere.rikkihub.ui.components.nav.BackButton
 import me.rerere.rikkihub.ui.components.ui.CardGroup
 import me.rerere.rikkihub.ui.components.ui.switchItem
+import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
 /** 记忆库「做梦」的全局设置：自动开关、触发时机、模型、步数和两段提示词。 */
 @Composable
-fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
+fun SettingMemoryDreamPage(
+    vm: SettingVM = koinViewModel(),
+    memoryRepository: MemoryRepository = koinInject(),
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val globalMemoryCount by remember(memoryRepository) {
+        memoryRepository.getFileCountFlow(MemoryRepository.GLOBAL_MEMORY_ID)
+    }.collectAsStateWithLifecycle(0)
+    val navController = LocalNavController.current
     val config = settings.memoryDream
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.setting_memory_dream_title)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { contentPadding ->
         LazyColumn(
+            state = rememberSettingSearchListState(),
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -72,20 +87,34 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
             }
+            item("global-memory") {
+                CardGroup(modifier = Modifier.padding(horizontal = AppSpacing.xxs)) {
+                    item(
+                        onClick = { navController.navigate(Screen.GlobalMemory) },
+                        leadingContent = { Icon(HugeIcons.Globe02, contentDescription = null) },
+                        headlineContent = { Text(stringResource(R.string.global_memory_manage_entry)) },
+                        supportingContent = {
+                            Text(stringResource(R.string.memory_file_count_summary, globalMemoryCount))
+                        },
+                        trailingContent = { Icon(HugeIcons.ArrowRight01, contentDescription = null) },
+                    )
+                }
+            }
             item("auto") {
-                CardGroup(modifier = Modifier.padding(horizontal = 8.dp)) {
+                CardGroup(modifier = Modifier.padding(horizontal = AppSpacing.xxs)) {
                     switchItem(
                         checked = config.autoDream,
                         onCheckedChange = { checked -> vm.updateMemoryDream { it.copy(autoDream = checked) } },
                         headlineContent = { Text(stringResource(R.string.setting_memory_dream_auto)) },
                         supportingContent = { Text(stringResource(R.string.setting_memory_dream_auto_desc)) },
                         modifier = Modifier.testTag("memory-dream-auto"),
+                        searchKey = R.string.setting_memory_dream_auto,
                     )
                 }
             }
             item("triggers") {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.setting_memory_dream_triggers)) },
                 ) {
                     item(
@@ -93,7 +122,7 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = {
                             Column {
                                 Text(stringResource(R.string.setting_memory_dream_idle_desc))
-                                DreamSlider(
+                                SettingIntSlider(
                                     value = config.idleDelay.inWholeMinutes.toInt(),
                                     range = MemoryDreamConfig.MIN_IDLE_MINUTES..MemoryDreamConfig.MAX_IDLE_MINUTES,
                                     enabled = config.autoDream,
@@ -103,13 +132,14 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                                 )
                             }
                         },
+                        searchKey = R.string.setting_memory_dream_idle,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_memory_dream_turns)) },
                         supportingContent = {
                             Column {
                                 Text(stringResource(R.string.setting_memory_dream_turns_desc))
-                                DreamSlider(
+                                SettingIntSlider(
                                     value = config.effectiveMaxPendingTurns,
                                     range = MemoryDreamConfig.MIN_PENDING_TURNS..MemoryDreamConfig.MAX_PENDING_TURNS,
                                     enabled = config.autoDream,
@@ -119,6 +149,7 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                                 )
                             }
                         },
+                        searchKey = R.string.setting_memory_dream_turns,
                     )
                     switchItem(
                         checked = config.dreamOnLeave,
@@ -126,6 +157,7 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                         enabled = config.autoDream,
                         headlineContent = { Text(stringResource(R.string.setting_memory_dream_on_leave)) },
                         supportingContent = { Text(stringResource(R.string.setting_memory_dream_on_leave_desc)) },
+                        searchKey = R.string.setting_memory_dream_on_leave,
                     )
                     switchItem(
                         checked = config.dreamOnBackground,
@@ -133,6 +165,7 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                         enabled = config.autoDream,
                         headlineContent = { Text(stringResource(R.string.setting_memory_dream_on_background)) },
                         supportingContent = { Text(stringResource(R.string.setting_memory_dream_on_background_desc)) },
+                        searchKey = R.string.setting_memory_dream_on_background,
                     )
                     switchItem(
                         checked = config.catchUpOnStartup,
@@ -140,12 +173,13 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                         enabled = config.autoDream,
                         headlineContent = { Text(stringResource(R.string.setting_memory_dream_on_startup)) },
                         supportingContent = { Text(stringResource(R.string.setting_memory_dream_on_startup_desc)) },
+                        searchKey = R.string.setting_memory_dream_on_startup,
                     )
                 }
             }
             item("model") {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.setting_memory_dream_model)) },
                 ) {
                     item(
@@ -177,7 +211,7 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = {
                             Column {
                                 Text(stringResource(R.string.setting_memory_dream_steps_desc))
-                                DreamSlider(
+                                SettingIntSlider(
                                     value = config.effectiveMaxSteps,
                                     range = MemoryDreamConfig.MIN_STEPS..MemoryDreamConfig.MAX_STEPS,
                                     label = { it.toString() },
@@ -186,6 +220,7 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
                                 )
                             }
                         },
+                        searchKey = R.string.setting_memory_dream_steps,
                     )
                 }
             }
@@ -225,7 +260,7 @@ fun SettingMemoryDreamPage(vm: SettingVM = koinViewModel()) {
 
 /** 整数滑块：拖动时只改本地值，松手才保存 */
 @Composable
-private fun DreamSlider(
+internal fun SettingIntSlider(
     value: Int,
     range: IntRange,
     label: @Composable (Int) -> String,

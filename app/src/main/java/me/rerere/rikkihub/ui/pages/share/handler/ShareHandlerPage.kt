@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.share.handler
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -34,6 +34,8 @@ import me.rerere.rikkihub.utils.navigateToChatPage
 import me.rerere.rikkihub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
 
 @Composable
 fun ShareHandlerPage(text: String, image: String?) {
@@ -46,13 +48,14 @@ fun ShareHandlerPage(text: String, image: String?) {
             TopAppBar(
                 title = {
                     Text(stringResource(R.string.share_handler_page_title))
-                }
+                },
+                expandedHeight = AppTopBarHeight,
             )
         }
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = it + PaddingValues(16.dp),
+            contentPadding = it + PaddingValues(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
@@ -80,7 +83,7 @@ fun ShareHandlerPage(text: String, image: String?) {
                 }
             }
 
-            items(settings.assistants) { assistant ->
+            items(settings.assistants.filter { it.enabled || it.id == settings.assistantId }) { assistant ->
                 Surface(
                     onClick = {
                         scope.launch {
@@ -95,7 +98,7 @@ fun ShareHandlerPage(text: String, image: String?) {
                     tonalElevation = 4.dp,
                     shape = MaterialTheme.shapes.medium
                 ) {
-                    ListItem(
+                    CompactListItem(
                         headlineContent = {
                             Text(
                                 text = assistant.name.ifEmpty {

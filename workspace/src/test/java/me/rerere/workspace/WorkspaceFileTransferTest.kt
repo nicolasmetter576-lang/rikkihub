@@ -444,4 +444,38 @@ class WorkspaceFileTransferTest {
         assertTrue(File(a, "a.txt").exists())
         assertFalse(File(b, "a.txt").exists())
     }
+
+    // ---------- 整个存储根复制为一个具名文件夹 ----------
+
+    @Test
+    fun `copies a whole root as a folder of the given name, numbered on clash`() = runBlocking {
+        val (a, b) = roots()
+        File(a, "ch1").mkdirs()
+        File(a, "ch1/1.md").writeText("one")
+        File(a, "empty").mkdirs()
+        Files.createSymbolicLink(File(a, "link").toPath(), File(a, "ch1/1.md").toPath())
+
+        val first = transfer.copyFolder(a, b, "", "小说")
+        assertEquals("小说", first.target)
+        assertTrue(first.isDirectory)
+        assertFalse(first.renamed)
+        assertEquals(1, first.skippedLinks)
+        assertEquals("one", File(b, "小说/ch1/1.md").readText())
+        assertTrue(File(b, "小说/empty").isDirectory)
+        assertFalse(Files.exists(File(b, "小说/link").toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+
+        val second = transfer.copyFolder(a, b, "", "小说")
+        assertEquals("小说 (1)", second.target)
+        assertTrue(second.renamed)
+        assertEquals("one", File(a, "ch1/1.md").readText())
+    }
+
+    @Test
+    fun `refuses to copy a root into itself`() = runBlocking {
+        val (a, _) = roots()
+        File(a, "ch1").mkdirs()
+        expectCode(WorkspaceFileOperationException.TRANSFER_INTO_ITSELF) { transfer.copyFolder(a, a, "", "copy") }
+        expectCode(WorkspaceFileOperationException.TRANSFER_INTO_ITSELF) { transfer.copyFolder(a, a.parentFile, "files/ch1", "copy") }
+        assertEquals(listOf("ch1"), a.list()!!.toList())
+    }
 }

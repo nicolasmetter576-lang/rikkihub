@@ -29,8 +29,10 @@ import type {
 } from "~/types";
 
 import { copyTextToClipboard } from "~/lib/clipboard";
+import { stripTitleFromParts } from "~/lib/message-title";
 import { convertMessageToMarkdown, downloadMarkdown } from "~/lib/export-markdown";
 import { cn } from "~/lib/utils";
+import { messageUsageStats, reportedTokenCount, type UsageMessage } from "~/lib/message-usage";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -38,6 +40,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { qubaguRecordsOfParts, type QubaguPartRecord } from "@overlay/lib/qubagu";
+import { activationsOfParts } from "@overlay/lib/tavern";
+
+import { ActivationsButton } from "./chat-message-activations";
+import { QubaguButton } from "./chat-message-qubagu";
 import { ChatMessageAnnotationsRow } from "./chat-message-annotations";
 import { ChatMessageAvatarRow } from "./chat-message-avatar-row";
 import { ChatMessageCheckpoint } from "./chat-message-checkpoint";
@@ -49,6 +56,7 @@ interface ChatMessageProps {
   message: MessageDto;
   loading?: boolean;
   isLastMessage?: boolean;
+  isCliSession?: boolean;
   assistant?: AssistantProfile | null;
   model?: ProviderModel | null;
   translating?: boolean;
@@ -56,7 +64,9 @@ interface ChatMessageProps {
   onRegenerate?: (messageId: string) => void | Promise<void>;
   onSelectBranch?: (nodeId: string, selectIndex: number) => void | Promise<void>;
   onDelete?: (messageId: string) => void | Promise<void>;
+  skipDeleteConfirm?: boolean;
   onFork?: (messageId: string) => void | Promise<void>;
+  onOpenContextUsage?: () => void;
   onToggleFavorite?: (nodeId: string) => void | Promise<void>;
   onTranslate?: (messageId: string, language: string) => void | Promise<void>;
   onClearTranslation?: (messageId: string) => void | Promise<void>;
@@ -67,6 +77,8 @@ interface ChatMessageProps {
     answer?: string,
   ) => void | Promise<void>;
 }
+
+const NO_QUBAGU_RECORDS: QubaguPartRecord[] = [];
 
 function hasRenderablePart(part: UIMessagePart): boolean {
   switch (part.type) {
@@ -132,16 +144,6 @@ function formatNumber(value: number): string {
   return NUMBER_FORMATTER.format(value);
 }
 
-function getDurationMs(createdAt: string, finishedAt?: string | null): number | null {
-  const start = Date.parse(createdAt);
-  if (Number.isNaN(start)) return null;
-
-  const end = finishedAt ? Date.parse(finishedAt) : Date.now();
-  if (Number.isNaN(end) || end <= start) return null;
-
-  return end - start;
-}
-
 interface NerdStatsItem {
   key: string;
   icon: React.ReactNode;
@@ -149,22 +151,19 @@ interface NerdStatsItem {
 }
 
 /**
- * 统计行。多轮工具调用时 usage 是各步累计值：行内显示最后一次请求的上下文占用，
- * 累计值放在悬停提示里。
+ * 统计行：已报告累计用量与最近逻辑模型步骤的参考值分开，未知值不伪装成零。
  */
 export function getNerdStats(
-  message: Pick<
-    MessageDto,
-    "usage" | "lastUsage" | "stepCount" | "generationTimeMs" | "createdAt" | "finishedAt"
-  >,
+  message: UsageMessage,
   contextLength: number | null | undefined,
   t: TFunction,
 ): { items: NerdStatsItem[]; details: string } {
   const usage = message.usage;
   if (!usage) return { items: [], details: "" };
-  const last = message.lastUsage ?? usage;
-  const steps = message.stepCount ?? 1;
-  const contextTokens = last.promptTokens + last.completionTokens;
+  const stats = messageUsageStats(message);
+  const { steps, contextTokens, outputTokens, durationMs, tps, estimated } = stats;
+  const last = contextTokens !== null ? stats.lastUsage : null;
+  const unknown = t("chat_message.usage_unknown");
   const items: NerdStatsItem[] = [];
 
   if (steps > 1) {
@@ -179,64 +178,73 @@ export function getNerdStats(
     key: "context",
     icon: <Layers className="size-3" />,
     label:
-      last.cachedTokens > 0
+      last && last.cachedTokens > 0
         ? t("chat_message.usage_context_cached", {
-            tokens: formatNumber(contextTokens),
+            tokens: formatNumber(contextTokens!),
             cached: formatNumber(last.cachedTokens),
           })
-        : t("chat_message.usage_context", { tokens: formatNumber(contextTokens) }),
+        : t("chat_message.usage_context", { tokens: contextTokens !== null ? formatNumber(contextTokens) : unknown }),
   });
 
   items.push({
     key: "completion",
     icon: <ArrowDown className="size-3" />,
-    label: t("chat_message.usage_output", { tokens: formatNumber(usage.completionTokens) }),
+    label: t("chat_message.usage_output", { tokens: outputTokens !== null ? formatNumber(outputTokens) : unknown }),
   });
 
-  // 旧消息没有记录生成耗时，退回用创建到完成的总时长估算
-  const durationMs =
-    message.generationTimeMs ?? getDurationMs(message.createdAt, message.finishedAt);
-  const tps = durationMs && usage.completionTokens > 0 ? usage.completionTokens / (durationMs / 1000) : null;
   if (tps !== null) {
     items.push({
       key: "speed",
       icon: <Zap className="size-3" />,
-      label: t("chat_message.tokens_per_second", { value: tps.toFixed(1) }),
+      label: t(estimated ? "chat_message.usage_speed_estimated" : "chat_message.tokens_per_second", { value: tps.toFixed(1) }),
     });
   }
 
+  const status = stats.usageComplete === false
+    ? t("chat_message.usage_incomplete")
+    : stats.usageComplete === null ? t("chat_message.usage_legacy") : null;
+  if (status) items.push({ key: "status", icon: null, label: status });
+
   const exact = (value: number) => value.toLocaleString();
-  const lines: string[] = [];
-  const window = contextLength && contextLength > 0 ? contextLength : null;
-  lines.push(
-    window
-      ? t("chat_message.usage_detail_context_window", {
-          tokens: exact(contextTokens),
-          window: exact(window),
-          percent: Math.round((contextTokens / window) * 100),
-        })
-      : t("chat_message.usage_detail_context", { tokens: exact(contextTokens) }),
-  );
-  lines.push(
-    t("chat_message.usage_detail_last", {
-      input: exact(last.promptTokens),
-      cached: exact(last.cachedTokens),
-      output: exact(last.completionTokens),
-    }),
-  );
-  if (steps > 1) {
-    lines.push(t("chat_message.usage_detail_steps", { count: steps }));
+  const reported = (value: number) => {
+    const count = reportedTokenCount(value, stats.usageComplete);
+    return count !== null ? exact(count) : unknown;
+  };
+  const lines: string[] = status ? [status] : [];
+  const window = contextLength != null && Number.isFinite(contextLength) && contextLength > 0 ? contextLength : null;
+  if (last && contextTokens !== null) {
     lines.push(
-      t("chat_message.usage_detail_total", {
-        input: exact(usage.promptTokens),
-        cached: exact(usage.cachedTokens),
-        output: exact(usage.completionTokens),
+      window
+        ? t("chat_message.usage_detail_context_window", {
+            tokens: exact(contextTokens),
+            window: exact(window),
+            percent: Math.round((contextTokens / window) * 100),
+          })
+        : t("chat_message.usage_detail_context", { tokens: exact(contextTokens) }),
+      t("chat_message.usage_detail_last", {
+        input: exact(last.promptTokens),
+        cached: reportedTokenCount(last.cachedTokens, stats.usageComplete) !== null ? exact(last.cachedTokens) : unknown,
+        output: stats.usageComplete !== null ? exact(last.completionTokens) : reported(last.completionTokens),
       }),
     );
+  } else {
+    lines.push(t("chat_message.usage_current_unknown"));
   }
-  if (durationMs) {
-    lines.push(t("chat_message.usage_detail_duration", { value: (durationMs / 1000).toFixed(1) }));
+  if (steps > 1) lines.push(t("chat_message.usage_detail_steps", { count: steps }));
+  lines.push(t("chat_message.usage_detail_total", {
+    input: reported(usage.promptTokens),
+    cached: reported(usage.cachedTokens),
+    output: reported(usage.completionTokens),
+  }));
+  if (reportedTokenCount(usage.totalTokens, stats.usageComplete) !== null) {
+    lines.push(t("chat_message.usage_reported_total", { tokens: exact(usage.totalTokens) }));
   }
+  if (durationMs !== null) {
+    lines.push(t(estimated ? "chat_message.usage_detail_duration_estimated" : "chat_message.usage_detail_duration", {
+      value: (durationMs / 1000).toFixed(1),
+    }));
+  }
+  lines.push(t("chat_message.usage_context_note"), t("chat_message.usage_timing_note"));
   return { items, details: lines.join("\n") };
 }
 
@@ -293,11 +301,13 @@ const ChatMessageActionsRow = React.memo(
     node,
     message,
     loading,
+    isCliSession = false,
     alignRight,
     onEdit,
     onRegenerate,
     onSelectBranch,
     onDelete,
+    skipDeleteConfirm = false,
     onFork,
     onToggleFavorite,
     onTranslate,
@@ -306,11 +316,13 @@ const ChatMessageActionsRow = React.memo(
     node: MessageNodeDto;
     message: MessageDto;
     loading: boolean;
+    isCliSession?: boolean;
     alignRight: boolean;
     onEdit?: (message: MessageDto) => void | Promise<void>;
     onRegenerate?: (messageId: string) => void | Promise<void>;
     onSelectBranch?: (nodeId: string, selectIndex: number) => void | Promise<void>;
     onDelete?: (messageId: string) => void | Promise<void>;
+    skipDeleteConfirm?: boolean;
     onFork?: (messageId: string) => void | Promise<void>;
     onToggleFavorite?: (nodeId: string) => void | Promise<void>;
     onTranslate?: (language: string) => void | Promise<void>;
@@ -324,7 +336,7 @@ const ChatMessageActionsRow = React.memo(
     const [favoriting, setFavoriting] = React.useState(false);
 
     const handleCopy = React.useCallback(async () => {
-      const text = buildCopyText(message.parts, t);
+      const text = buildCopyText(stripTitleFromParts(message.parts, message.role), t);
       if (!text) return;
 
       try {
@@ -369,8 +381,10 @@ const ChatMessageActionsRow = React.memo(
     const handleDelete = React.useCallback(async () => {
       if (!onDelete) return;
 
-      const confirmed = window.confirm(t("chat_message.delete_confirm"));
-      if (!confirmed) return;
+      if (!skipDeleteConfirm) {
+        const confirmed = window.confirm(t("chat_message.delete_confirm"));
+        if (!confirmed) return;
+      }
 
       setDeleting(true);
       try {
@@ -378,7 +392,7 @@ const ChatMessageActionsRow = React.memo(
       } finally {
         setDeleting(false);
       }
-    }, [message.id, onDelete, t]);
+    }, [message.id, onDelete, skipDeleteConfirm, t]);
 
     const handleFork = React.useCallback(async () => {
       if (!onFork) return;
@@ -404,10 +418,19 @@ const ChatMessageActionsRow = React.memo(
 
     const canSwitchBranch = Boolean(onSelectBranch) && node.messages.length > 1;
     const canEdit =
+      !isCliSession &&
       Boolean(onEdit) &&
       (message.role === "USER" || message.role === "ASSISTANT") &&
       hasEditableContent(message.parts);
     const canTranslate = Boolean(onTranslate) && message.role === "ASSISTANT";
+    const activations = React.useMemo(
+      () => (!isCliSession && message.role === "ASSISTANT" ? activationsOfParts(message.parts) : null),
+      [isCliSession, message.role, message.parts],
+    );
+    const qubaguRecords = React.useMemo(
+      () => (!isCliSession && message.role === "ASSISTANT" ? qubaguRecordsOfParts(message.parts) : NO_QUBAGU_RECORDS),
+      [isCliSession, message.role, message.parts],
+    );
     const actionDisabled =
       loading || switchingBranch || regenerating || deleting || forking || favoriting;
 
@@ -456,6 +479,12 @@ const ChatMessageActionsRow = React.memo(
             onTranslate={onTranslate}
             onClearTranslation={onClearTranslation ?? (() => {})}
           />
+        ) : null}
+
+        {activations ? <ActivationsButton summary={activations} disabled={actionDisabled} alignRight={alignRight} /> : null}
+
+        {!isCliSession && message.role === "ASSISTANT" ? (
+          <QubaguButton messageId={message.id} records={qubaguRecords} disabled={actionDisabled} alignRight={alignRight} />
         ) : null}
 
         {onToggleFavorite ? (
@@ -596,10 +625,12 @@ const ChatMessageNerdLineRow = React.memo(
     message,
     alignRight,
     contextLength,
+    onOpenContextUsage,
   }: {
     message: MessageDto;
     alignRight: boolean;
     contextLength?: number | null;
+    onOpenContextUsage?: () => void;
   }) => {
     const { t } = useTranslation("message");
     const displaySetting = useSettingsStore((state) => state.settings?.displaySetting);
@@ -625,6 +656,16 @@ const ChatMessageNerdLineRow = React.memo(
             <span>{item.label}</span>
           </div>
         ))}
+        {onOpenContextUsage ? (
+          <button
+            type="button"
+            onClick={onOpenContextUsage}
+            data-testid="nerd-line-open-context-breakdown"
+            className="inline-flex items-center gap-1 underline-offset-2 hover:text-foreground hover:underline"
+          >
+            {t("chat_message.usage_open_breakdown")}
+          </button>
+        ) : null}
       </div>
     );
   },
@@ -636,6 +677,7 @@ export const ChatMessage = React.memo(
     message,
     loading = false,
     isLastMessage = false,
+    isCliSession = false,
     assistant,
     model,
     translating = false,
@@ -643,7 +685,9 @@ export const ChatMessage = React.memo(
     onRegenerate,
     onSelectBranch,
     onDelete,
+    skipDeleteConfirm = false,
     onFork,
+    onOpenContextUsage,
     onToggleFavorite,
     onTranslate,
     onClearTranslation,
@@ -663,7 +707,13 @@ export const ChatMessage = React.memo(
     );
 
     if (message.isContextCheckpoint) {
-      return <ChatMessageCheckpoint message={message} onEdit={onEdit} onDelete={onDelete} />;
+      return (
+        <ChatMessageCheckpoint
+          message={message}
+          onEdit={isCliSession ? undefined : onEdit}
+          onDelete={onDelete}
+        />
+      );
     }
 
     return (
@@ -686,13 +736,16 @@ export const ChatMessage = React.memo(
               data-message-bubble
               className={cn(
                 "flex flex-col gap-2 text-sm",
-                isUser ? "max-w-[85%] rounded-lg bg-muted px-4 py-3" : "w-full",
+                isUser ? "max-w-[85%] rounded-xl bg-muted px-3.5 py-2.5" : "w-full",
               )}
             >
               <MessageParts
                 parts={message.parts}
+                display={message.display}
                 charts={message.charts}
                 loading={loading}
+                isCliSession={isCliSession}
+                role={message.role}
                 onToolApproval={onToolApproval}
                 onClickCitation={handleClickCitation}
               />
@@ -713,11 +766,13 @@ export const ChatMessage = React.memo(
               node={node}
               message={message}
               loading={loading}
+              isCliSession={isCliSession}
               alignRight={isUser}
               onEdit={onEdit}
               onRegenerate={onRegenerate}
               onSelectBranch={onSelectBranch}
               onDelete={onDelete}
+              skipDeleteConfirm={skipDeleteConfirm}
               onFork={onFork}
               onToggleFavorite={onToggleFavorite}
               onTranslate={
@@ -735,7 +790,8 @@ export const ChatMessage = React.memo(
         <ChatMessageNerdLineRow
           message={message}
           alignRight={isUser}
-          contextLength={model?.contextLength}
+          contextLength={model?.contextLength ?? message.contextLength}
+          onOpenContextUsage={onOpenContextUsage}
         />
       </div>
     );

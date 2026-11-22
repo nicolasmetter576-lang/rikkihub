@@ -2,7 +2,7 @@ import * as React from "react";
 
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Copy, Download, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -23,7 +23,10 @@ import {
   reportSettingsError,
 } from "@overlay/components/settings/settings-ui";
 import { AssistantMemoryPanel } from "@overlay/components/settings/assistant-memory-panel";
-import { AssistantSystemPromptEditor } from "@overlay/components/settings/assistant-system-prompt-editor";
+import { AssistantPromptSection } from "@overlay/components/tavern/assistant-prompt-section";
+import { isUuid } from "@overlay/lib/tavern";
+import { presetExportHref, startDownload } from "@overlay/lib/characters";
+import { SamplingFields, samplingPayload } from "@overlay/components/settings/assistant-sampling";
 import { skillsApi, skillsQueryKey, type SkillSummary } from "@overlay/lib/skills";
 import { getAssistantDisplayName, getModelDisplayName } from "~/lib/display";
 import {
@@ -103,7 +106,7 @@ export default function SettingsAssistantDetailPage() {
       ...assistant,
       tags: asIdList(assistant.tags),
       mcpServers: asIdList(assistant.mcpServers),
-      modeInjectionIds: asIdList(assistant.modeInjectionIds),
+      libraryEntryIds: asIdList(assistant.libraryEntryIds),
       lorebookIds: asIdList(assistant.lorebookIds),
       quickMessageIds: asIdList(assistant.quickMessageIds),
       localTools: normalizeLocalTools(assistant.localTools),
@@ -116,6 +119,9 @@ export default function SettingsAssistantDetailPage() {
   }
 
   const chatModels = listChatModels(settings);
+  // The length the assistant's chat model can take (its own model, or the global default), shown next to the context option.
+  const effectiveModelId = draft.chatModelId || settings?.chatModelId;
+  const modelContextLength = chatModels.find(({ model }) => model.id === effectiveModelId)?.model.contextLength ?? null;
   const creator = isCreatorAssistant(assistant.id);
   const defaultLocked = isDefaultAssistant(assistant.id) || creator;
 
@@ -135,12 +141,13 @@ export default function SettingsAssistantDetailPage() {
         temperature: draft.temperature ?? null,
         topP: draft.topP ?? null,
         maxTokens: draft.maxTokens ?? null,
+        ...samplingPayload(draft),
       });
       setDraft({
         ...saved,
         tags: asIdList(saved.tags),
         mcpServers: asIdList(saved.mcpServers),
-        modeInjectionIds: asIdList(saved.modeInjectionIds),
+        libraryEntryIds: asIdList(saved.libraryEntryIds),
         lorebookIds: asIdList(saved.lorebookIds),
         quickMessageIds: asIdList(saved.quickMessageIds),
         localTools: normalizeLocalTools(saved.localTools),
@@ -161,6 +168,10 @@ export default function SettingsAssistantDetailPage() {
         description={assistant.id}
         actions={
           <>
+            <Button type="button" variant="outline" onClick={() => startDownload(presetExportHref(assistant.id))}>
+              <Download className="size-4" />
+              {t("assistants.export_preset")}
+            </Button>
             {creator ? null : <Button
               type="button"
               variant="outline"
@@ -259,6 +270,7 @@ export default function SettingsAssistantDetailPage() {
             onChange={(event) => updateDraft({ maxTokens: parseOptionalNumber(event.target.value) })}
           />
         </SettingsField>
+        <SamplingFields draft={draft} onChange={updateDraft} />
         {creator ? (
           <SettingsField label={t("assistants.fields.workspace")} hint={t("assistants.hints.creator_no_workspace")}>
             <span className="text-sm text-muted-foreground">{t("assistants.fields.no_workspace")}</span>
@@ -296,9 +308,19 @@ export default function SettingsAssistantDetailPage() {
 
       <div className="grid gap-3 md:grid-cols-2">
         <SettingsSwitchRow
+          label={t("assistants.fields.enabled")}
+          checked={draft.enabled !== false}
+          onCheckedChange={(checked) => updateDraft({ enabled: checked })}
+        />
+        <SettingsSwitchRow
           label={t("assistants.fields.stream_output")}
           checked={draft.streamOutput !== false}
           onCheckedChange={(checked) => updateDraft({ streamOutput: checked })}
+        />
+        <SettingsSwitchRow
+          label={t("assistants.fields.message_title")}
+          checked={draft.enableMessageTitle === true}
+          onCheckedChange={(checked) => updateDraft({ enableMessageTitle: checked })}
         />
         <SettingsSwitchRow
           label={t("assistants.fields.enable_web_search")}
@@ -355,7 +377,16 @@ export default function SettingsAssistantDetailPage() {
         draftUseGlobal={draft.useGlobalMemory === true}
       />
 
-      <AssistantSystemPromptEditor assistant={draft} onChange={updateDraft} />
+      {draft.promptPreset ? (
+        <AssistantPromptSection
+          assistantId={draft.id}
+          preset={draft.promptPreset}
+          onChange={(promptPreset) => updateDraft({ promptPreset })}
+          modelContextLength={modelContextLength}
+          tavernMode={draft.tavernMode === true}
+          onTavernModeChange={(tavernMode) => updateDraft({ tavernMode })}
+        />
+      ) : null}
       <SettingsField label={t("assistants.fields.message_template")} hint={t("assistants.hints.message_template")}>
         <Input
           value={draft.messageTemplate ?? "{{ message }}"}
@@ -419,12 +450,14 @@ export default function SettingsAssistantDetailPage() {
       />
       <SettingsCheckboxGroup
         label={t("assistants.fields.mode_injections")}
-        selected={draft.modeInjectionIds ?? []}
-        onChange={(modeInjectionIds) => updateDraft({ modeInjectionIds })}
-        items={(settings?.modeInjections ?? []).map((item) => ({
-          id: item.id,
-          label: item.name || t("common.unnamed"),
-        }))}
+        selected={draft.libraryEntryIds ?? []}
+        onChange={(libraryEntryIds) => updateDraft({ libraryEntryIds })}
+        items={(settings?.promptLibrary ?? [])
+          .filter((item) => isUuid(item.identifier))
+          .map((item) => ({
+            id: item.identifier,
+            label: item.name || t("common.unnamed"),
+          }))}
       />
       <SettingsCheckboxGroup
         label={t("assistants.fields.lorebooks")}

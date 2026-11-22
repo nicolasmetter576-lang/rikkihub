@@ -1,7 +1,7 @@
 import { requestWorkspaceEditorLeave } from "@overlay/components/workspace/use-workspace-editor-session";
 import * as React from "react";
 
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
@@ -77,7 +77,9 @@ export default function WorkspaceDetailPage() {
   const params = useParams();
   const id = params.id ?? "";
   const queryClient = useQueryClient();
-  const [tab, setTab] = React.useState<"files" | "terminal" | "device">("files");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const tab = requestedTab === "terminal" || requestedTab === "device" ? requestedTab : "files";
   const [resetEnablementOpen, setResetEnablementOpen] = React.useState(false);
   const toolOverrides = useSettingsStore((state) => state.settings?.toolOverrides);
   const providers = useSettingsStore((state) => state.settings?.providers);
@@ -164,7 +166,10 @@ export default function WorkspaceDetailPage() {
         </div>
         <SettingsSegmented
           value={tab}
-          onChange={next => requestWorkspaceEditorLeave(() => setTab(next))}
+          onChange={next => requestWorkspaceEditorLeave(() => setSearchParams(current => {
+            current.set("tab", next);
+            return current;
+          }, { replace: true }))}
           options={[
             { value: "files", label: t("detail.files") },
             { value: "terminal", label: t("detail.terminal") },
@@ -173,7 +178,7 @@ export default function WorkspaceDetailPage() {
         />
       </div>
 
-      <div className="space-y-3 rounded-lg border p-4">
+      <div className="space-y-3 rounded-xl border p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
             <h2 className="text-sm font-medium">{t("detail.first_message_snapshot")}</h2>
@@ -213,7 +218,7 @@ export default function WorkspaceDetailPage() {
         ) : null}
       </div>
 
-      <div className="space-y-3 rounded-lg border p-4">
+      <div className="space-y-3 rounded-xl border p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
             <h2 className="text-sm font-medium">{t("detail.compatibility_mode")}</h2>
@@ -230,7 +235,7 @@ export default function WorkspaceDetailPage() {
 
       {subagentEnabled ? (
         <>
-          <div className="space-y-3 rounded-lg border p-4">
+          <div className="space-y-3 rounded-xl border p-3">
             <div>
               <h2 className="text-sm font-medium">{t("detail.subagent")}</h2>
               <p className="text-xs text-muted-foreground">{t("detail.subagent_desc")}</p>
@@ -269,16 +274,16 @@ export default function WorkspaceDetailPage() {
         </>
       ) : null}
 
-      <div className="space-y-3 rounded-lg border p-4">
+      <div className="space-y-3 rounded-xl border p-3">
         <div>
           <h2 className="text-sm font-medium">{t("detail.mounts")}</h2>
           <p className="text-xs text-muted-foreground">{t("detail.mounts_desc")}</p>
         </div>
-        <div className="space-y-2">
+        <div className="divide-y overflow-hidden rounded-xl border">
           {EXPOSED_MOUNT_ROWS.map(({ field, target, toPatch }) => (
             <div
               key={target}
-              className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+              className="flex items-center justify-between gap-3 px-3 py-2"
             >
               <div className="min-w-0 space-y-0.5">
                 <p className="font-mono text-sm">{target}</p>
@@ -296,7 +301,7 @@ export default function WorkspaceDetailPage() {
       </div>
 
       {WORKSPACE_TOOL_ENABLEMENT_UI_ENABLED ? (
-        <div className="space-y-3 rounded-lg border p-4">
+        <div className="space-y-3 rounded-xl border p-3">
           <div>
             <h2 className="text-sm font-medium">{t("detail.tool_enablement")}</h2>
             <p className="text-xs text-muted-foreground">{t("detail.tool_enablement_desc")}</p>
@@ -316,7 +321,7 @@ export default function WorkspaceDetailPage() {
               </Button>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="divide-y overflow-hidden rounded-xl border">
               {workspaceToolEnablementIds(workspace.harnessMinimal === true).map((toolId) => {
                 const enabled = workspace.toolEnablement?.[toolId] ?? true;
                 // 显示 Override 后的当前 wire 名（未 Override 时 = 稳定 ID 本身）
@@ -324,7 +329,7 @@ export default function WorkspaceDetailPage() {
                 return (
                   <div
                     key={toolId}
-                    className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                    className="flex items-center justify-between gap-3 px-3 py-2"
                   >
                     <div className="min-w-0 space-y-0.5">
                       <p className="text-sm">{t(`detail.tool_names.${toolId}`)}</p>
@@ -346,18 +351,18 @@ export default function WorkspaceDetailPage() {
         </div>
       ) : null}
 
-      <div className="space-y-3 rounded-lg border p-4">
+      <div className="space-y-3 rounded-xl border p-3">
         <div>
           <h2 className="text-sm font-medium">{t("detail.tool_approval")}</h2>
           <p className="text-xs text-muted-foreground">{t("detail.tool_approval_desc")}</p>
         </div>
-        <div className="space-y-2">
+        <div className="divide-y overflow-hidden rounded-xl border">
           {TOOL_APPROVAL_DEFAULTS.map(([toolName, defaultNeedsApproval]) => {
             const checked = workspace.toolApprovals?.[toolName] ?? defaultNeedsApproval;
             return (
               <div
                 key={toolName}
-                className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+                className="flex items-center justify-between gap-3 px-3 py-2"
               >
                 <div className="min-w-0 space-y-0.5">
                   <p className="text-sm">{t(`detail.tool_names.${toolName}`)}</p>

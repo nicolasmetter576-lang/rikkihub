@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.components.ui
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -440,7 +441,8 @@ private fun ChainOfThoughtPreview() {
                 TopAppBar(
                     title = {
                         Text("Chain of thought")
-                    }
+                    },
+                    expandedHeight = AppTopBarHeight,
                 )
             }
         ) { innerPadding ->

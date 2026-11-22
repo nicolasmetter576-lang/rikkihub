@@ -23,7 +23,7 @@ class GoogleInteractionsUpdateTest {
         val body = JsonObject(raw(old) - "useInteractionsApi" - "customHeaders")
         val draft = parseProviderUpdate(body)
         assertFalse((draft.incoming as ProviderSetting.Google).useInteractionsApi)
-        assertNull(parseGoogleInteractionsField(body))
+        assertNull(parseGoogleFlag(body, "useInteractionsApi"))
         val latest = old.copy(
             useInteractionsApi = true, builtIn = true,
             models = listOf(Model(modelId = "concurrent-model")),
@@ -56,7 +56,7 @@ class GoogleInteractionsUpdateTest {
             JsonPrimitive(1), JsonArray(emptyList()), JsonObject(emptyMap()))) {
             val body = JsonObject(raw(ProviderSetting.Google()) + ("useInteractionsApi" to value))
             assertTrue("Expected 400 for $value", runCatching { parseProviderUpdate(body) }.exceptionOrNull() is BadRequestException)
-            assertTrue(runCatching { parseGoogleInteractionsField(body) }.exceptionOrNull() is BadRequestException)
+            assertTrue(runCatching { parseGoogleFlag(body, "useInteractionsApi") }.exceptionOrNull() is BadRequestException)
         }
     }
 
@@ -73,7 +73,7 @@ class GoogleInteractionsUpdateTest {
         for (provider in listOf(ProviderSetting.OpenAI(), ProviderSetting.Claude(), ProviderSetting.Codex(), ProviderSetting.Devin(), ProviderSetting.Antigravity())) {
             for (value in listOf(JsonPrimitive(true), JsonNull, JsonPrimitive("true"))) {
                 val body = JsonObject(raw(provider) + ("useInteractionsApi" to value))
-                assertNull(parseGoogleInteractionsField(body))
+                assertNull(parseGoogleFlag(body, "useInteractionsApi"))
                 assertEquals(provider, merge(provider, body))
             }
         }
@@ -87,5 +87,19 @@ class GoogleInteractionsUpdateTest {
         assertTrue(block.contains("mergeProvider(existing, draft)"))
         assertTrue(block.indexOf("settingsStore.update { current ->") < block.indexOf("val existing = current.providers.find"))
         assertFalse(block.contains("settingsFlow.value"))
+    }
+
+    @Test fun `stream tool arguments switch is written when sent and kept when missing`() {
+        val latest = ProviderSetting.Google(vertexAI = true, streamFunctionCallArguments = false)
+        // an older web client does not send the field: the stored false survives the decoder default (true)
+        assertFalse((merge(latest, JsonObject(raw(latest) - "streamFunctionCallArguments")) as ProviderSetting.Google).streamFunctionCallArguments)
+        for (flag in listOf(true, false)) {
+            val body = JsonObject(raw(latest) + ("streamFunctionCallArguments" to JsonPrimitive(flag)))
+            assertEquals(flag, (merge(latest.copy(streamFunctionCallArguments = !flag), body) as ProviderSetting.Google).streamFunctionCallArguments)
+        }
+        for (value in listOf(JsonPrimitive("true"), JsonPrimitive(1), JsonNull)) {
+            val body = JsonObject(raw(latest) + ("streamFunctionCallArguments" to value))
+            assertTrue(runCatching { parseProviderUpdate(body) }.exceptionOrNull() is BadRequestException)
+        }
     }
 }

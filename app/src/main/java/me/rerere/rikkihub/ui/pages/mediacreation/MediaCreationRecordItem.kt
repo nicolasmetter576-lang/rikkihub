@@ -737,7 +737,7 @@ private fun ActionChip(text: String, icon: ImageVector, onClick: () -> Unit) {
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        contentPadding = ButtonDefaults.contentPaddingFor(height, hasStartIcon = true),
+        contentPadding = ButtonDefaults.contentPaddingFor(height, hasStartIcon = true)
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.iconSizeFor(height)))
         Spacer(Modifier.width(ButtonDefaults.iconSpacingFor(height)))

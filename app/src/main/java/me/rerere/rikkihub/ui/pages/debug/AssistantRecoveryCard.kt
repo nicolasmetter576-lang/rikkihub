@@ -63,7 +63,7 @@ internal fun AssistantRecoveryCard(vm: DebugVM) {
                 Text(stringResource(R.string.debug_recovery_invalid_ids, scan!!.invalidIdGroups))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(enabled = !busy, onClick = { scope.launch { scanSafely() } }) {
+                Button(enabled = !busy, onClick = { scope.launch { scanSafely() } }, shape = MaterialTheme.shapes.medium) {
                     Text(stringResource(R.string.debug_recovery_scan))
                 }
                 Button(enabled = !busy && !settings.init && scan != null && missing.isNotEmpty(), onClick = {
@@ -82,7 +82,7 @@ internal fun AssistantRecoveryCard(vm: DebugVM) {
                             busy = false
                         }
                     }
-                }) {
+                }, shape = MaterialTheme.shapes.medium) {
                     Text(stringResource(R.string.debug_recovery_restore))
                 }
             }

@@ -23,6 +23,7 @@ import me.rerere.rikkihub.AppScope
 import me.rerere.rikkihub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkihub.data.repository.FilesRepository
 import me.rerere.rikkihub.utils.exportImage
+import me.rerere.rikkihub.utils.isAllowedFileType
 import me.rerere.rikkihub.utils.exportImageFile
 import me.rerere.rikkihub.utils.getActivity
 import kotlin.io.encoding.Base64
@@ -276,6 +277,58 @@ class FilesManager(
             }
         }
         return newUris
+    }
+
+    /** Result of [createChatPartsFromLocalFiles]; [unsupported] lists names no part type accepts. */
+    data class LocalAttachments(val attachments: List<LocalAttachment>, val unsupported: List<String>, val failed: List<String>)
+
+    data class LocalAttachment(val part: UIMessagePart, val file: ManagedFileEntity)
+
+    /** Uploads (file names) copied from the file manager library in this process. */
+    private val libraryCopies = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /** Whether `upload/<fileName>` was made from a library file (so it is not collected back). */
+    fun isLibraryCopy(fileName: String): Boolean = fileName in libraryCopies
+
+    /**
+     * Chat attachments from files the app can read directly (file manager). Each file is copied
+     * into `upload`, so renaming or deleting the original later never touches the chat.
+     * Types follow the share-to-chat rules: image / video / audio by MIME, other files as
+     * documents when [isAllowedFileType] accepts them.
+     */
+    suspend fun createChatPartsFromLocalFiles(files: List<File>): LocalAttachments = withContext(Dispatchers.IO) {
+        val dir = uploadDir().apply { mkdirs() }
+        val attachments = mutableListOf<LocalAttachment>()
+        val unsupported = mutableListOf<String>()
+        val failed = mutableListOf<String>()
+        for (source in files) {
+            val mime = guessMimeType(source, source.name)
+            val part: (url: String) -> UIMessagePart = when {
+                mime.startsWith("image/") && mime != "image/svg+xml" -> { url -> UIMessagePart.Image(url) }
+                mime.startsWith("video/") -> { url -> UIMessagePart.Video(url) }
+                mime.startsWith("audio/") -> { url -> UIMessagePart.Audio(url) }
+                isAllowedFileType(source.name, mime) -> { url -> UIMessagePart.Document(url = url, fileName = source.name, mime = mime) }
+                else -> {
+                    unsupported += source.name
+                    continue
+                }
+            }
+            val file = dir.resolve(buildUuidFileName(displayName = source.name, mimeType = mime))
+            try {
+                source.copyTo(file)
+                if (source.canonicalPath.startsWith(File(context.filesDir, FileFolders.LIBRARY).canonicalPath + File.separator)) {
+                    libraryCopies += file.name
+                }
+                val entity = createManagedFileEntity(FileFolders.UPLOAD, file, source.name, mime)
+                trackUploadLeaseIfNeeded(FileFolders.UPLOAD, entity.relativePath)
+                attachments += LocalAttachment(part(file.toUri().toString()), entity)
+            } catch (error: Exception) {
+                Log.e(TAG, "createChatPartsFromLocalFiles: Failed to attach ${source.name}", error)
+                file.delete()
+                failed += source.name
+            }
+        }
+        LocalAttachments(attachments, unsupported, failed)
     }
 
     fun createChatFilesByByteArrays(
@@ -760,6 +813,12 @@ object FileFolders {
     const val FONTS = "fonts"
     const val TOOL_OUTPUTS = "tool_outputs"
     const val MEDIA_CREATION = "media_creation"
+
+    /** 角色卡的头像与 CHARX 资源，每个角色一个子目录；随备份走。 */
+    const val CHARACTERS = "characters"
+
+    /** 文件管理器的文件库：用户自己的目录结构，和 upload 互不共用文件（发送、收录都是复制）。 */
+    const val LIBRARY = "library"
 
     /** 子代理运行日志专用持久目录: 不在启动时清空, 重启后仍可读历史运行过程 */
     const val SUBAGENT_RUNS = "subagent_runs"

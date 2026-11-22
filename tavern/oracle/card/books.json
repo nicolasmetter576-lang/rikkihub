@@ -1,0 +1,184 @@
+{
+ "fixture-book": {
+  "name": "Coastline Notes",
+  "description": "Places on {{char}}'s charts",
+  "scan_depth": 6,
+  "token_budget": 300,
+  "recursive_scanning": false,
+  "extensions": {
+   "vendor": "fixture"
+  },
+  "entries": [
+   {
+    "id": 0,
+    "name": "Saltmarsh",
+    "keys": [
+     "saltmarsh",
+     "marsh"
+    ],
+    "secondary_keys": [],
+    "comment": "Saltmarsh",
+    "content": "The Saltmarsh floods twice a year and no chart keeps up with it.",
+    "constant": false,
+    "selective": false,
+    "insertion_order": 10,
+    "enabled": true,
+    "position": "before_char",
+    "use_regex": true,
+    "extensions": {}
+   },
+   {
+    "id": 3,
+    "name": "Ink recipe",
+    "keys": [
+     "ink"
+    ],
+    "secondary_keys": [
+     "oak",
+     "gall"
+    ],
+    "comment": "",
+    "content": "{{char}} brews her ink from oak gall and rust.",
+    "constant": false,
+    "selective": true,
+    "insertion_order": 20,
+    "enabled": true,
+    "position": "after_char",
+    "use_regex": true,
+    "extensions": {
+     "position": 4,
+     "depth": 2,
+     "role": 1,
+     "probability": 80,
+     "useProbability": true,
+     "selectiveLogic": 3,
+     "group": "ink",
+     "group_override": true,
+     "group_weight": 150,
+     "scan_depth": 3,
+     "case_sensitive": true,
+     "match_whole_words": false,
+     "sticky": 2,
+     "cooldown": 1,
+     "delay": 0,
+     "exclude_recursion": true,
+     "prevent_recursion": true,
+     "delay_until_recursion": true,
+     "display_index": 7,
+     "outlet_name": "",
+     "automation_id": "ink-1",
+     "vectorized": false,
+     "triggers": [
+      "normal"
+     ],
+     "ignore_budget": true,
+     "match_creator_notes": true,
+     "vendor_flag": "kept"
+    }
+   },
+   {
+    "name": "No id, disabled",
+    "keys": [
+     "lighthouse"
+    ],
+    "comment": "Lighthouse",
+    "content": "The lighthouse is the only fixed point on every chart.",
+    "constant": true,
+    "selective": false,
+    "insertion_order": 5,
+    "enabled": false,
+    "position": "after_char",
+    "extensions": {}
+   }
+  ]
+ },
+ "minimal": {
+  "name": "Minimal",
+  "entries": [
+   {
+    "keys": [
+     "a"
+    ],
+    "content": "only keys and content"
+   },
+   {
+    "keys": [],
+    "content": "",
+    "enabled": true,
+    "insertion_order": 0,
+    "constant": 1,
+    "selective": "yes",
+    "position": "before_char",
+    "comment": null,
+    "secondary_keys": null
+   }
+  ]
+ },
+ "odd-ids": {
+  "entries": [
+   {
+    "id": "7",
+    "keys": [
+     "x"
+    ],
+    "content": "first seven",
+    "enabled": true
+   },
+   {
+    "id": 7,
+    "keys": [
+     "y"
+    ],
+    "content": "second seven",
+    "enabled": true
+   },
+   {
+    "keys": [
+     "z"
+    ],
+    "content": "third has no id",
+    "enabled": true,
+    "extensions": {
+     "display_index": 0
+    }
+   }
+  ]
+ },
+ "zeros-and-nulls": {
+  "name": "Zeros",
+  "entries": [
+   {
+    "id": 1,
+    "keys": [
+     "k"
+    ],
+    "content": "c",
+    "enabled": true,
+    "insertion_order": 50,
+    "extensions": {
+     "probability": 0,
+     "useProbability": false,
+     "depth": 0,
+     "group_weight": 0,
+     "role": 0,
+     "selectiveLogic": 0,
+     "position": 0,
+     "scan_depth": null,
+     "case_sensitive": null,
+     "sticky": null,
+     "cooldown": 0,
+     "delay": 0,
+     "triggers": [],
+     "outlet_name": "slot",
+     "match_persona_description": true,
+     "match_character_description": true,
+     "match_character_personality": true,
+     "match_character_depth_prompt": true,
+     "match_scenario": true,
+     "use_group_scoring": true,
+     "vectorized": true
+    }
+   }
+  ]
+ }
+}

@@ -94,6 +94,30 @@ class BackupManagerTest {
         assertEquals("live", probe(liveDatabase))
     }
 
+    @Test fun usageAndQuotaLedgerSurviveTheActualBackupRestoreLifecycle() = runBlocking {
+        val dao = liveDatabase.usageRecordDao()
+        dao.insert(me.rerere.rikkihub.data.db.entity.UsageRecordEntity(
+            createdAt = 200, startedAt = 100, usageComplete = true, source = "SUBAGENT",
+            accountKey = "codex:offline", promptTokens = 100, completionTokens = 20,
+            cachedTokens = 40, totalTokens = 0))
+        dao.insertSnapshot(me.rerere.rikkihub.data.db.entity.QuotaSnapshotEntity(
+            createdAt = 201, accountKey = "codex:offline", window = "primary", remaining = .8, resetAt = 999))
+        val archive = manager.createBackup(includeDatabase = true, includeFiles = false)
+        liveDatabase.openHelper.writableDatabase.execSQL("DELETE FROM usage_record")
+        liveDatabase.openHelper.writableDatabase.execSQL("DELETE FROM quota_snapshot")
+        manager.stageRestore(archive, includeDatabase = true, includeFiles = false)
+        assertTrue(dao.getGroupedUsage("%Y-%m", 0).isEmpty())
+        liveDatabase.close()
+        BackupManager.applyPendingRestore(context, JsonInstant)
+        liveDatabase = AppDatabaseFactory.create(context)
+        val restored = liveDatabase.usageRecordDao()
+        val usage = restored.getGroupedUsage("%Y-%m", 0).single()
+        assertEquals(100L, usage.promptTokens)
+        assertEquals(0L, usage.totalTokens)
+        assertEquals(0L, usage.incompleteRequests)
+        assertEquals(.8, restored.getLatestSnapshot("codex:offline", "primary")!!.remaining, 0.0)
+    }
+
     @Test fun unsupportedSchemaIsRejectedBeforePublishing() = runBlocking {
         val future = File(directory, "future")
         withRoom(future) {

@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.mediacreation
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,15 +18,14 @@ import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -35,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,6 +62,8 @@ import org.koin.androidx.compose.koinViewModel
 import java.io.File
 import java.time.ZoneId
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.components.ui.CardGroupCorner
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 /**
  * 媒体创作的入口：列出所有会话，点进去是这个会话的创作页（[MediaCreationPage]）。
@@ -71,7 +72,6 @@ import kotlin.uuid.Uuid
 fun MediaCreationSessionsPage(vm: MediaCreationSessionsVM = koinViewModel()) {
     val navController = LocalNavController.current
     val sessions by vm.sessions.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var renaming by remember { mutableStateOf<MediaCreationSession?>(null) }
     var deleting by remember { mutableStateOf<MediaCreationSession?>(null) }
     val listState = rememberLazyListState()
@@ -84,7 +84,7 @@ fun MediaCreationSessionsPage(vm: MediaCreationSessionsVM = koinViewModel()) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.media_creation_title)) },
                 navigationIcon = { BackButton() },
                 actions = {
@@ -93,8 +93,8 @@ fun MediaCreationSessionsPage(vm: MediaCreationSessionsVM = koinViewModel()) {
                         Icon(HugeIcons.Image02, contentDescription = stringResource(R.string.chat_page_menu_image_generation))
                     }
                 },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         floatingActionButton = {
@@ -105,7 +105,6 @@ fun MediaCreationSessionsPage(vm: MediaCreationSessionsVM = koinViewModel()) {
                 expanded = fabExpanded,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         LazyColumn(
@@ -210,7 +209,7 @@ private fun EmptySessionsState(modifier: Modifier = Modifier) {
     }
 }
 
-private val SessionItemShape = RoundedCornerShape(20.dp)
+private val SessionItemShape = RoundedCornerShape(CardGroupCorner)
 private val SessionLeadingSize = 48.dp
 
 // 每个会话按 id 固定分到一个形状，列表看起来不那么整齐划一
@@ -237,6 +236,7 @@ private fun SessionItem(
     ListItem(
         onClick = onOpen,
         shapes = ListItemDefaults.shapes(shape = SessionItemShape),
+        contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = 10.dp),
         // 点开时展开成创作页
         modifier = modifier.heroContainer(mediaCreationHeroKey(session.id.toString()), SessionItemShape),
         colors = CustomColors.listItemColors,

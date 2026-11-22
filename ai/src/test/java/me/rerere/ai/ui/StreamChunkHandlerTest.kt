@@ -6,10 +6,13 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageUpdate
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.stream.ToolStreamProtocolException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -54,7 +57,7 @@ class StreamChunkHandlerTest {
         )
         messages = handler.handle(messages, StreamChunk.ToolCallEnd("call-1"))
         messages = handler.handle(messages,
-            StreamChunk.Usage(TokenUsage(promptTokens = 10, completionTokens = 5)),
+            StreamChunk.Usage(UsageUpdate(promptTokens = 10, completionTokens = 5)),
         )
 
         val assistant = messages.last()
@@ -65,6 +68,24 @@ class StreamChunkHandlerTest {
         assertEquals("search", tool.toolName)
         assertEquals("{\"q\":\"test\"}", tool.input)
         assertEquals(15, assistant.usage?.totalTokens)
+    }
+
+    @Test
+    fun `attempt usage never inherits previous step and empty reports remain absent`() {
+        val previous = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList(), usage = TokenUsage(100, 30, 20, 180))
+        val handler = StreamChunkHandler(model)
+        var messages = handler.handle(listOf(previous), StreamChunk.TextStart("next"))
+        assertNull(handler.usage)
+        assertFalse(handler.hasCompleteUsage)
+        messages = handler.handle(messages, StreamChunk.Usage(UsageUpdate()))
+        assertNull(messages.last().usage)
+        messages = handler.handle(messages, StreamChunk.Usage(UsageUpdate(totalTokens = 0)))
+        assertEquals(TokenUsage(), messages.last().usage)
+        assertFalse(handler.hasCompleteUsage)
+        messages = handler.handle(messages, StreamChunk.Usage(UsageUpdate(0, 0)))
+        assertEquals(TokenUsage(), handler.usage)
+        assertEquals(handler.usage, messages.last().usage)
+        assertTrue(handler.hasCompleteUsage)
     }
 
     @Test

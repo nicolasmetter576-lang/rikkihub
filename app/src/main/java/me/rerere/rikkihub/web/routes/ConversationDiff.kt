@@ -18,6 +18,9 @@ internal fun Conversation.sameMetadataAs(other: Conversation): Boolean {
             workspaceCwd == other.workspaceCwd &&
             workspaceCwdScoped == other.workspaceCwdScoped &&
             folderId == other.folderId &&
+            characterId == other.characterId &&
+            cliSession == other.cliSession &&
+            compression == other.compression &&
             createAt == other.createAt &&
             updateAt == other.updateAt
 }

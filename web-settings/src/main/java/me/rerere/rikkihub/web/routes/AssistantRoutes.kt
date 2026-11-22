@@ -11,6 +11,7 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import io.ktor.server.routing.route
+import me.rerere.rikkihub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkihub.data.datastore.DEFAULT_ASSISTANT_ID
 import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.data.files.FilesManager
@@ -19,11 +20,11 @@ import me.rerere.rikkihub.data.model.Avatar
 import me.rerere.rikkihub.data.model.Tag
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.data.repository.MemoryRepository
+import me.rerere.rikkihub.data.repository.memoryId
 import me.rerere.rikkihub.web.BadRequestException
 import me.rerere.rikkihub.web.NotFoundException
 import me.rerere.rikkihub.web.projectAssistantForWeb
 import me.rerere.rikkihub.web.projectAssistantListForWeb
-import me.rerere.rikkihub.web.requireVisibleAssistant
 import me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition
 import me.rerere.rikkihub.web.dto.AssistantTagRequest
 import me.rerere.rikkihub.web.dto.CreateAssistantRequest
@@ -38,6 +39,7 @@ fun Route.assistantRoutes(
     availableSkillNames: (() -> Set<String>)? = null,
     // null = 不校验工作区是否存在（旧调用点）；聊天栏换绑工作区用
     workspaceExists: (suspend (String) -> Boolean)? = null,
+    memoryScheduler: MemoryConsolidationScheduler? = null,
 ) {
     route("/assistants") {
         post {
@@ -75,7 +77,6 @@ fun Route.assistantRoutes(
                 throw BadRequestException("Invalid assistant payload")
             }
             val (incoming, localTools) = parseAssistantUpdate(rawBody)
-            id.requireVisibleAssistant()
             val settings = settingsStore.settingsFlow.value
             val existing = settings.assistants.find { it.id == id }
                 ?: throw NotFoundException("Assistant not found")
@@ -84,7 +85,9 @@ fun Route.assistantRoutes(
                 val available = availableSkillNames?.invoke() ?: return@let requested
                 requested.filterTo(LinkedHashSet()) { it in available }
             }
-            val merged = mergeAssistant(existing, incoming, localTools, presentKeys = rawBody.keys, enabledSkills = enabledSkills)
+            val merged = mergeAssistant(
+                existing, incoming, localTools, presentKeys = rawBody.keys, enabledSkills = enabledSkills,
+            )
             validateAssistantWritable(merged, settings)
             settingsStore.update { current ->
                 current.copy(
@@ -93,6 +96,9 @@ fun Route.assistantRoutes(
                     }
                 )
             }
+            if (existing.useGlobalMemory != merged.useGlobalMemory || existing.enableMemory != merged.enableMemory) {
+                memoryScheduler?.onAssistantMemoryScopeChanged(id, existing.memoryId, merged.memoryId)
+            }
             call.respond(HttpStatusCode.OK, projectAssistantForWeb(merged))
         }
 
@@ -100,7 +106,6 @@ fun Route.assistantRoutes(
         // so it never races a concurrent full-assistant save over unrelated fields.
         put("/{id}/skills") {
             val id = call.parameters["id"].toUuid("assistantId")
-            id.requireVisibleAssistant()
             val rawBody = try {
                 call.receive<JsonObject>()
             } catch (e: CancellationException) {
@@ -125,7 +130,6 @@ fun Route.assistantRoutes(
         // assistant, like PUT /{id}/skills. It is per assistant, so every conversation of it follows.
         put("/{id}/workspace") {
             val id = call.parameters["id"].toUuid("assistantId")
-            id.requireVisibleAssistant()
             val rawBody = try {
                 call.receive<JsonObject>()
             } catch (e: CancellationException) {
@@ -149,7 +153,6 @@ fun Route.assistantRoutes(
 
         delete("/{id}") {
             val id = call.parameters["id"].toUuid("assistantId")
-            id.requireVisibleAssistant()
             if (isDefaultAssistant(id)) {
                 throw BadRequestException("Cannot delete default assistant")
             }
@@ -174,7 +177,6 @@ fun Route.assistantRoutes(
 
         post("/{id}/clone") {
             val id = call.parameters["id"].toUuid("assistantId")
-            id.requireVisibleAssistant()
             if (CreatorAssistantDefinition.isCreator(id)) {
                 throw BadRequestException("The creator assistant cannot be cloned")
             }

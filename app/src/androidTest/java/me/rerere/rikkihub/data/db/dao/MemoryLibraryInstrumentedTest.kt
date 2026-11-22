@@ -11,6 +11,7 @@ import me.rerere.rikkihub.data.db.AppDatabaseFactory
 import me.rerere.rikkihub.data.db.SQLiteConfiguration
 import me.rerere.rikkihub.data.db.entity.MemoryConsolidationEntity
 import me.rerere.rikkihub.data.db.migrations.Migration_39_40
+import me.rerere.rikkihub.data.db.migrations.Migration_46_47
 import me.rerere.rikkihub.data.model.MemoryFile
 import me.rerere.rikkihub.data.repository.MemoryRepository
 import me.rerere.rikkihub.data.repository.MemoryWriteResult
@@ -114,23 +115,32 @@ class MemoryLibraryInstrumentedTest {
             conversation("other", assistantB, 5_000)
 
             val dao = database.memoryConsolidationDao()
-            dao.upsert(MemoryConsolidationEntity("done", 1_500))
-            dao.upsert(MemoryConsolidationEntity("updated", 2_500))
+            dao.upsert(MemoryConsolidationEntity("done", assistantA, 1_500))
+            dao.upsert(MemoryConsolidationEntity("updated", assistantA, 2_500))
 
             assertEquals(
                 listOf("updated", "fresh"),
-                dao.getUpdatedConversationIds(listOf(assistantA), since = 1_000, limit = 10),
+                dao.getUpdatedConversationIds(listOf(assistantA), assistantA, since = 1_000, limit = 10),
             )
-            assertEquals(listOf("updated"), dao.getUpdatedConversationIds(listOf(assistantA), since = 1_000, limit = 1))
+            assertEquals(
+                listOf("updated"),
+                dao.getUpdatedConversationIds(listOf(assistantA), assistantA, since = 1_000, limit = 1),
+            )
             assertEquals(
                 setOf(assistantA, assistantB),
-                dao.getAssistantIdsWithUpdatedConversations(listOf(assistantA, assistantB), since = 1_000).toSet(),
+                dao.getPrivateAssistantIdsWithUpdatedConversations(listOf(assistantA, assistantB), since = 1_000).toSet(),
             )
-            assertEquals(2_500L, dao.getConsolidatedAt("updated"))
+            assertEquals(2_500L, dao.getConsolidatedAt("updated", assistantA))
+            // 同一会话在全局库下尚无整理记录，独立可见
+            assertNull(dao.getConsolidatedAt("done", MemoryRepository.GLOBAL_MEMORY_ID))
+            assertEquals(
+                listOf("updated", "fresh", "done"),
+                dao.getUpdatedConversationIds(listOf(assistantA), MemoryRepository.GLOBAL_MEMORY_ID, since = 1_000, limit = 10),
+            )
 
             // 对话被彻底删掉时进度一起删掉
             sql.execSQL("DELETE FROM ConversationEntity WHERE id = 'updated'")
-            assertNull(dao.getConsolidatedAt("updated"))
+            assertNull(dao.getConsolidatedAt("updated", assistantA))
 
             // 记忆库的乐观锁在真库上也成立
             val repository = MemoryRepository(database.memoryDao())
@@ -143,6 +153,40 @@ class MemoryLibraryInstrumentedTest {
         } finally {
             database.close()
             directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun migration46To47PreservesMarksAsLegacyAndSupportsCompositeKey() {
+        val migrationDbName = "memory-consolidation-46-47-test"
+        helper.createDatabase(migrationDbName, 46).use { db ->
+            db.execSQL(
+                "INSERT INTO ConversationEntity (id, assistant_id, title, nodes, create_at, update_at) VALUES (?, ?, ?, ?, ?, ?)",
+                arrayOf<Any>("c1", assistantA, "chat", "[]", 100L, 500L),
+            )
+            db.execSQL(
+                "INSERT INTO memory_consolidation (conversation_id, consolidated_at) VALUES (?, ?)",
+                arrayOf<Any>("c1", 450L),
+            )
+        }
+
+        helper.runMigrationsAndValidate(migrationDbName, 47, true, Migration_46_47).use { db ->
+            db.query("SELECT conversation_id, memory_id, consolidated_at FROM memory_consolidation").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals("c1", c.getString(0))
+                assertEquals(MemoryConsolidationEntity.LEGACY_MEMORY_ID, c.getString(1))
+                assertEquals(450L, c.getLong(2))
+                assertFalse(c.moveToNext())
+            }
+            // Same conversation can now hold independent marks for private and global memory
+            db.execSQL(
+                "INSERT INTO memory_consolidation (conversation_id, memory_id, consolidated_at) VALUES (?, ?, ?)",
+                arrayOf<Any>("c1", assistantA, 500L),
+            )
+            db.execSQL(
+                "INSERT INTO memory_consolidation (conversation_id, memory_id, consolidated_at) VALUES (?, ?, ?)",
+                arrayOf<Any>("c1", MemoryRepository.GLOBAL_MEMORY_ID, 600L),
+            )
         }
     }
 }

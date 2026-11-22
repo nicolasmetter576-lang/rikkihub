@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.extensions.workspace
 
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -822,6 +824,7 @@ fun WorkspaceDeviceFilesPanel(
                     }
                 },
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         containerColor = CustomColors.topBarColors.containerColor,
@@ -866,7 +869,7 @@ fun WorkspaceDeviceFilesPanel(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(AppSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(WorkspaceFileRowSpacing),
             ) {
                 // 直连写高危提示

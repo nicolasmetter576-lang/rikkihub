@@ -1338,9 +1338,10 @@ enum class WorkspaceOperationKind {
 
 /**
  * 通用 handle/操作分类（与 kind 正交，kind 仅诊断）：victim 判定可作 AND 过滤。
- * USER_TERMINAL 配空 stableIds —— 单工具关闭波及不到手动终端。
+ * USER_TERMINAL、CLI_SESSION（对话里的持久 ACP CLI 进程）配空 stableIds —— 单工具关闭
+ * 波及不到它们，只有结构级变更才命中。
  */
-enum class WorkspaceHandleClass { MODEL_EXECUTION, MODEL_BASH, CHILD, USER_TERMINAL, FILE_OPERATION, GENERIC }
+enum class WorkspaceHandleClass { MODEL_EXECUTION, MODEL_BASH, CHILD, USER_TERMINAL, CLI_SESSION, FILE_OPERATION, GENERIC }
 
 enum class WorkspaceUnavailableReason {
     STALE_POLICY_EPOCH,

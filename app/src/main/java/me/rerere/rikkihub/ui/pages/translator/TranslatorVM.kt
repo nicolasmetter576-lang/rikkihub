@@ -74,6 +74,13 @@ class TranslatorVM(
         _inputText.value = text
     }
 
+    /** 把译文放进输入框接着翻（例如回译核对），清掉旧译文 */
+    fun useResultAsInput() {
+        cancelTranslation()
+        _inputText.value = _translatedText.value
+        _translatedText.value = ""
+    }
+
     fun updateTargetLanguage(language: Locale) {
         updateSettings { it.copy(translateTargetLanguage = language.toLanguageTag()) }
     }

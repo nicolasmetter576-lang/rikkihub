@@ -8,8 +8,11 @@ import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.WorkspaceToolWirePolicy
 import me.rerere.rikkihub.data.ai.GenerationLoop
+import me.rerere.rikkihub.data.ai.qubagu.Qubagu
 import me.rerere.rikkihub.data.ai.mcp.McpManager
+import me.rerere.rikkihub.data.ai.tools.local.LocalToolOption
 import me.rerere.rikkihub.data.ai.tools.local.LocalTools
+import me.rerere.rikkihub.data.ai.tools.local.PseudoIoNames
 import me.rerere.rikkihub.data.ai.transformers.WorkspaceReminderTransformer
 import me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition
 import me.rerere.rikkihub.data.creator.definition.CreatorToolNamespace
@@ -48,6 +51,7 @@ class ChatToolFactory(
     private val settingsStore: SettingsStore,
     private val generationLoop: GenerationLoop,
     private val persistentBashSessionManager: WorkspacePersistentBashSessionManager,
+    private val qubagu: Qubagu,
     /**
      * T0 公共运行准入：createSnapshot 的 workspace 读取走它的 withSnapshot
      * （准入锁内最新 DB 行 + 同时刻双 epoch，装配与守卫准入共用一致视图）。
@@ -125,6 +129,7 @@ class ChatToolFactory(
         // 也绝不绕过锁内最新 DB 读——与助手绑定不符的传入实体得不到工具。
         val boundWorkspaceId = assistant.workspaceId?.toString()
         val overrides = settings.toolOverrides
+        val pseudoIo = PseudoIoNames.of(overrides).takeIf { LocalToolOption.PseudoIo in assistant.localTools }
         val nonWorkspacePlaceholders = builtinToolPlaceholders(
             cwd = workspaceCwd,
             skillsXml = formatAvailableSkillsXml(
@@ -132,6 +137,9 @@ class ChatToolFactory(
                     .filter { it.name in assistant.enabledSkills }
                     .map { it.name to it.description }
             ),
+        ) + mapOf(
+            "read_tool" to PseudoIoNames.of(overrides).read,
+            "write_tool" to PseudoIoNames.of(overrides).write,
         )
 
         // workspace 切片整体在 withSnapshot 准入锁内装配：锁内最新 DB 行 +
@@ -235,7 +243,7 @@ class ChatToolFactory(
                 allSkills.filter { it.name in assistant.enabledSkills }, skillTargets,
             ),
         )
-        val tailTools = buildList {
+        val skillTools = buildList {
             if (assistant.enabledSkills.isNotEmpty()) {
                 addAll(
                     createSkillTools(
@@ -245,6 +253,19 @@ class ChatToolFactory(
                     )
                 )
             }
+            if (QUBAGU_RULES_SKILL in assistant.enabledSkills) {
+                addAll(
+                    createQubaguRuleTools(
+                        engine = qubagu,
+                        config = { settingsStore.settingsFlow.value.qubagu },
+                        savePacks = { packs -> settingsStore.update { it.copy(qubagu = it.qubagu.copy(packs = packs)) } },
+                    )
+                )
+            }
+        }.applyBuiltinConcurrency(settings.toolExecution)
+            .applyBuiltinOverrides(overrides, effectiveSkillPlaceholders)
+
+        val mcpToolList = buildList {
             val mcpTools = mcpManager.getAllAvailableTools(assistant)
             val invalidNames = mcpTools
                 .map { it.second }
@@ -268,10 +289,10 @@ class ChatToolFactory(
         }.applyBuiltinConcurrency(settings.toolExecution)
             .applyBuiltinOverrides(overrides, effectiveSkillPlaceholders)
 
+        val workspaceTools = (workspaceSlice?.tools ?: emptyList()).applyBuiltinConcurrency(settings.toolExecution)
+
         // 工作区切片在切片内已改名，按 workspaceIdentity 的稳定 id 识别，改名后照样可写。
-        val ordinaryTools = headTools +
-            (workspaceSlice?.tools ?: emptyList()).applyBuiltinConcurrency(settings.toolExecution) +
-            tailTools
+        val ordinaryTools = headTools + workspaceTools + skillTools + mcpToolList
 
         // T1: 精确 wireName→Tool 映射 + 禁用别名冲突校验。身份不走 Override 反查。
         // 切片工具名已在切片内 Override 完毕，finalWorkspaceToolNames 直接读最终名。
@@ -291,10 +312,19 @@ class ChatToolFactory(
             .orEmpty()
         val tools = ordinaryTools + creatorTools
         checkForbiddenNameConflicts(tools, workspaceSlice?.forbidden)
+        val toolCategories = buildMap {
+            headTools.forEach { put(it.name, ToolCategory.LOCAL) }
+            workspaceTools.forEach { put(it.name, ToolCategory.WORKSPACE) }
+            skillTools.forEach { put(it.name, ToolCategory.SKILLS) }
+            mcpToolList.forEach { put(it.name, ToolCategory.MCP) }
+            creatorTools.forEach { put(it.name, ToolCategory.LOCAL) }
+        }
         return ChatToolSnapshot(
             tools = tools,
             bindings = buildToolBindings(tools),
             forbiddenWorkspaceToolNames = workspaceSlice?.forbidden?.keys?.toSet(),
+            pseudoIo = pseudoIo,
+            toolCategories = toolCategories,
             wirePolicy = workspaceSlice?.wirePolicy?.copy(
                 toolOverridesFingerprint = toolOverridesFingerprint(overrides),
             ),

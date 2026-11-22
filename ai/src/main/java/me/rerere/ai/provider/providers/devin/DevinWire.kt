@@ -8,6 +8,9 @@ import me.rerere.ai.provider.providers.devin.ProtoWire.appendString
 import me.rerere.ai.provider.providers.devin.ProtoWire.appendTag
 import me.rerere.ai.provider.providers.devin.ProtoWire.appendVarint
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageUpdate
+import me.rerere.ai.provider.accumulateUsage
+import me.rerere.ai.provider.reportedOrNull
 import me.rerere.ai.util.json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -669,15 +672,24 @@ fun DevinUsage?.mergeFrom(next: DevinUsage): DevinUsage {
  * 转成 App 通用口径 (与 Claude 一致): prompt = 未缓存输入 + cache read +
  * cache write, cached = cache read.
  */
-fun DevinUsage.toTokenUsage(): TokenUsage {
-    val prompt = promptTokens + cachedTokens + cacheWriteTokens
-    return TokenUsage(
-        promptTokens = prompt.toInt(),
-        completionTokens = completionTokens.toInt(),
-        cachedTokens = cachedTokens.toInt(),
-        totalTokens = (prompt + completionTokens).toInt(),
-    )
+fun DevinUsage.toUsageUpdate(): UsageUpdate? {
+    // Proto3 omission and a zero scalar are indistinguishable in this wire model. Keep the
+    // existing nonzero merge contract; do not fabricate explicit zero corrections or totals.
+    val input = promptTokens.takeIf { it > 0 }
+    val read = cachedTokens.takeIf { it > 0 }
+    val write = cacheWriteTokens.takeIf { it > 0 }
+    return UsageUpdate(
+        promptTokens = if (input != null || read != null || write != null) {
+            ((input ?: 0L) + (read ?: 0L) + (write ?: 0L)).toInt()
+        } else null,
+        completionTokens = completionTokens.takeIf { it > 0 }?.toInt(),
+        cachedTokens = read?.toInt(),
+        partial = input == null,
+    ).reportedOrNull()
 }
+
+/** Compatibility projection; production collectors consume [toUsageUpdate] instead. */
+fun DevinUsage.toTokenUsage(): TokenUsage = toUsageUpdate().accumulateUsage().snapshot ?: TokenUsage()
 
 /** 单个响应帧解码出的全部内容 */
 data class DevinFrameResult(

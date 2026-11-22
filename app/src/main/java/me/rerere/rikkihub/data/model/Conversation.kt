@@ -4,8 +4,11 @@ import android.net.Uri
 import androidx.core.net.toUri
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.ContextCheckpointKind
+import me.rerere.ai.ui.ContextCheckpointMetadata
 import me.rerere.ai.ui.ModelSnapshot
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -36,6 +39,14 @@ data class Conversation(
     val workspaceCwdScoped: Boolean = true,
     // 所属文件夹（助手内分组），null 表示未归入任何文件夹
     val folderId: Uuid? = null,
+    // 酒馆会话状态：聊天变量、世界书计时状态、{{pick}} 重掷种子等。形状由 :tavern 决定，这里是不透明 JSON
+    val tavernMetadata: JsonObject = JsonObject(emptyMap()),
+    // 这个会话聊的角色；null = 没有角色（普通助手对话）
+    val characterId: Uuid? = null,
+    // 工作区 CLI 会话状态；null = 普通对话。只经 ChatService.updateSessionMetadata 写
+    val cliSession: me.rerere.rikkihub.data.cli.ConversationCliSession? = null,
+    // 本会话的压缩设置（档位、模板）；null = 全部跟随全局 Settings.compression
+    val compression: me.rerere.rikkihub.data.ai.ConversationCompressionOverride? = null,
     @Transient
     val newConversation: Boolean = false,
     /**
@@ -224,18 +235,47 @@ fun Conversation.lastContextTokens(): Int? {
     return messages[replyIndex].contextTokens()
 }
 
+/** 当前分支上等待用户审批的工具调用（含 CLI 回合进行中的审批卡） */
+internal val Conversation.pendingToolCalls: List<UIMessagePart.Tool>
+    get() = currentMessages.flatMap { message -> message.getTools().filter { it.isPending } }
+
 /**
- * 在 [afterNodeId] 节点之后插入压缩检查点（一条带标记的摘要用户消息）；该节点已不存在时返回 null。
- * 原有消息、分支和附件都保留，删除这条摘要即撤销压缩。
+ * 在 [afterNodeId] 节点之后插入压缩检查点（一条带标记的摘要用户消息，或清空上下文空检查点）；
+ * 该节点已不存在时返回 null。原有消息、分支和附件都保留，删除这条摘要即撤销压缩。
  */
-internal fun Conversation.insertContextCheckpoint(afterNodeId: Uuid, summary: String): Conversation? {
+internal fun Conversation.insertContextCheckpoint(
+    afterNodeId: Uuid,
+    summary: String,
+    meta: ContextCheckpointMetadata? = null,
+): Conversation? {
     val index = messageNodes.indexOfFirst { it.id == afterNodeId }
     if (index == -1) return null
-    val checkpoint = UIMessage.user(summary).copy(isContextCheckpoint = true).toMessageNode()
+    val checkpointMessage = if (meta?.kind == ContextCheckpointKind.CLEAR && summary.isBlank()) {
+        UIMessage(
+            role = MessageRole.USER,
+            parts = emptyList(),
+            isContextCheckpoint = true,
+            checkpointMeta = meta,
+        )
+    } else {
+        UIMessage.user(summary).copy(isContextCheckpoint = true, checkpointMeta = meta)
+    }
+    val checkpoint = checkpointMessage.toMessageNode()
     return copy(
         messageNodes = messageNodes.subList(0, index + 1) + checkpoint +
             messageNodes.subList(index + 1, messageNodes.size),
     )
+}
+
+/** 在当前会话末尾追加一条「清空上下文」空检查点（只截断，不总结）。 */
+internal fun Conversation.appendClearContextCheckpoint(meta: ContextCheckpointMetadata): Conversation {
+    val checkpoint = UIMessage(
+        role = MessageRole.USER,
+        parts = emptyList(),
+        isContextCheckpoint = true,
+        checkpointMeta = meta.copy(kind = ContextCheckpointKind.CLEAR),
+    ).toMessageNode()
+    return copy(messageNodes = messageNodes + checkpoint)
 }
 
 /**

@@ -141,6 +141,8 @@ class StreamTraceReplayTest {
         }
 
         val actualMessage = messages.last()
+        assertEquals("$path must use the request accumulator", handler.usage, actualMessage.usage)
+        assertTrue("$path final input and output are reported", handler.hasCompleteUsage)
         assertSemantics(path, actualMessage, chunks)
 
         val actual = actualMessage.toTraceSnapshot()
@@ -276,6 +278,12 @@ class StreamTraceReplayTest {
     }
 
     private fun assertImageTraceSemantics(path: String, message: UIMessage, chunks: List<StreamChunk>) {
+        val usage = chunks.filterIsInstance<StreamChunk.Usage>().map { it.usage }
+        assertTrue("$path includes the larger provisional thought count", usage.any {
+            it.completionTokens == 481 + 2063 && it.totalTokens == 2561
+        })
+        assertEquals("$path must accept the downward correction", 481 + 871, message.usage?.completionTokens)
+        assertEquals(1369, message.usage?.totalTokens)
         val reasoning = message.parts.filterIsInstance<UIMessagePart.Reasoning>()
         val images = message.parts.filterIsInstance<UIMessagePart.Image>()
 

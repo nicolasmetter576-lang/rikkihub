@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Play
 import me.rerere.hugeicons.stroke.Delete01
@@ -19,7 +20,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProvideTextStyle
@@ -29,7 +29,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +38,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -64,6 +63,7 @@ import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
 import org.koin.androidx.compose.koinViewModel
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun SettingSearchDetailPage(
@@ -71,7 +71,6 @@ fun SettingSearchDetailPage(
     vm: SettingVM = koinViewModel()
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val nav = LocalNavController.current
 
     val service = settings.searchServices.find { it.id == serviceId } ?: return
@@ -84,7 +83,7 @@ fun SettingSearchDetailPage(
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(options.displayName)
                 },
@@ -110,18 +109,17 @@ fun SettingSearchDetailPage(
                         }
                     }
                 },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors
+                colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
-            contentPadding = padding + PaddingValues(16.dp),
+            contentPadding = padding + PaddingValues(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item("config") {
@@ -134,7 +132,7 @@ fun SettingSearchDetailPage(
                         modifier = Modifier
                             .animateContentSize()
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(AppSpacing.sm),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
@@ -249,7 +247,7 @@ private fun SearchTestSection(
             modifier = Modifier
                 .animateContentSize()
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(

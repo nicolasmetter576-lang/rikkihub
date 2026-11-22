@@ -35,8 +35,17 @@ interface ModelSection {
 
 const FAVORITE_SECTION_ID = "__favorites__";
 
-function normalizeKeyword(value: string) {
-  return value.trim().toLowerCase();
+/**
+ * 按空格拆成多个关键词，忽略大小写；每个关键词都要命中显示名或模型 ID，不要求顺序（与 App 的 filterByKeywords 一致）。
+ */
+export function modelMatchesKeywords(model: Pick<ProviderModel, "displayName" | "modelId">, query: string) {
+  const keywords = query.toLowerCase().split(" ").filter((keyword) => keyword.trim().length > 0);
+  if (keywords.length === 0) {
+    return true;
+  }
+  const displayName = getModelDisplayName(model.displayName, model.modelId).toLowerCase();
+  const modelId = model.modelId.toLowerCase();
+  return keywords.every((keyword) => displayName.includes(keyword) || modelId.includes(keyword));
 }
 
 interface ModelOptionRowProps {
@@ -154,23 +163,11 @@ export function ModelList({
       return [];
     }
 
-    const keyword = normalizeKeyword(searchKeywords);
-
     return settings.providers
       .filter((provider) => provider.enabled)
       .map((provider) => {
         const models = provider.models.filter((model) => {
-          if (model.type !== "CHAT") {
-            return false;
-          }
-
-          if (keyword.length === 0) {
-            return true;
-          }
-
-          const displayName = getModelDisplayName(model.displayName, model.modelId).toLowerCase();
-          const modelId = model.modelId.toLowerCase();
-          return displayName.includes(keyword) || modelId.includes(keyword);
+          return model.type === "CHAT" && modelMatchesKeywords(model, searchKeywords);
         });
 
         return {

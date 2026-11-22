@@ -268,8 +268,12 @@ class WorkspaceFileSystem(
         val rootCanonical = root.canonicalFile
         val file = resolvePath(rootCanonical, path)
         require(!file.exists() || file.isFile) { "Path is not a file: $path" }
-        file.parentFile?.mkdirs()
-        file.writeBytes(bytes)
+        if (file.exists()) {
+            atomicWorkspaceTextSave(file.toPath(), bytes, textSaveIo) {}
+        } else {
+            file.parentFile?.mkdirs()
+            file.writeBytes(bytes)
+        }
         return file.toEntry(rootCanonical)
     }
 

@@ -36,4 +36,9 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("chart_display")
     data object ChartDisplay : LocalToolOption()
+
+    /** 伪工具读写：模型用 write 回复、用 read 取用户输入（见 [PseudoIo]）。 */
+    @Serializable
+    @SerialName("pseudo_io")
+    data object PseudoIo : LocalToolOption()
 }

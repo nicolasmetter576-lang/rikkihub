@@ -89,8 +89,9 @@ class SettingsManagementPort(
         }
         val collectionsAfter = receipt.afterCollections.filterKeys { key ->
             key in setOf("quickMessages", "modeInjections", "lorebooks", "assistants", "assistantTags", "providers",
-                "defaults.modelSlots", "defaults.prompts") ||
-                key.startsWith("providers.") || key.startsWith("assistants[]")
+                "defaults.modelSlots", "defaults.prompts", "tavern", "tavern.regexScripts") ||
+                key.startsWith("providers.") || key.startsWith("assistants[]") ||
+                key.startsWith("lorebooks.") || key.startsWith("assistants.")
         }.map { (key, revision) ->
             val collection = "settings.$key"
             TokenRef(ObjectRef(domainForFenceCollection(collection), "collection:$collection"),
@@ -151,8 +152,11 @@ class SettingsManagementPort(
             id == "settings.modeInjections" -> ManagementDomain.MODE_INJECTION
             id == "settings.lorebooks" -> ManagementDomain.WORLD_BOOK
             id == "settings.assistants" || id == "settings.assistantTags" -> ManagementDomain.ASSISTANT
+            id.startsWith("settings.lorebooks.") && id.endsWith(".entries") -> ManagementDomain.WORLD_BOOK
+            id.startsWith("settings.assistants.") && (id.endsWith(".presetEntries") || id.endsWith(".regexScripts")) ->
+                ManagementDomain.ASSISTANT
             id == "settings.providers" || id.startsWith("settings.providers.") && id.endsWith(".models") ||
-                id.startsWith("settings.defaults.") ->
+                id.startsWith("settings.defaults.") || id == "settings.tavern" || id == "settings.tavern.regexScripts" ->
                 ManagementDomain.MODEL_AND_PROMPT_DEFAULTS
             else -> throw IllegalArgumentException("Unknown Settings collection")
         }
@@ -160,9 +164,16 @@ class SettingsManagementPort(
         fun objectKey(ref: ObjectRef): String = when (ref.domain) {
             ManagementDomain.QUICK_MESSAGE -> "quickMessage:${ref.id}"
             ManagementDomain.MODE_INJECTION -> "modeInjection:${ref.id}"
-            ManagementDomain.WORLD_BOOK -> "lorebook:${ref.id}"
-            ManagementDomain.ASSISTANT -> if (ref.id.startsWith("tag:")) "assistantTag:${ref.id.removePrefix("tag:")}" else "assistant:${ref.id}"
+            ManagementDomain.WORLD_BOOK ->
+                if (ref.id.startsWith("entry:")) "lorebookEntry:${ref.id.removePrefix("entry:")}" else "lorebook:${ref.id}"
+            ManagementDomain.ASSISTANT -> when {
+                ref.id.startsWith("tag:") -> "assistantTag:${ref.id.removePrefix("tag:")}"
+                ref.id.startsWith("preset:") -> "presetEntry:${ref.id.removePrefix("preset:")}"
+                ref.id.startsWith("regex:") -> "assistantRegex:${ref.id.removePrefix("regex:")}"
+                else -> "assistant:${ref.id}"
+            }
             ManagementDomain.MODEL_AND_PROMPT_DEFAULTS -> when {
+                ref.id.startsWith("regex:global/") -> "globalRegex:${ref.id.removePrefix("regex:global/")}"
                 ref.id.startsWith("setting:") || ref.id.startsWith("provider:") -> ref.id
                 else -> "model:${ref.id}"
             }

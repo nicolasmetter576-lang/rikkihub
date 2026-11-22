@@ -1,10 +1,12 @@
 package me.rerere.rikkihub.di
 
+import me.rerere.rikkihub.ui.pages.memory.GlobalMemoryVM
 import me.rerere.rikkihub.ui.pages.memory.MemoryFileVM
 import me.rerere.rikkihub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkihub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkihub.ui.pages.backup.BackupVM
 import me.rerere.rikkihub.ui.pages.chat.ChatDrawerVM
+import me.rerere.rikkihub.ui.pages.character.CharacterVM
 import me.rerere.rikkihub.ui.pages.chat.ChatVM
 import me.rerere.rikkihub.ui.pages.debug.DebugVM
 import me.rerere.rikkihub.ui.pages.favorite.FavoriteVM
@@ -25,7 +27,9 @@ import me.rerere.rikkihub.ui.pages.translator.TranslatorVM
 import org.koin.core.module.dsl.viewModel
 import me.rerere.rikkihub.ui.components.creator.CreatorProposalsVM
 import org.koin.core.module.dsl.viewModelOf
+import me.rerere.rikkihub.ui.pages.files.FileManagerVM
 import org.koin.dsl.module
+import kotlin.uuid.Uuid
 import me.rerere.rikkihub.ui.pages.mediacreation.MediaCreationVM
 import me.rerere.rikkihub.ui.pages.mediacreation.MediaCreationSessionsVM
 
@@ -33,6 +37,7 @@ val viewModelModule = module {
     viewModel<ChatVM> { params ->
         ChatVM(
             id = params.get(),
+            characterId = params.getOrNull<Uuid>(),
             context = get(),
             settingsStore = get(),
             conversationRepo = get(),
@@ -41,12 +46,15 @@ val viewModelModule = module {
             filesManager = get(),
             favoriteRepository = get(),
             promptPolishHandler = get(),
+            characterRepository = get(),
         )
     }
     viewModelOf(::ChatDrawerVM)
+    viewModelOf(::CharacterVM)
     viewModelOf(::SettingVM)
     viewModelOf(::SubagentLibraryVM)
     viewModelOf(::DebugVM)
+    viewModelOf(::FileManagerVM)
     viewModelOf(::CreatorProposalsVM)
     viewModelOf(::HistoryVM)
     viewModelOf(::AssistantVM)
@@ -62,6 +70,7 @@ val viewModelModule = module {
             appScope = get(),
         )
     }
+    viewModelOf(::GlobalMemoryVM)
     viewModel<MemoryFileVM> {
         MemoryFileVM(
             memoryId = it[0],
@@ -103,6 +112,7 @@ val viewModelModule = module {
             repository = get(),
             subagentPresetRepository = get(),
             rootfsInstallService = get(),
+            envSetupService = get(),
             context = get(),
         )
     }

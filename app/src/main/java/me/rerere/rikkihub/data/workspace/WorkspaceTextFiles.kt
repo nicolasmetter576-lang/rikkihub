@@ -7,7 +7,7 @@ package me.rerere.rikkihub.data.workspace
 val WORKSPACE_TEXT_EXTENSIONS: Set<String> = setOf(
     "txt", "text", "md", "markdown", "rst", "org", "adoc", "asciidoc", "tex", "fountain",
     "json", "json5", "xml", "yaml", "yml", "toml", "ini", "conf", "cfg",
-    "properties", "env", "csv", "tsv", "log", "html", "htm", "css", "scss", "sass", "less",
+    "properties", "env", "csv", "tsv", "log", "html", "htm", "svg", "css", "scss", "sass", "less",
     "js", "mjs", "cjs", "ts", "tsx", "jsx", "kt", "kts", "java", "py", "rb", "go", "rs", "c", "h",
     "cpp", "hpp", "cc", "cs", "swift", "sh", "bash", "zsh", "gradle", "sql", "gitignore",
     "dockerfile", "lua", "php", "pl", "r", "dart", "vue", "svelte", "gql", "graphql", "proto",

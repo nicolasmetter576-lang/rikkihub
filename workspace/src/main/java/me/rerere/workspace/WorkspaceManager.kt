@@ -435,6 +435,27 @@ class WorkspaceManager(
     ): WorkspaceTransferResult =
         fileTransfer.transferBatch(filesDir(sourceRoot), paths, filesDir(targetRoot), targetDir, mode, onProgress)
 
+    /** Copies [paths] of a host directory [sourceRoot] into [area] of workspace [root] (same rules as [transferFiles]). */
+    suspend fun importFromHost(
+        sourceRoot: File,
+        paths: List<String>,
+        root: String,
+        area: WorkspaceStorageArea,
+        targetDir: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit = {},
+    ): WorkspaceTransferResult =
+        fileTransfer.transferBatch(sourceRoot, paths, areaDir(root, area), targetDir, WorkspaceTransferMode.COPY, onProgress)
+
+    /** All of the host folder [sourceDir] as a new folder [name] in [area]/[targetDir] (see [WorkspaceFileTransfer.copyFolder]). */
+    suspend fun importFolderFromHost(
+        sourceDir: File,
+        name: String,
+        root: String,
+        area: WorkspaceStorageArea,
+        targetDir: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit = {},
+    ): WorkspaceTransferItemResult = fileTransfer.copyFolder(sourceDir, areaDir(root, area), targetDir, name, onProgress)
+
     fun glob(root: String, pattern: String, path: String = ""): List<WorkspaceFileEntry> =
         fileSystem.glob(filesDir(root), pattern, path)
 

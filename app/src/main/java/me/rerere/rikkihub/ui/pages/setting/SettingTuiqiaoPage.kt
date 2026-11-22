@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,8 +22,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -31,7 +34,6 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -79,21 +80,20 @@ import sh.calvin.reorderable.ReorderableColumn
 fun SettingTuiqiaoPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val config = settings.tuiqiao
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var editing by remember { mutableStateOf<TuiqiaoRole?>(null) }
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.tuiqiao_title)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { contentPadding ->
         LazyColumn(
+            state = rememberSettingSearchListState(),
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -152,7 +152,7 @@ private fun SectionTitle(text: String) {
 @Composable
 private fun TuiqiaoCandidateSettings(config: TuiqiaoConfig, update: ((TuiqiaoConfig) -> TuiqiaoConfig) -> Unit) {
     CardGroup(
-        modifier = Modifier.padding(horizontal = 8.dp),
+        modifier = Modifier.padding(horizontal = AppSpacing.xxs),
         title = { Text(stringResource(R.string.tuiqiao_config_section_candidates)) },
     ) {
         item(
@@ -169,6 +169,7 @@ private fun TuiqiaoCandidateSettings(config: TuiqiaoConfig, update: ((TuiqiaoCon
                     }
                 }
             },
+            searchKey = R.string.tuiqiao_settings_count,
         )
         item(
             headlineContent = { Text(stringResource(R.string.tuiqiao_settings_explanation)) },
@@ -189,6 +190,7 @@ private fun TuiqiaoCandidateSettings(config: TuiqiaoConfig, update: ((TuiqiaoCon
                     }
                 }
             },
+            searchKey = R.string.tuiqiao_settings_explanation,
         )
     }
 }
@@ -273,7 +275,7 @@ private fun TuiqiaoRoleSettings(
             }
         }
         val full = config.roles.size >= TuiqiaoConfig.MAX_ROLES
-        OutlinedButton(onClick = { onEdit(TuiqiaoRole()) }, enabled = !full, modifier = Modifier.testTag("tuiqiao-role-add")) {
+        OutlinedButton(onClick = { onEdit(TuiqiaoRole()) }, enabled = !full, modifier = Modifier.testTag("tuiqiao-role-add"), shape = MaterialTheme.shapes.medium) {
             Text(stringResource(R.string.tuiqiao_config_role_add))
         }
         if (full) {

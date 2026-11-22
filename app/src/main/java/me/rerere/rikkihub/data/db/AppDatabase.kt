@@ -6,6 +6,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
 import me.rerere.ai.core.TokenUsage
+import me.rerere.rikkihub.data.db.dao.CharacterDAO
 import me.rerere.rikkihub.data.db.dao.ConversationDAO
 import me.rerere.rikkihub.data.db.dao.FavoriteDAO
 import me.rerere.rikkihub.data.db.dao.FolderDAO
@@ -19,8 +20,10 @@ import me.rerere.rikkihub.data.db.dao.AttachmentRetentionDAO
 import me.rerere.rikkihub.data.db.dao.OperationReceiptDAO
 import me.rerere.rikkihub.data.db.dao.SubagentPresetLibraryDAO
 import me.rerere.rikkihub.data.db.dao.TranslationHistoryDAO
+import me.rerere.rikkihub.data.db.dao.UsageRecordDAO
 import me.rerere.rikkihub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkihub.data.db.dao.WorkspaceDeviceMountDAO
+import me.rerere.rikkihub.data.db.entity.CharacterEntity
 import me.rerere.rikkihub.data.db.entity.ConversationEntity
 import me.rerere.rikkihub.data.db.entity.FavoriteEntity
 import me.rerere.rikkihub.data.db.entity.FolderEntity
@@ -37,11 +40,15 @@ import me.rerere.rikkihub.data.db.entity.OperationReceiptEntity
 import me.rerere.rikkihub.data.db.entity.WorkspaceDeviceMountEntity
 import me.rerere.rikkihub.data.db.entity.SubagentPresetLibraryEntity
 import me.rerere.rikkihub.data.db.entity.TranslationHistoryEntity
+import me.rerere.rikkihub.data.db.entity.QuotaSnapshotEntity
+import me.rerere.rikkihub.data.db.entity.UsageRecordEntity
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkihub.data.db.migrations.Migration_16_17
 import me.rerere.rikkihub.data.db.migrations.Migration_22_23
 import me.rerere.rikkihub.data.db.migrations.Migration_8_9
 import me.rerere.rikkihub.utils.JsonInstant
+
+internal const val APP_DATABASE_VERSION = 47
 
 @Database(
     entities = [
@@ -62,8 +69,11 @@ import me.rerere.rikkihub.utils.JsonInstant
         MediaCreationNodeEntity::class,
         MediaCreationRecordEntity::class,
         MemoryConsolidationEntity::class,
+        CharacterEntity::class,
+        UsageRecordEntity::class,
+        QuotaSnapshotEntity::class,
     ],
-    version = 40,
+    version = APP_DATABASE_VERSION,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -96,6 +106,14 @@ import me.rerere.rikkihub.utils.JsonInstant
         AutoMigration(from = 36, to = 37),
         AutoMigration(from = 37, to = 38),
         AutoMigration(from = 38, to = 39),
+        // 39→40 是手写的 Migration_39_40（AppDatabaseFactory 注册）
+        AutoMigration(from = 40, to = 41),
+        AutoMigration(from = 41, to = 42),
+        // 42→43 是手写的 Migration_42_43（建用量表并回填）
+        AutoMigration(from = 43, to = 44),
+        // 44→45 是手写的 Migration_44_45（message_node 复合索引，AppDatabaseFactory 注册）
+        AutoMigration(from = 45, to = 46),
+        // 46→47 是手写的 Migration_46_47（memory_consolidation 复合主键，AppDatabaseFactory 注册）
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -129,6 +147,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun translationHistoryDao(): TranslationHistoryDAO
 
     abstract fun mediaCreationDao(): MediaCreationDAO
+
+    abstract fun characterDao(): CharacterDAO
+
+    abstract fun usageRecordDao(): UsageRecordDAO
+
+    companion object {
+        const val VERSION = APP_DATABASE_VERSION
+    }
 }
 
 object TokenUsageConverter {

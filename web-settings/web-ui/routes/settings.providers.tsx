@@ -9,6 +9,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
   CreateNameDialog,
+  SettingsList,
   SettingsListCard,
   SettingsPageHeader,
   SettingsSelectField,
@@ -20,10 +21,13 @@ import api from "~/services/api";
 import { useSettingsStore } from "~/stores";
 import type { ProviderProfile } from "@overlay/types/settings";
 
+/** A fixed fallback: a fresh `[]` in the selector makes the store hook re-render forever while settings are still loading. */
+const NO_PROVIDERS: never[] = [];
+
 export default function SettingsProvidersPage() {
   const { t } = useTranslation("settings");
   const navigate = useNavigate();
-  const providers = useSettingsStore((state) => state.settings?.providers ?? []);
+  const providers = useSettingsStore((state) => state.settings?.providers) ?? NO_PROVIDERS;
   const [createOpen, setCreateOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [createType, setCreateType] = React.useState<ProviderType>("openai");
@@ -46,7 +50,7 @@ export default function SettingsProvidersPage() {
           {t("providers.empty")}
         </p>
       ) : (
-        <div className="space-y-3">
+        <SettingsList>
           {providers.map((provider) => (
             <SettingsListCard
               key={provider.id}
@@ -63,7 +67,7 @@ export default function SettingsProvidersPage() {
               }
             />
           ))}
-        </div>
+        </SettingsList>
       )}
 
       <CreateNameDialog

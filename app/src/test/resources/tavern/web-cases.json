@@ -1,0 +1,3401 @@
+[
+ {
+  "kind": "parseKeyList",
+  "name": "plain commas",
+  "text": "a, b ,c",
+  "expected": [
+   "a",
+   "b",
+   "c"
+  ]
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "blank parts dropped",
+  "text": ",, a ,,  b,",
+  "expected": [
+   "a",
+   "b"
+  ]
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "empty",
+  "text": "",
+  "expected": []
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "only spaces",
+  "text": "   ",
+  "expected": []
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "regex keeps its comma",
+  "text": "/a,b/i, cat",
+  "expected": [
+   "/a,b/i",
+   "cat"
+  ]
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "regex with flags then end",
+  "text": "/x,y/gi",
+  "expected": [
+   "/x,y/gi"
+  ]
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "slash without an end is a plain keyword",
+  "text": "/abc, def",
+  "expected": [
+   "/abc",
+   "def"
+  ]
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "slash inside a word",
+  "text": "a/b, c",
+  "expected": [
+   "a/b",
+   "c"
+  ]
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "two regex keys",
+  "text": "/a,b/, /c,d/i",
+  "expected": [
+   "/a,b/",
+   "/c,d/i"
+  ]
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "no-break space is a separator",
+  "text": "a, b",
+  "expected": [
+   "a",
+   "b"
+  ]
+ },
+ {
+  "kind": "parseKeyList",
+  "name": "quoted phrase stays",
+  "text": "he said hi, \"two words\"",
+  "expected": [
+   "he said hi",
+   "\"two words\""
+  ]
+ },
+ {
+  "kind": "formatKeyList",
+  "name": "join",
+  "keys": [
+   "a",
+   "b c",
+   "/x,y/i"
+  ],
+  "expected": "a, b c, /x,y/i"
+ },
+ {
+  "kind": "normalizeFindRegex",
+  "name": "blank",
+  "input": "   ",
+  "expected": ""
+ },
+ {
+  "kind": "normalizeFindRegex",
+  "name": "bare pattern",
+  "input": "cat",
+  "expected": "/cat/g"
+ },
+ {
+  "kind": "normalizeFindRegex",
+  "name": "literal kept",
+  "input": "/cat/gi",
+  "expected": "/cat/gi"
+ },
+ {
+  "kind": "normalizeFindRegex",
+  "name": "literal without flags",
+  "input": "/cat/",
+  "expected": "/cat/"
+ },
+ {
+  "kind": "normalizeFindRegex",
+  "name": "trimmed",
+  "input": "  /a/s  ",
+  "expected": "/a/s"
+ },
+ {
+  "kind": "normalizeFindRegex",
+  "name": "bad flags are a bare pattern",
+  "input": "/a/zz",
+  "expected": "//a/zz/g"
+ },
+ {
+  "kind": "normalizeFindRegex",
+  "name": "only a slash",
+  "input": "/",
+  "expected": "///g"
+ },
+ {
+  "kind": "normalizeFindRegex",
+  "name": "pattern with a slash",
+  "input": "a/b",
+  "expected": "/a/b/g"
+ },
+ {
+  "kind": "splitRegexLiteral",
+  "name": "literal",
+  "input": "/a(b)/gi",
+  "expected": [
+   "a(b)",
+   "gi"
+  ]
+ },
+ {
+  "kind": "splitRegexLiteral",
+  "name": "no flags",
+  "input": "/abc/",
+  "expected": [
+   "abc",
+   ""
+  ]
+ },
+ {
+  "kind": "splitRegexLiteral",
+  "name": "not a literal",
+  "input": "abc",
+  "expected": null
+ },
+ {
+  "kind": "splitRegexLiteral",
+  "name": "single slash",
+  "input": "/",
+  "expected": null
+ },
+ {
+  "kind": "splitRegexLiteral",
+  "name": "bad flag",
+  "input": "/a/x",
+  "expected": null
+ },
+ {
+  "kind": "splitRegexLiteral",
+  "name": "slashes inside",
+  "input": "/a/b/g",
+  "expected": [
+   "a/b",
+   "g"
+  ]
+ },
+ {
+  "kind": "withPlacement",
+  "name": "relative to in chat",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c"
+  },
+  "placement": "in_chat",
+  "expected": {
+   "injection_position": 1,
+   "injection_depth": 4,
+   "injection_order": 100
+  }
+ },
+ {
+  "kind": "withPlacement",
+  "name": "in chat with values",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c"
+  },
+  "placement": "in_chat",
+  "depth": 7,
+  "order": 3,
+  "expected": {
+   "injection_position": 1,
+   "injection_depth": 7,
+   "injection_order": 3
+  }
+ },
+ {
+  "kind": "withPlacement",
+  "name": "negative depth is clamped",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c"
+  },
+  "placement": "in_chat",
+  "depth": -2,
+  "expected": {
+   "injection_depth": 0
+  }
+ },
+ {
+  "kind": "withPlacement",
+  "name": "back to relative keeps depth and order",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c",
+   "injection_position": 1,
+   "injection_depth": 9,
+   "injection_order": 5
+  },
+  "placement": "relative",
+  "expected": {
+   "injection_position": 0,
+   "injection_depth": 9,
+   "injection_order": 5
+  }
+ },
+ {
+  "kind": "entryPlacement",
+  "name": "absolute",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c",
+   "injection_position": 1
+  },
+  "expected": "in_chat"
+ },
+ {
+  "kind": "entryPlacement",
+  "name": "relative",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c",
+   "injection_position": 0
+  },
+  "expected": "relative"
+ },
+ {
+  "kind": "entryPlacement",
+  "name": "missing",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c"
+  },
+  "expected": "relative"
+ },
+ {
+  "kind": "withTriggers",
+  "name": "one of three",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c"
+  },
+  "selected": [
+   "normal"
+  ],
+  "expected": {
+   "injection_trigger": [
+    "normal"
+   ]
+  }
+ },
+ {
+  "kind": "withTriggers",
+  "name": "order is canonical",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c"
+  },
+  "selected": [
+   "quiet",
+   "normal"
+  ],
+  "expected": {
+   "injection_trigger": [
+    "normal",
+    "quiet"
+   ]
+  }
+ },
+ {
+  "kind": "withTriggers",
+  "name": "all six means every type",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c"
+  },
+  "selected": [
+   "normal",
+   "continue",
+   "impersonate",
+   "swipe",
+   "regenerate",
+   "quiet"
+  ],
+  "expected": {
+   "injection_trigger": []
+  }
+ },
+ {
+  "kind": "withTriggers",
+  "name": "none means every type",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c"
+  },
+  "selected": [],
+  "expected": {
+   "injection_trigger": []
+  }
+ },
+ {
+  "kind": "withTriggers",
+  "name": "unknown names stay at the end",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c",
+   "injection_trigger": [
+    "future",
+    "normal"
+   ]
+  },
+  "selected": [
+   "quiet"
+  ],
+  "expected": {
+   "injection_trigger": [
+    "quiet",
+    "future"
+   ]
+  }
+ },
+ {
+  "kind": "toggleTrigger",
+  "name": "turn one on from every type",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c",
+   "injection_trigger": []
+  },
+  "type": "quiet",
+  "expected": {
+   "injection_trigger": [
+    "quiet"
+   ]
+  }
+ },
+ {
+  "kind": "toggleTrigger",
+  "name": "turn the last one off",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c",
+   "injection_trigger": [
+    "quiet"
+   ]
+  },
+  "type": "quiet",
+  "expected": {
+   "injection_trigger": []
+  }
+ },
+ {
+  "kind": "toggleTrigger",
+  "name": "add to a selection",
+  "entry": {
+   "identifier": "e",
+   "name": "n",
+   "role": "system",
+   "content": "c",
+   "injection_trigger": [
+    "normal"
+   ]
+  },
+  "type": "regenerate",
+  "expected": {
+   "injection_trigger": [
+    "normal",
+    "regenerate"
+   ]
+  }
+ },
+ {
+  "kind": "wi.primaryKeys",
+  "name": "set",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "text": "x, /y,z/i",
+  "expected": {
+   "key": [
+    "x",
+    "/y,z/i"
+   ]
+  }
+ },
+ {
+  "kind": "wi.secondaryKeys",
+  "name": "writing keys turns selective on",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "text": "p, q",
+  "expected": {
+   "keysecondary": [
+    "p",
+    "q"
+   ],
+   "selective": true
+  }
+ },
+ {
+  "kind": "wi.secondaryKeys",
+  "name": "clearing keeps selective",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": true,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "text": "",
+  "expected": {
+   "keysecondary": [],
+   "selective": true
+  }
+ },
+ {
+  "kind": "wi.secondaryKeys",
+  "name": "clearing keeps selective off",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "text": "",
+  "expected": {
+   "keysecondary": [],
+   "selective": false
+  }
+ },
+ {
+  "kind": "wi.probability",
+  "name": "in range",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "percent": 40,
+  "expected": {
+   "probability": 40,
+   "useProbability": true
+  }
+ },
+ {
+  "kind": "wi.probability",
+  "name": "clamped high",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "percent": 250,
+  "expected": {
+   "probability": 100,
+   "useProbability": true
+  }
+ },
+ {
+  "kind": "wi.probability",
+  "name": "clamped low",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "percent": -5,
+  "expected": {
+   "probability": 0,
+   "useProbability": true
+  }
+ },
+ {
+  "kind": "wi.triggers",
+  "name": "select two",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "selected": [
+   "normal",
+   "quiet"
+  ],
+  "expected": {
+   "triggers": [
+    "normal",
+    "quiet"
+   ]
+  }
+ },
+ {
+  "kind": "wi.triggers",
+  "name": "unknown stay",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [
+    "future"
+   ],
+   "probability": 100,
+   "useProbability": false
+  },
+  "selected": [
+   "normal"
+  ],
+  "expected": {
+   "triggers": [
+    "normal",
+    "future"
+   ]
+  }
+ },
+ {
+  "kind": "wi.toggleTrigger",
+  "name": "off from a selection",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "a"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [
+    "normal",
+    "quiet"
+   ],
+   "probability": 100,
+   "useProbability": false
+  },
+  "type": "quiet",
+  "expected": {
+   "triggers": [
+    "normal"
+   ]
+  }
+ },
+ {
+  "kind": "wi.title",
+  "name": "comment wins",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "dragon"
+   ],
+   "keysecondary": [],
+   "comment": "Dragons",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "expected": "Dragons"
+ },
+ {
+  "kind": "wi.title",
+  "name": "falls back to the first key",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "dragon",
+    "wyrm"
+   ],
+   "keysecondary": [],
+   "comment": "  ",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "expected": "dragon"
+ },
+ {
+  "kind": "wi.title",
+  "name": "nothing at all",
+  "entry": {
+   "uid": 3,
+   "key": [],
+   "keysecondary": [],
+   "comment": "",
+   "content": "",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "expected": ""
+ },
+ {
+  "kind": "wi.matches",
+  "name": "blank matches",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "wyrm"
+   ],
+   "keysecondary": [
+    "cave"
+   ],
+   "comment": "Dragons",
+   "content": "a hoard of gold",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "query": "  ",
+  "expected": true
+ },
+ {
+  "kind": "wi.matches",
+  "name": "comment",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "wyrm"
+   ],
+   "keysecondary": [
+    "cave"
+   ],
+   "comment": "Dragons",
+   "content": "a hoard of gold",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "query": "DRAG",
+  "expected": true
+ },
+ {
+  "kind": "wi.matches",
+  "name": "content",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "wyrm"
+   ],
+   "keysecondary": [
+    "cave"
+   ],
+   "comment": "Dragons",
+   "content": "a hoard of gold",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "query": "hoard",
+  "expected": true
+ },
+ {
+  "kind": "wi.matches",
+  "name": "key",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "wyrm"
+   ],
+   "keysecondary": [
+    "cave"
+   ],
+   "comment": "Dragons",
+   "content": "a hoard of gold",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "query": "wyrm",
+  "expected": true
+ },
+ {
+  "kind": "wi.matches",
+  "name": "secondary",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "wyrm"
+   ],
+   "keysecondary": [
+    "cave"
+   ],
+   "comment": "Dragons",
+   "content": "a hoard of gold",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "query": "cave",
+  "expected": true
+ },
+ {
+  "kind": "wi.matches",
+  "name": "no match",
+  "entry": {
+   "uid": 3,
+   "key": [
+    "wyrm"
+   ],
+   "keysecondary": [
+    "cave"
+   ],
+   "comment": "Dragons",
+   "content": "a hoard of gold",
+   "selective": false,
+   "triggers": [],
+   "probability": 100,
+   "useProbability": false
+  },
+  "query": "unicorn",
+  "expected": false
+ },
+ {
+  "kind": "layout",
+  "name": "read",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "move a later",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "move",
+    "id": "a",
+    "delta": 1
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "move stops at the start",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "move",
+    "id": "worldInfoBefore",
+    "delta": -5
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "move clamps at the end",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "move",
+    "id": "main",
+    "delta": 99
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ],
+   [
+    "main",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "move to a place",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "moveTo",
+    "id": "chatHistory",
+    "target": "main"
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "move to itself",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "moveTo",
+    "id": "a",
+    "target": "a"
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "move to an unknown place",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "moveTo",
+    "id": "a",
+    "target": "zzz"
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "switch on",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "enabled",
+    "id": "a",
+    "enabled": true
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    true
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "remove a text entry",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "remove",
+    "id": "b"
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "markers cannot be removed",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "remove",
+    "id": "chatHistory"
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "add goes before rikkihubContext",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "add",
+    "entry": {
+     "identifier": "n",
+     "name": "N",
+     "role": "system",
+     "content": "x",
+     "system_prompt": false,
+     "marker": false
+    }
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "n",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "add goes before the first card marker",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "personaDescription",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "charDescription",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "charPersonality",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "scenario",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "personaDescription",
+       "enabled": true
+      },
+      {
+       "identifier": "charDescription",
+       "enabled": true
+      },
+      {
+       "identifier": "charPersonality",
+       "enabled": true
+      },
+      {
+       "identifier": "scenario",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "add",
+    "entry": {
+     "identifier": "n",
+     "name": "N",
+     "role": "system",
+     "content": "x",
+     "system_prompt": false,
+     "marker": false
+    }
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "n",
+    true
+   ],
+   [
+    "personaDescription",
+    true
+   ],
+   [
+    "charDescription",
+    true
+   ],
+   [
+    "charPersonality",
+    true
+   ],
+   [
+    "scenario",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "add before an explicit marker ignores the card markers",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "personaDescription",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "charDescription",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "charPersonality",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "scenario",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "personaDescription",
+       "enabled": true
+      },
+      {
+       "identifier": "charDescription",
+       "enabled": true
+      },
+      {
+       "identifier": "charPersonality",
+       "enabled": true
+      },
+      {
+       "identifier": "scenario",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "add",
+    "entry": {
+     "identifier": "n",
+     "name": "N",
+     "role": "system",
+     "content": "x",
+     "system_prompt": false,
+     "marker": false
+    },
+    "before": "rikkihubContext"
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "personaDescription",
+    true
+   ],
+   [
+    "charDescription",
+    true
+   ],
+   [
+    "charPersonality",
+    true
+   ],
+   [
+    "scenario",
+    true
+   ],
+   [
+    "n",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "add before a given entry",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [
+   {
+    "op": "add",
+    "entry": {
+     "identifier": "n",
+     "name": "N",
+     "system_prompt": false,
+     "marker": false
+    },
+    "before": "a"
+   }
+  ],
+  "expected": [
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "main",
+    true
+   ],
+   [
+    "n",
+    true
+   ],
+   [
+    "a",
+    false
+   ],
+   [
+    "b",
+    true
+   ],
+   [
+    "rikkihubContext",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "without an order the default order applies",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": []
+  },
+  "ops": [],
+  "expected": [
+   [
+    "main",
+    true
+   ],
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "an order for another character is not used",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 5,
+     "order": [
+      {
+       "identifier": "a",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [],
+  "expected": [
+   [
+    "main",
+    true
+   ],
+   [
+    "worldInfoBefore",
+    true
+   ],
+   [
+    "chatHistory",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "layout",
+  "name": "unknown identifiers are dropped",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": "100001",
+     "order": [
+      {
+       "identifier": "ghost",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "ops": [],
+  "expected": [
+   [
+    "a",
+    true
+   ]
+  ]
+ },
+ {
+  "kind": "textEntries",
+  "name": "only plain relative text entries",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "expected": [
+   "main",
+   "a",
+   "b"
+  ]
+ },
+ {
+  "kind": "previewText",
+  "name": "enabled non-blank entries joined",
+  "preset": {
+   "prompts": [
+    {
+     "identifier": "worldInfoBefore",
+     "name": "WI",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "main",
+     "name": "Main Prompt",
+     "role": "system",
+     "content": "m",
+     "system_prompt": true,
+     "marker": false
+    },
+    {
+     "identifier": "a",
+     "name": "A",
+     "role": "system",
+     "content": "A",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "b",
+     "name": "B",
+     "role": "user",
+     "content": "B",
+     "system_prompt": false,
+     "marker": false
+    },
+    {
+     "identifier": "rikkihubContext",
+     "marker": true,
+     "system_prompt": true
+    },
+    {
+     "identifier": "chatHistory",
+     "marker": true,
+     "system_prompt": true
+    }
+   ],
+   "prompt_order": [
+    {
+     "character_id": 100001,
+     "order": [
+      {
+       "identifier": "worldInfoBefore",
+       "enabled": true
+      },
+      {
+       "identifier": "main",
+       "enabled": true
+      },
+      {
+       "identifier": "a",
+       "enabled": false
+      },
+      {
+       "identifier": "b",
+       "enabled": true
+      },
+      {
+       "identifier": "rikkihubContext",
+       "enabled": true
+      },
+      {
+       "identifier": "chatHistory",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "expected": "m\n\nB"
+ },
+ {
+  "kind": "options",
+  "name": "context size none means unlimited",
+  "preset": {
+   "prompts": [],
+   "prompt_order": []
+  },
+  "ops": [
+   {
+    "op": "contextSize",
+    "tokens": null
+   }
+  ],
+  "expected": {
+   "openai_max_context": 1000000,
+   "unlimited": true
+  }
+ },
+ {
+  "kind": "options",
+  "name": "context size is at least one",
+  "preset": {
+   "prompts": [],
+   "prompt_order": []
+  },
+  "ops": [
+   {
+    "op": "contextSize",
+    "tokens": 0
+   }
+  ],
+  "expected": {
+   "openai_max_context": 1,
+   "unlimited": false
+  }
+ },
+ {
+  "kind": "options",
+  "name": "context size value",
+  "preset": {
+   "prompts": [],
+   "prompt_order": []
+  },
+  "ops": [
+   {
+    "op": "contextSize",
+    "tokens": 32000
+   }
+  ],
+  "expected": {
+   "openai_max_context": 32000,
+   "unlimited": false
+  }
+ },
+ {
+  "kind": "options",
+  "name": "defaults when the keys are absent",
+  "preset": {
+   "prompts": [],
+   "prompt_order": []
+  },
+  "ops": [],
+  "expected": {
+   "contextSize": 4095,
+   "responseTokens": 300,
+   "squash": false,
+   "newChatPrompt": "[Start a new Chat]",
+   "wiFormat": "{0}",
+   "unlimited": false
+  }
+ },
+ {
+  "kind": "options",
+  "name": "values read back",
+  "preset": {
+   "prompts": [],
+   "prompt_order": [],
+   "openai_max_context": 1000000,
+   "openai_max_tokens": 4096,
+   "squash_system_messages": true,
+   "new_chat_prompt": "",
+   "wi_format": "<{0}>"
+  },
+  "ops": [],
+  "expected": {
+   "contextSize": 1000000,
+   "responseTokens": 4096,
+   "squash": true,
+   "newChatPrompt": "",
+   "wiFormat": "<{0}>",
+   "unlimited": true
+  }
+ },
+ {
+  "kind": "regex.placement",
+  "name": "switch user input on keeps ascending order",
+  "script": {
+   "id": "r",
+   "scriptName": "s",
+   "findRegex": "/a/g",
+   "replaceString": "",
+   "trimStrings": [],
+   "placement": [
+    2,
+    6
+   ],
+   "disabled": false,
+   "markdownOnly": false,
+   "promptOnly": false,
+   "runOnEdit": false,
+   "substituteRegex": 0,
+   "minDepth": null,
+   "maxDepth": null
+  },
+  "point": 1,
+  "on": true,
+  "expected": [
+   1,
+   2,
+   6
+  ]
+ },
+ {
+  "kind": "regex.placement",
+  "name": "switch ai output off",
+  "script": {
+   "id": "r",
+   "scriptName": "s",
+   "findRegex": "/a/g",
+   "replaceString": "",
+   "trimStrings": [],
+   "placement": [
+    2,
+    6
+   ],
+   "disabled": false,
+   "markdownOnly": false,
+   "promptOnly": false,
+   "runOnEdit": false,
+   "substituteRegex": 0,
+   "minDepth": null,
+   "maxDepth": null
+  },
+  "point": 2,
+  "on": false,
+  "expected": [
+   6
+  ]
+ },
+ {
+  "kind": "regex.placement",
+  "name": "switching on twice does not duplicate",
+  "script": {
+   "id": "r",
+   "scriptName": "s",
+   "findRegex": "/a/g",
+   "replaceString": "",
+   "trimStrings": [],
+   "placement": [
+    2
+   ],
+   "disabled": false,
+   "markdownOnly": false,
+   "promptOnly": false,
+   "runOnEdit": false,
+   "substituteRegex": 0,
+   "minDepth": null,
+   "maxDepth": null
+  },
+  "point": 2,
+  "on": true,
+  "expected": [
+   2
+  ]
+ },
+ {
+  "kind": "regex.placement",
+  "name": "unsorted input is sorted",
+  "script": {
+   "id": "r",
+   "scriptName": "s",
+   "findRegex": "/a/g",
+   "replaceString": "",
+   "trimStrings": [],
+   "placement": [
+    6,
+    2
+   ],
+   "disabled": false,
+   "markdownOnly": false,
+   "promptOnly": false,
+   "runOnEdit": false,
+   "substituteRegex": 0,
+   "minDepth": null,
+   "maxDepth": null
+  },
+  "point": 5,
+  "on": true,
+  "expected": [
+   2,
+   5,
+   6
+  ]
+ },
+ {
+  "kind": "regex.presetScripts",
+  "name": "assistant scoped scripts are read from extensions",
+  "preset": {
+   "prompts": [],
+   "prompt_order": [],
+   "extensions": {
+    "regex_scripts": [
+     {
+      "id": "r",
+      "scriptName": "s",
+      "findRegex": "/a/g",
+      "replaceString": "",
+      "trimStrings": [],
+      "placement": [
+       2,
+       6
+      ],
+      "disabled": false,
+      "markdownOnly": false,
+      "promptOnly": false,
+      "runOnEdit": false,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+     }
+    ],
+    "other": 1
+   }
+  },
+  "expected": [
+   "r"
+  ]
+ },
+ {
+  "kind": "regex.presetScripts",
+  "name": "setting an empty list removes only regex_scripts",
+  "preset": {
+   "prompts": [],
+   "prompt_order": [],
+   "extensions": {
+    "regex_scripts": [
+     {
+      "id": "r",
+      "scriptName": "s",
+      "findRegex": "/a/g",
+      "replaceString": "",
+      "trimStrings": [],
+      "placement": [
+       2,
+       6
+      ],
+      "disabled": false,
+      "markdownOnly": false,
+      "promptOnly": false,
+      "runOnEdit": false,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+     }
+    ],
+    "other": 1
+   }
+  },
+  "set": [],
+  "expected": {
+   "extensions": {
+    "other": 1
+   }
+  }
+ },
+ {
+  "kind": "regex.presetScripts",
+  "name": "removing the last key removes extensions",
+  "preset": {
+   "prompts": [],
+   "prompt_order": [],
+   "extensions": {
+    "regex_scripts": [
+     {
+      "id": "r",
+      "scriptName": "s",
+      "findRegex": "/a/g",
+      "replaceString": "",
+      "trimStrings": [],
+      "placement": [
+       2,
+       6
+      ],
+      "disabled": false,
+      "markdownOnly": false,
+      "promptOnly": false,
+      "runOnEdit": false,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+     }
+    ]
+   }
+  },
+  "set": [],
+  "expected": {
+   "extensions": null
+  }
+ },
+ {
+  "kind": "variableDisplay",
+  "name": "string",
+  "value": "abc",
+  "expected": "abc"
+ },
+ {
+  "kind": "variableDisplay",
+  "name": "number",
+  "value": 3,
+  "expected": "3"
+ },
+ {
+  "kind": "variableDisplay",
+  "name": "float",
+  "value": 2.5,
+  "expected": "2.5"
+ },
+ {
+  "kind": "variableDisplay",
+  "name": "bool",
+  "value": true,
+  "expected": "true"
+ },
+ {
+  "kind": "variableDisplay",
+  "name": "null",
+  "value": null,
+  "expected": ""
+ },
+ {
+  "kind": "variableDisplay",
+  "name": "object",
+  "value": {
+   "a": 1
+  },
+  "expected": "{\"a\":1}"
+ },
+ {
+  "kind": "variableDisplay",
+  "name": "array",
+  "value": [
+   1,
+   "x"
+  ],
+  "expected": "[1,\"x\"]"
+ },
+ {
+  "kind": "activations",
+  "name": "decode",
+  "record": {
+   "v": 1,
+   "more": 2,
+   "entries": [
+    {
+     "book": "b1",
+     "bookName": "World",
+     "uid": 4,
+     "title": "Dragons",
+     "position": 1,
+     "order": 100
+    },
+    {
+     "book": "b1",
+     "bookName": "World",
+     "uid": 5,
+     "title": "",
+     "position": 4,
+     "order": 10
+    }
+   ]
+  },
+  "expected": {
+   "entries": [
+    {
+     "bookId": "b1",
+     "bookName": "World",
+     "uid": 4,
+     "title": "Dragons",
+     "position": 1,
+     "order": 100
+    },
+    {
+     "bookId": "b1",
+     "bookName": "World",
+     "uid": 5,
+     "title": "",
+     "position": 4,
+     "order": 10
+    }
+   ],
+   "more": 2,
+   "total": 4
+  }
+ },
+ {
+  "kind": "activations",
+  "name": "not an object",
+  "record": "x",
+  "expected": null
+ },
+ {
+  "kind": "activations",
+  "name": "no entries",
+  "record": {
+   "v": 1
+  },
+  "expected": null
+ },
+ {
+  "kind": "activations",
+  "name": "negative more is zero",
+  "record": {
+   "entries": [],
+   "more": -3
+  },
+  "expected": {
+   "entries": [],
+   "more": 0,
+   "total": 0
+  }
+ },
+ {
+  "kind": "activations",
+  "name": "bad entries are skipped",
+  "record": {
+   "entries": [
+    1,
+    {
+     "book": "b",
+     "uid": 1
+    }
+   ],
+   "more": 0
+  },
+  "expected": {
+   "entries": [
+    {
+     "bookId": "b",
+     "bookName": "",
+     "uid": 1,
+     "title": "",
+     "position": 0,
+     "order": 0
+    }
+   ],
+   "more": 0,
+   "total": 1
+  }
+ }
+]

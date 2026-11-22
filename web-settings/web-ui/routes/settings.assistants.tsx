@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { useNavigate } from "react-router";
-import { ChevronDown, ChevronUp, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -9,23 +9,52 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
   CreateNameDialog,
+  SettingsList,
   SettingsListCard,
   SettingsPageHeader,
   reportSettingsError,
 } from "@overlay/components/settings/settings-ui";
 import { getAssistantDisplayName } from "~/lib/display";
 import { isDefaultAssistant } from "@overlay/lib/settings";
+import { promptPreviewText } from "@overlay/lib/tavern";
+import { presetApi } from "@overlay/lib/characters";
+import { extractErrorMessage } from "~/lib/error";
 import api from "~/services/api";
 import { useSettingsStore } from "~/stores";
 import type { AssistantProfile } from "@overlay/types/settings";
 
+/** A fixed fallback: a fresh `[]` in the selector makes the store hook re-render forever while settings are still loading. */
+const NO_ASSISTANTS: AssistantProfile[] = [];
+
 export default function SettingsAssistantsPage() {
   const { t } = useTranslation("settings");
   const navigate = useNavigate();
-  const assistants = useSettingsStore((state) => state.settings?.assistants ?? []);
+  const assistants = useSettingsStore((state) => state.settings?.assistants) ?? NO_ASSISTANTS;
   const [createOpen, setCreateOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [moving, setMoving] = React.useState<string | null>(null);
+  const [importing, setImporting] = React.useState(false);
+  const presetInput = React.useRef<HTMLInputElement>(null);
+
+  /** A SillyTavern preset file becomes a new assistant; the toast says what was left out or switched off. */
+  const importPreset = async (file: File) => {
+    setImporting(true);
+    try {
+      const { assistant, report } = await presetApi.import(file);
+      toast.success(
+        t("assistants.preset_imported", {
+          prompts: report.promptCount,
+          regex: report.regexScriptsDisabled,
+          skipped: report.connectionKeysSkipped.length,
+        }),
+      );
+      void navigate(`/settings/assistants/${assistant.id}`, { state: { assistant } });
+    } catch (error) {
+      toast.error(extractErrorMessage(error, t("assistants.import_preset_failed")));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const move = async (assistant: AssistantProfile, direction: -1 | 1) => {
     const index = assistants.findIndex((item) => item.id === assistant.id);
@@ -51,10 +80,27 @@ export default function SettingsAssistantsPage() {
         title={t("assistants.title")}
         description={t("assistants.description")}
         actions={
-          <Button type="button" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" />
-            {t("assistants.new")}
-          </Button>
+          <>
+            <input
+              ref={presetInput}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void importPreset(file);
+              }}
+            />
+            <Button type="button" variant="outline" disabled={importing} onClick={() => presetInput.current?.click()}>
+              <Upload className="size-4" />
+              {importing ? t("assistants.importing_preset") : t("assistants.import_preset")}
+            </Button>
+            <Button type="button" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" />
+              {t("assistants.new")}
+            </Button>
+          </>
         }
       />
 
@@ -63,17 +109,22 @@ export default function SettingsAssistantsPage() {
           {t("assistants.empty")}
         </p>
       ) : (
-        <div className="space-y-3">
+        <SettingsList>
           {assistants.map((assistant, index) => (
             <SettingsListCard
               key={assistant.id}
               href={`/settings/assistants/${assistant.id}`}
               title={getAssistantDisplayName(assistant.name)}
-              description={assistant.systemPrompt?.trim() || undefined}
+              description={promptPreviewText(assistant.promptPreset).trim() || undefined}
               badges={
-                isDefaultAssistant(assistant.id) ? (
-                  <Badge variant="secondary">{t("assistants.default_badge")}</Badge>
-                ) : null
+                <>
+                  {isDefaultAssistant(assistant.id) ? (
+                    <Badge variant="secondary">{t("assistants.default_badge")}</Badge>
+                  ) : null}
+                  {assistant.enabled === false ? (
+                    <Badge variant="outline">{t("assistants.disabled_badge")}</Badge>
+                  ) : null}
+                </>
               }
               actions={
                 <>
@@ -109,7 +160,7 @@ export default function SettingsAssistantsPage() {
               }
             />
           ))}
-        </div>
+        </SettingsList>
       )}
 
       <CreateNameDialog

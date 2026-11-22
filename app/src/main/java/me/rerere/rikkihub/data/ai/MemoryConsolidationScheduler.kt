@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.rerere.rikkihub.data.model.Conversation
+import me.rerere.rikkihub.data.repository.MemoryRepository
 import kotlin.time.Duration
 import kotlin.time.TimeSource
 import kotlin.uuid.Uuid
@@ -30,6 +31,7 @@ data class PendingMemoryConversation(
      * 是记下时的设置，改了开关要等下次查到这个对话才更新
      */
     val automatic: Boolean = true,
+    val assistantId: Uuid = Uuid.NIL,
 )
 
 /** 一次整理的结果 */
@@ -72,6 +74,9 @@ data class MemoryConsolidationStatus(
 
 /** 调度器依赖的整理能力，由 [MemoryConsolidator] 实现 */
 interface MemoryConsolidationWorker {
+    /** 将 DB46 → DB47 迁移留下的哨兵进度行按最新设置对账，常规情况下无开销 */
+    suspend fun reconcileLegacyMarks() = Unit
+
     /** [conversation] 里还没整理的轮次；助手没开记忆或没有新的轮次时返回 null，没开自动整理也照样返回 */
     suspend fun pendingOf(conversation: Conversation): PendingMemoryConversation?
 
@@ -83,6 +88,19 @@ interface MemoryConsolidationWorker {
      * 开着和关了自动整理的助手各自最多返回一次整理能处理的数量
      */
     suspend fun findPending(memoryId: String): List<PendingMemoryConversation>
+
+    /** 指定起始时间与数量上限查找待整理对话，用于手动回溯补整理 */
+    suspend fun findPending(
+        memoryId: String,
+        sinceMs: Long,
+        limit: Int,
+    ): List<PendingMemoryConversation> = findPending(memoryId)
+
+    /** 粗略统计 [sinceMs] 之后仍未整理进 [memoryId] 的候选对话数（不读消息正文） */
+    suspend fun countPendingConversations(memoryId: String, sinceMs: Long): Int = 0
+
+    /** 将 [assistantId] 私有库的整理进度同步复制到全局库 */
+    suspend fun copyMarksToGlobal(assistantId: Uuid) = Unit
 
     /** 把 [conversation] 现有的内容都算作整理过，只有之后新增的轮次才会被整理 */
     suspend fun markConsolidated(conversation: Conversation)
@@ -123,6 +141,7 @@ class MemoryConsolidationScheduler(
     // memoryId -> (conversationId -> 待整理的对话)
     private val pending = mutableMapOf<String, Map<Uuid, PendingMemoryConversation>>()
     private val timers = mutableMapOf<String, Job>()
+    private val activeJobs = mutableMapOf<String, Job>()
     private val runLocks = mutableMapOf<String, Mutex>()
 
     // 上次整理失败、之后还没有新轮次的记忆库
@@ -132,6 +151,8 @@ class MemoryConsolidationScheduler(
 
     fun statusOf(memoryId: String): Flow<MemoryConsolidationStatus> =
         status.map { it[memoryId] ?: MemoryConsolidationStatus() }.distinctUntilChanged()
+
+    fun isRunning(memoryId: String): Boolean = status.value[memoryId]?.running == true
 
     /** 一轮对话结束：空闲一段时间后整理，攒够轮数就不再等 */
     fun onTurnFinished(conversation: Conversation) {
@@ -182,6 +203,7 @@ class MemoryConsolidationScheduler(
      * 关了启动时补整理也照样查一遍，记忆页才显示得出待整理的轮数，只是不排定时器
      */
     suspend fun resumePending() {
+        worker.reconcileLegacyMarks()
         // 每个记忆库各查各的：一起查再截断的话，对话少的记忆库会被对话多的挤掉
         worker.memoryIdsWithUpdates().forEach { memoryId ->
             val automatic = mergePending(memoryId, worker.findPending(memoryId))
@@ -189,24 +211,103 @@ class MemoryConsolidationScheduler(
         }
     }
 
-    /** 用户手动整理整个记忆库：先处理所有待整理的对话，再把记忆库清理一遍 */
-    fun organize(memoryId: String) {
-        // 查数据库要一会儿，先标成进行中，免得这期间连点几下排上好几次整理
-        if (status.value[memoryId]?.running == true) return
-        updateStatus(memoryId) { it.copy(running = true) }
-        cancelTimer(memoryId)
+    /**
+     * 助手切换「全局记忆」开关后同步更新内存待整理状态：
+     * - 从旧记忆库移除该助手的过期缓存；
+     * - 扫描新记忆库刷新待整理轮数供界面展示，但不立即启动自动计时器（避免误触开关烧 Token）。
+     */
+    fun onAssistantMemoryScopeChanged(assistantId: Uuid, oldMemoryId: String, newMemoryId: String) {
+        if (oldMemoryId == newMemoryId) return
+        val remainingOld = synchronized(lock) {
+            val filtered = pending[oldMemoryId].orEmpty().filterValues { it.assistantId != assistantId }
+            pending[oldMemoryId] = filtered
+            filtered
+        }
+        updateStatus(oldMemoryId) { it.copy(pendingTurns = remainingOld.values.sumOf { item -> item.turns }) }
         scope.launch {
-            var started = false
-            try {
-                // 进程重启后内存里的待整理列表可能是空的，把数据库里的也算上
-                mergePending(memoryId, worker.findPending(memoryId))
-                started = true
-                run(memoryId, manual = true)
-            } finally {
-                // run 自己会收尾，这里只管没走到它的情况
-                if (!started) updateStatus(memoryId) { it.copy(running = false) }
+            runCatching {
+                mergePending(newMemoryId, worker.findPending(newMemoryId))
             }
         }
+    }
+
+    /** 迁移私有记忆到全局后，按用户勾选同步该助手已整理的进度水位并刷新全局待整理轮数 */
+    suspend fun syncMarksToGlobal(assistantId: Uuid) {
+        worker.copyMarksToGlobal(assistantId)
+        val refreshed = worker.findPending(MemoryRepository.GLOBAL_MEMORY_ID)
+        val conversations = synchronized(lock) {
+            val keptOther = pending[MemoryRepository.GLOBAL_MEMORY_ID].orEmpty()
+                .filterValues { it.assistantId != assistantId }
+            (keptOther + refreshed.associateBy { it.conversationId })
+                .also { pending[MemoryRepository.GLOBAL_MEMORY_ID] = it }
+        }
+        updateStatus(MemoryRepository.GLOBAL_MEMORY_ID) {
+            it.copy(pendingTurns = conversations.values.sumOf { item -> item.turns })
+        }
+    }
+
+    suspend fun countBackfillCandidates(memoryId: String, sinceMs: Long): Int =
+        worker.countPendingConversations(memoryId, sinceMs)
+
+    /** 停止 [memoryId] 正在进行的做梦或回溯整理，未完成批次不会推进进度 */
+    fun cancel(memoryId: String) {
+        cancelTimer(memoryId)
+        synchronized(lock) { activeJobs.remove(memoryId) }?.cancel()
+    }
+
+    /** 用户手动整理整个记忆库：先处理所有待整理的对话，再把记忆库清理一遍 */
+    fun organize(memoryId: String) {
+        val job = synchronized(lock) {
+            // 查数据库要一会儿，先标成进行中，免得这期间连点几下排上好几次整理
+            if (activeJobs[memoryId]?.isActive == true || status.value[memoryId]?.running == true) return
+            updateStatus(memoryId) { it.copy(running = true) }
+            timers.remove(memoryId)?.cancel()
+            scope.launch(start = CoroutineStart.LAZY) {
+                var started = false
+                try {
+                    // 进程重启后内存里的待整理列表可能是空的，把数据库里的也算上
+                    mergePending(memoryId, worker.findPending(memoryId))
+                    started = true
+                    run(memoryId, manual = true)
+                } finally {
+                    val self = currentCoroutineContext().job
+                    synchronized(lock) { if (activeJobs[memoryId] === self) activeJobs.remove(memoryId) }
+                    // run 自己会收尾，这里只管没走到它的情况
+                    if (!started) updateStatus(memoryId) { it.copy(running = false) }
+                }
+            }.also { activeJobs[memoryId] = it }
+        }
+        job.start()
+    }
+
+    /**
+     * 有界回溯补整理：扫描 [sinceMs] 之后最多 [maxConversations] 个未整理进 [memoryId] 的对话，
+     * 仅整理这批对话（不做全库删除清理），可随时经 [cancel] 停止。
+     */
+    fun backfill(
+        memoryId: String,
+        sinceMs: Long,
+        maxConversations: Int = MAX_BACKFILL_CONVERSATIONS,
+    ) {
+        val job = synchronized(lock) {
+            if (activeJobs[memoryId]?.isActive == true || status.value[memoryId]?.running == true) return
+            updateStatus(memoryId) { it.copy(running = true) }
+            timers.remove(memoryId)?.cancel()
+            scope.launch(start = CoroutineStart.LAZY) {
+                var started = false
+                try {
+                    val candidates = worker.findPending(memoryId, sinceMs = sinceMs, limit = maxConversations)
+                        .take(maxConversations)
+                    started = true
+                    runBackfill(memoryId, candidates.map { it.conversationId }.toSet())
+                } finally {
+                    val self = currentCoroutineContext().job
+                    synchronized(lock) { if (activeJobs[memoryId] === self) activeJobs.remove(memoryId) }
+                    if (!started) updateStatus(memoryId) { it.copy(running = false) }
+                }
+            }.also { activeJobs[memoryId] = it }
+        }
+        job.start()
     }
 
     private fun launchRun(memoryId: String) {
@@ -215,7 +316,45 @@ class MemoryConsolidationScheduler(
 
     private suspend fun runAutomatically(memoryId: String) {
         cancelTimer(memoryId)
-        run(memoryId, manual = false)
+        val self = currentCoroutineContext().job
+        synchronized(lock) {
+            if (activeJobs[memoryId]?.isActive != true) activeJobs[memoryId] = self
+        }
+        try {
+            run(memoryId, manual = false)
+        } finally {
+            synchronized(lock) { if (activeJobs[memoryId] === self) activeJobs.remove(memoryId) }
+        }
+    }
+
+    private suspend fun runBackfill(
+        memoryId: String,
+        targetIds: Set<Uuid>,
+    ): MemoryConsolidationRun? = synchronized(lock) { runLocks.getOrPut(memoryId) { Mutex() } }.withLock {
+        if (targetIds.isEmpty()) {
+            updateStatus(memoryId) { it.copy(running = false) }
+            return null
+        }
+        updateStatus(memoryId) { it.copy(running = true) }
+        var run: MemoryConsolidationRun? = null
+        val hold = keepAlive.acquire()
+        try {
+            var remaining = targetIds
+            while (remaining.isNotEmpty()) {
+                val pass = runOnce(memoryId, remaining, fullReview = false)
+                if (pass != null) run = run?.let { it + pass } ?: pass
+                if (pass?.error != null) break
+                val advanced = pass?.advancedConversations.orEmpty()
+                if (advanced.isEmpty()) break
+                remaining = remaining - advanced
+            }
+            val automaticLeft = mergePending(memoryId, worker.findPending(memoryId))
+            if (automaticLeft && config().autoDream) restartTimer(memoryId)
+        } finally {
+            hold.close()
+            updateStatus(memoryId) { it.copy(running = false, lastRun = run ?: it.lastRun) }
+        }
+        run
     }
 
     /**

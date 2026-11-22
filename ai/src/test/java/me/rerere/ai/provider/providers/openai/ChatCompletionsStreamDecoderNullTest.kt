@@ -7,7 +7,6 @@ import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.util.KeyRoulette
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -51,7 +50,7 @@ class ChatCompletionsStreamDecoderNullTest {
 
     @Test
     fun `non-streaming message skips null annotations and tool calls`() {
-        val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+        val api = ChatCompletionsAPI(OkHttpClient())
         val parseMessage = ChatCompletionsAPI::class.java.getDeclaredMethod("parseMessage", JsonObject::class.java)
             .apply { isAccessible = true }
         val message = Json.parseToJsonElement(

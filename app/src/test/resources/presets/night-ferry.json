@@ -1,0 +1,55 @@
+{
+  "chat_completion_source": "openai",
+  "openai_model": "gpt-4o",
+  "claude_model": "claude-sonnet-4",
+  "custom_url": "https://relay.invalid/v1",
+  "reverse_proxy": "https://proxy.invalid",
+  "proxy_password": "hunter2-not-a-real-secret",
+  "api_url_scale": "",
+  "n": 1,
+  "logit_bias": [],
+  "temperature": 0.9,
+  "top_p": 0.95,
+  "top_k": 40,
+  "top_a": 0,
+  "min_p": 0.05,
+  "frequency_penalty": 0.3,
+  "presence_penalty": 0,
+  "repetition_penalty": 1.1,
+  "seed": 42,
+  "openai_max_context": 32768,
+  "openai_max_tokens": 700,
+  "stream_openai": false,
+  "names_behavior": 2,
+  "squash_system_messages": true,
+  "wi_format": "[World]\n{0}",
+  "show_thoughts": true,
+  "vendor_extra_flag": {"keep": "me"},
+  "prompts": [
+    {"identifier": "main", "name": "Main", "system_prompt": true, "role": "system", "content": "Write {{char}}'s next reply to {{user}} as a ferry pilot on a night crossing.", "marker": false},
+    {"identifier": "ferryLog", "name": "Ferry log", "system_prompt": false, "role": "system", "content": "The ferry's log reads: calm water, no fog.", "marker": false, "injection_position": 1, "injection_depth": 2, "injection_order": 50},
+    {"identifier": "worldInfoBefore", "name": "World Info (before)", "system_prompt": true, "marker": true},
+    {"identifier": "worldInfoAfter", "name": "World Info (after)", "system_prompt": true, "marker": true},
+    {"identifier": "dialogueExamples", "name": "Chat Examples", "system_prompt": true, "marker": true},
+    {"identifier": "chatHistory", "name": "Chat History", "system_prompt": true, "marker": true},
+    {"identifier": "jailbreak", "name": "Post-History Instructions", "system_prompt": true, "role": "system", "content": "", "marker": false}
+  ],
+  "prompt_order": [
+    {"character_id": 100000, "order": [
+      {"identifier": "main", "enabled": true},
+      {"identifier": "worldInfoBefore", "enabled": true},
+      {"identifier": "ferryLog", "enabled": true},
+      {"identifier": "worldInfoAfter", "enabled": true},
+      {"identifier": "dialogueExamples", "enabled": true},
+      {"identifier": "chatHistory", "enabled": true},
+      {"identifier": "jailbreak", "enabled": true}
+    ]}
+  ],
+  "extensions": {
+    "regex_scripts": [
+      {"id": "5c9e0000-0000-4000-8000-000000000001", "scriptName": "Quiet the foghorn", "findRegex": "/FOGHORN/g", "replaceString": "(a distant horn)",
+       "trimStrings": [], "placement": [2], "disabled": false, "markdownOnly": false, "promptOnly": false, "runOnEdit": false,
+       "substituteRegex": 0, "minDepth": null, "maxDepth": null}
+    ]
+  }
+}

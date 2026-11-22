@@ -113,7 +113,7 @@ class WorkspaceFileSelectionTest {
 
     @Test
     fun `pending snapshots survive java serialization like rememberSaveable`() {
-        val folderImport = PendingFolderImport(
+        val folderImport = PendingImport(
             area = WorkspaceStorageArea.LINUX,
             destinationPath = "root/sub",
         )

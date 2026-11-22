@@ -88,7 +88,7 @@ object DocumentAsPromptTransformer : InputMessageTransformer {
         return "/upload/${file.name}"
     }
 
-    private fun readDocumentContent(document: UIMessagePart.Document): String {
+    internal fun readDocumentContent(document: UIMessagePart.Document): String {
         val file = runCatching { document.url.toUri().toFile() }.getOrNull()
             ?: return "[ERROR, invalid file uri: ${document.fileName}]"
         if (!file.exists() || !file.isFile) {
@@ -117,4 +117,19 @@ private object NoopCacheStore : CacheStore<String, String> {
     override fun clear() = Unit
     override fun loadAllEntries(): Map<String, CacheEntry<String>> = emptyMap()
     override fun keys(): Set<String> = emptySet()
+}
+
+/** 读取文档文本并限制最大字符数（复用 [DocumentAsPromptTransformer] 的解析与缓存）。 */
+internal suspend fun readBoundedDocumentText(
+    document: UIMessagePart.Document,
+    maxChars: Int = 32_000,
+): String = withContext(Dispatchers.IO) {
+    boundDocumentText(DocumentAsPromptTransformer.readDocumentContent(document), maxChars)
+}
+
+internal fun boundDocumentText(text: String, maxChars: Int = 32_000): String {
+    val limit = maxChars.coerceAtLeast(0)
+    if (text.length <= limit) return text
+    val omitted = text.length - limit
+    return "${text.take(limit)}\n\n[truncated: $omitted more characters omitted]"
 }

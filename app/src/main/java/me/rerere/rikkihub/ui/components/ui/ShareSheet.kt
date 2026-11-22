@@ -18,15 +18,18 @@ import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Share03
+import me.rerere.rikkihub.R
 import me.rerere.rikkihub.utils.JsonInstant
 import kotlin.io.encoding.Base64
 
@@ -49,20 +52,20 @@ fun ShareSheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                val encoded = remember(state.currentProvider) { state.currentProvider?.encodeForShare() ?: "" }
+                val tooLargeForQr = remember(encoded) { encoded.toByteArray(Charsets.UTF_8).size > 2200 }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("共享你的LLM模型", style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.share_sheet_title), style = MaterialTheme.typography.titleLarge)
 
                     IconButton(
                         onClick = {
                             val intent = Intent(Intent.ACTION_SEND)
                             intent.type = "text/plain"
-                            intent.putExtra(
-                                Intent.EXTRA_TEXT,
-                                state.currentProvider?.encodeForShare() ?: ""
-                            )
+                            intent.putExtra(Intent.EXTRA_TEXT, encoded)
                             try {
                                 context.startActivity(Intent.createChooser(intent, null))
                             } catch (e: Exception) {
@@ -74,13 +77,28 @@ fun ShareSheet(
                     }
                 }
 
-                QRCode(
-                    value = state.currentProvider?.encodeForShare() ?: "",
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                )
+                if (tooLargeForQr) {
+                    androidx.compose.material3.Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = stringResource(R.string.share_sheet_qr_too_large),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                } else {
+                    QRCode(
+                        value = encoded,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                    )
+                }
             }
         }
     }
@@ -128,5 +146,5 @@ class ShareSheetState {
 
 @Composable
 fun rememberShareSheetState(): ShareSheetState {
-    return ShareSheetState()
+    return remember { ShareSheetState() }
 }

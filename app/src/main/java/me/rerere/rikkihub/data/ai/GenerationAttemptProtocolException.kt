@@ -34,9 +34,9 @@ class GenerationAttemptProtocolException(
     /** 该 attempt 开始前的完整尾消息快照 (含此前成功步的全部 parts)。 */
     val baseMessage: UIMessage,
 ) : IllegalStateException(
-    // 只记结构化标识, 不复制协议正文/工具参数, 日志不泄露 args。
-    "stream protocol failure in generation attempt #$attemptIndex " +
-        "(conversation=$conversationId, assistant=$assistantMessageId)",
+    // 协议错误的 message 只含结构化标识（错误码、结束原因），不复制协议正文/工具参数。
+    // 会话/消息 id 由 GenerationLoop 的日志记录，这里是给用户看的报错。
+    "Model stream failed (${protocolError.code}): ${protocolError.message}",
     protocolError,
 ) {
     val protocolCode: String get() = protocolError.code

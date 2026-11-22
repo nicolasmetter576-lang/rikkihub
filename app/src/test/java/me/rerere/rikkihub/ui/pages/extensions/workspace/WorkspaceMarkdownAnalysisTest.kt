@@ -146,4 +146,34 @@ class WorkspaceMarkdownAnalysisTest {
         val spans = listOf(bold(0, 3))
         assertSame(spans, spans.rebased("abc", StringBuilder("abc")))
     }
+
+    private fun quoted(text: String, code: List<WorkspaceMarkdownSpan> = emptyList()) =
+        workspaceQuotedSpans(text, code).map { assertEquals(WorkspaceMarkdownStyle.QUOTED, it.style); text.substring(it.start, it.end) }
+
+    @Test fun `quoted text keeps its quote marks and the chat pairs`() {
+        assertEquals(listOf("“风很温柔。”", "「好。」", "\"gentle\"", "『书』"), quoted("她说：“风很温柔。”他答：「好。」She said \"gentle\" 『书』"))
+        // Single quotes are apostrophes as often as quotes; 《》 is a title, not speech
+        assertEquals(emptyList<String>(), quoted("don’t ‘this’ 《书名》"))
+    }
+
+    @Test fun `quotes pair within a line, so a stray one spoils only its own line`() {
+        val text = "他说：“没写完\n她说：“好。”\n“第二段开头，跨段引语不闭合\n“最后一段闭合。”\n"
+        assertEquals(listOf("“好。”", "“最后一段闭合。”"), quoted(text))
+    }
+
+    @Test fun `quotes inside code neither open nor close`() {
+        val text = "用 `\"a\"` 或 “真的”"
+        val code = analyze(text).spans.filter { it.style == WorkspaceMarkdownStyle.CODE }
+        assertTrue(code.isNotEmpty())
+        assertEquals(listOf("“真的”"), quoted(text, code))
+        // A code span that starts on an earlier line still covers this one
+        val block = "```\n\"x\n\"\n```\n“外面”"
+        assertEquals(listOf("“外面”"), quoted(block, analyze(block).spans))
+    }
+
+    @Test fun `empty text, empty lines and a trailing newline give no quotes`() {
+        assertEquals(emptyList<String>(), quoted(""))
+        assertEquals(emptyList<String>(), quoted("\n\n"))
+        assertEquals(listOf("“a”"), quoted("“a”\n"))
+    }
 }

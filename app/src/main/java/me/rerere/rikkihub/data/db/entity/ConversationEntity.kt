@@ -41,6 +41,21 @@ data class ConversationEntity(
     @ColumnInfo("folder_id", defaultValue = "")
     val folderId: String = "",
     /**
+     * 酒馆会话状态（JSON 对象）：聊天变量、世界书计时状态、`{{pick}}` 重掷种子等。
+     * 按酒馆的存法由 `:tavern` 读写，这里只当一段不透明 JSON；未知键原样保留。
+     */
+    @ColumnInfo("tavern_metadata", defaultValue = "{}")
+    val tavernMetadata: String = "{}",
+    /** 这个会话绑定的角色（`characters.id`），空串 = 没有角色。角色被删后这里的 id 失效，读取时按没有角色处理。 */
+    @ColumnInfo("character_id", defaultValue = "")
+    val characterId: String = "",
+    /** 工作区 CLI 会话（`ConversationCliSession` 的 JSON），空串 = 普通对话。单列写：`updateCliSession`。 */
+    @ColumnInfo("cli_session", defaultValue = "")
+    val cliSession: String = "",
+    /** 会话自己的压缩设置（`ConversationCompressionOverride` 的 JSON），空串 = 全部跟随全局。 */
+    @ColumnInfo("compression", defaultValue = "")
+    val compression: String = "",
+    /**
      * 乐观并发版本列。所有业务 UPDATE 带 revision=revision+1；
      * 整行 CAS 写用 `WHERE revision=:expected` 断言。不暴露给模型。
      */

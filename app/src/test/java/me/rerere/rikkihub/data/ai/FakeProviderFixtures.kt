@@ -10,6 +10,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
+import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageUpdate
 import me.rerere.ai.provider.EmbeddingGenerationParams
 import me.rerere.ai.provider.EmbeddingGenerationResult
 import me.rerere.ai.provider.Model
@@ -33,7 +35,7 @@ import kotlin.uuid.Uuid
  * 单元测试用 Context。mockable android.jar 里 ContextWrapper 构造器可用,
  * 其余方法全部抛 "not mocked"; 这里只补齐测试路径实际触碰的方法:
  * - filesDir: 子代理 run 日志目录 / 工具输出截断目录
- * - cacheDir: KeyRoulette 懒加载兜底
+ * - cacheDir: 搜索 key 轮询缓存兜底
  *
  * 注意 `Context.getString` 是 final, 不能覆写; 生成循环的文案经
  * `GenerationLoop.statusStrings` 注入, 不走 Context。
@@ -114,7 +116,7 @@ internal fun testSettings(model: Model): Settings = Settings(
 )
 
 internal fun testGenerationLoop(
-    provider: ScriptedProvider,
+    provider: Provider<ProviderSetting>,
     context: FakeContext,
 ): GenerationLoop = GenerationLoop(
     context = context,
@@ -129,6 +131,15 @@ internal fun testGenerationLoop(
     }
 }
 
+// Fixture shorthand: a default total=0 means the test did not supply an upstream total.
+// Explicit-zero and partial-field tests construct UsageUpdate directly instead.
+private fun TokenUsage.fixtureUpdate() = UsageUpdate(
+    promptTokens = promptTokens,
+    completionTokens = completionTokens,
+    cachedTokens = cachedTokens,
+    totalTokens = totalTokens.takeIf { it > 0 },
+)
+
 /** 一轮工具调用步的脚本: toolCallStart -> 完整 input delta -> end -> usage -> finish */
 internal fun toolStepScript(
     toolCallId: String,
@@ -141,7 +152,7 @@ internal fun toolStepScript(
         add(StreamChunk.ToolCallStart(id = toolCallId, toolName = toolName))
         add(StreamChunk.ToolCallDelta(id = toolCallId, inputDelta = inputJson))
         add(StreamChunk.ToolCallEnd(id = toolCallId))
-        if (usage != null) add(StreamChunk.Usage(usage))
+        if (usage != null) add(StreamChunk.Usage(usage.fixtureUpdate()))
         add(StreamChunk.Finish(finishReason = finishReason))
     }
 )
@@ -157,7 +168,7 @@ internal fun textStepScript(
         add(StreamChunk.TextStart(id = id))
         add(StreamChunk.TextDelta(id = id, text = text))
         add(StreamChunk.TextEnd(id = id))
-        if (usage != null) add(StreamChunk.Usage(usage))
+        if (usage != null) add(StreamChunk.Usage(usage.fixtureUpdate()))
         add(StreamChunk.Finish(finishReason = finishReason))
     }
 )

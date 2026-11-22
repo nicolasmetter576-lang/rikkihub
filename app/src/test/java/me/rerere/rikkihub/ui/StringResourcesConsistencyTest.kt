@@ -9,16 +9,17 @@ import org.w3c.dom.Element
 
 /**
  * Every translation that exists must keep the format arguments, line breaks and markup of its English
- * source, or the formatted string breaks at run time. It does not require a language to translate
- * everything: missing keys fall back to English.
+ * source, or the formatted string breaks at run time. Every language must also translate every string:
+ * a missing key silently falls back to English in the middle of a translated screen.
  */
 class StringResourcesConsistencyTest {
     private val modules = listOf("app", "oauth", "search")
-    private val languages = listOf("values-de")
+    private val languages = listOf("values-de", "values-ja", "values-ko-rKR", "values-ru", "values-zh", "values-zh-rTW")
 
     // %1$s, %d, %%, %n ... (Java Formatter) — compared as a multiset
     private val placeholder = Regex("%(?:\\d+\\$)?[-#+ 0,(<]*\\d*(?:\\.\\d+)?(?:[tT][a-zA-Z]|[bBhHsScCdoxXeEfgGaAn%])")
-    private val tag = Regex("</?[A-Za-z][^>]*>")
+    // `$<name>` is a regex named-group reference in the replacement hint, not markup
+    private val tag = Regex("(?<!\\$)</?[A-Za-z][^>]*>")
 
     private fun repoRoot(): File {
         var dir = File(System.getProperty("user.dir") ?: ".").absoluteFile
@@ -70,14 +71,21 @@ class StringResourcesConsistencyTest {
     }
 
     @Test
-    fun `german covers every string of all three modules`() {
+    fun `every language covers every string of all three modules`() {
+        val problems = mutableListOf<String>()
         for (module in modules) {
             val source = strings(module, "values")!!
-            val german = strings(module, "values-de")
-            assertTrue("$module has no values-de/strings.xml", german != null)
-            val missing = source.keys - german!!.keys
-            assertTrue("$module is missing German for: ${missing.take(10)}", missing.isEmpty())
+            for (language in languages) {
+                val translated = strings(module, language)
+                if (translated == null) {
+                    problems += "$module has no $language/strings.xml"
+                    continue
+                }
+                val missing = source.keys - translated.keys
+                if (missing.isNotEmpty()) problems += "$module/$language is missing ${missing.size}: ${missing.take(10)}"
+            }
         }
+        assertEquals(problems.joinToString("\n"), emptyList<String>(), problems)
     }
 
     @Test

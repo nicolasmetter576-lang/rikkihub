@@ -28,6 +28,10 @@ import kotlinx.coroutines.flow.map
 import me.rerere.rikkihub.data.workspace.RootfsInstallAlreadyRunningException
 import me.rerere.rikkihub.data.workspace.RootfsInstallState
 import me.rerere.rikkihub.data.workspace.WORKSPACE_FILE_SNAPSHOT_MAX_DEPTH
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvItem
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvMirror
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvSetupService
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvStatus
 import me.rerere.rikkihub.data.workspace.WorkspaceRootfsInstallService
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,10 +42,12 @@ import android.webkit.MimeTypeMap
 import me.rerere.rikkihub.data.ai.tools.WorkspaceToolEnablement
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkihub.data.files.FileFolders
+import me.rerere.rikkihub.data.files.FileManagerSource
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.utils.JsonInstant
 import android.content.Context
 import me.rerere.workspace.WorkspaceFileEntry
+import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.workspace.WorkspaceCommandResult
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.workspace.WorkspaceFileOperationException
@@ -55,6 +61,7 @@ class WorkspaceDetailVM(
     private val repository: WorkspaceRepository,
     private val subagentPresetRepository: SubagentPresetRepository,
     private val rootfsInstallService: WorkspaceRootfsInstallService,
+    private val envSetupService: WorkspaceEnvSetupService,
     private val context: Context,
 ) : ViewModel() {
     private val _state = MutableStateFlow(WorkspaceDetailState())
@@ -75,6 +82,17 @@ class WorkspaceDetailVM(
 
     private val _settingsError = MutableStateFlow<String?>(null)
     val settingsError = _settingsError.asStateFlow()
+
+    /** This workspace's one-click environment setup run (service-level, survives leaving the page). */
+    val envSetup = envSetupService.states
+        .map { it[id] }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** What the READY rootfs already has; null until checked (or while not READY). */
+    private val _envStatus = MutableStateFlow<WorkspaceEnvStatus?>(null)
+    val envStatus = _envStatus.asStateFlow()
+
+    val lastEnvMirror: WorkspaceEnvMirror get() = envSetupService.lastMirror
 
     private val _subagentPresetEditor = MutableStateFlow(WorkspaceSubagentPresetEditorState())
     val subagentPresetEditor = _subagentPresetEditor.asStateFlow()
@@ -136,7 +154,6 @@ class WorkspaceDetailVM(
         return true
     }
 
-    private val folderImporter = WorkspaceFolderImporter(context.contentResolver)
 
     private val fileCreation = WorkspaceFileCreation()
     val fileCreationState = fileCreation.state
@@ -179,6 +196,15 @@ class WorkspaceDetailVM(
     }
 
     init {
+        // Rootfs 就绪或一次配置跑完后重新检测已装的环境项
+        viewModelScope.launch {
+            combine(
+                repository.getByIdFlow(id).map { it?.shellStatus == WorkspaceShellStatus.READY.name },
+                envSetupService.states.map { it[id]?.active == true },
+            ) { ready, running -> ready && !running }
+                .distinctUntilChanged()
+                .collect { checkable -> if (checkable) refreshEnvStatus() else _envStatus.value = null }
+        }
         // 装完（不论哪一端发起）刷新文件列表：rootfs 区此前是空的
         viewModelScope.launch {
             rootfsInstallService.states
@@ -282,7 +308,7 @@ class WorkspaceDetailVM(
                 it.copy(
                     entries = emptyList(),
                     loading = false,
-                    error = error.message ?: "加载工作区文件失败",
+                    error = error.message ?: context.getString(R.string.workspace_files_load_failed),
                 )
             }
         }
@@ -300,7 +326,21 @@ class WorkspaceDetailVM(
             }.onSuccess {
                 refresh()
             }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "删除失败") }
+                _state.update { it.copy(error = error.message ?: context.getString(R.string.workspace_files_delete_failed)) }
+            }
+        }
+    }
+
+    /** 同一文件夹内改名（FILES 区）；新名字含后缀，已存在同名项时失败不覆盖。 */
+    fun rename(entry: WorkspaceFileEntry, newName: String) {
+        viewModelScope.launch {
+            runCatching {
+                val parent = entry.path.substringBeforeLast('/', missingDelimiterValue = "")
+                repository.moveFile(id, entry.path, if (parent.isEmpty()) newName else "$parent/$newName", overwrite = false)
+            }.onSuccess {
+                refresh()
+            }.onFailure { error ->
+                _state.update { it.copy(error = error.message ?: context.getString(R.string.workspace_files_rename_failed)) }
             }
         }
     }
@@ -569,24 +609,6 @@ class WorkspaceDetailVM(
         }
     }
 
-    fun importFile(inputStream: InputStream, fileName: String) {
-        viewModelScope.launch {
-            runCatching {
-                repository.importFile(
-                    id = id,
-                    area = state.value.area,
-                    destinationPath = state.value.path,
-                    fileName = fileName,
-                    inputStream = inputStream,
-                )
-            }.onSuccess {
-                refresh()
-            }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "导入文件失败") }
-            }
-        }
-    }
-
     fun exportFile(entry: WorkspaceFileEntry, outputStream: OutputStream) {
         viewModelScope.launch {
             runCatching {
@@ -597,7 +619,7 @@ class WorkspaceDetailVM(
                     outputStream = outputStream,
                 )
             }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "导出文件失败") }
+                _state.update { it.copy(error = error.message ?: context.getString(R.string.workspace_files_export_failed)) }
             }
         }
     }
@@ -607,27 +629,35 @@ class WorkspaceDetailVM(
      * [area]/[destinationPath] 必须是发起时的快照, 由调用方传入, 这里不读 state,
      * 因此传输期间用户在 picker 里切目录不会改变落点. 已在传输中时忽略重入.
      */
-    fun importFolder(uri: Uri, area: WorkspaceStorageArea, destinationPath: String) {
-        if (!beginTransfer()) return
+    /**
+     * Built-in file manager import: copies the picked files and folders into [area]/[destinationPath]
+     * (names that already exist there become "name (n)", nothing is overwritten).
+     */
+    fun importSources(sources: List<FileManagerSource>, area: WorkspaceStorageArea, destinationPath: String) {
+        if (sources.isEmpty() || !beginTransfer()) return
         viewModelScope.launch {
             try {
-                val result = repository.importFolder(
-                    id = id,
-                    area = area,
-                    destinationPath = destinationPath,
-                    treeRoot = withContext(Dispatchers.IO) { folderImporter.openTree(uri) },
-                )
+                val items = sources.flatMap { source ->
+                    when (source) {
+                        is FileManagerSource.Items -> repository.importHostFiles(id, area, source.dir, source.paths, destinationPath).items
+                        is FileManagerSource.Folder -> listOf(repository.importHostFolder(id, area, source.dir, source.name, destinationPath))
+                    }
+                }
+                val imported = items.count { it.ok }
+                val failures = items.filterNot { it.ok }
                 _state.update {
                     it.copy(
-                        transferNotice = "已导入文件夹「${result.rootName}」(${result.fileCount} 个文件)",
+                        transferNotice = context.getString(R.string.workspace_import_done, imported),
+                        error = failures.takeIf { it.isNotEmpty() }?.joinToString("\n") { failure ->
+                            "${failure.source}: ${failure.error ?: failure.errorCode}"
+                        },
                     )
                 }
-                // refresh 按当下 state.path 列目录, 不会把用户导航拽回旧目录
                 refresh()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                _state.update { it.copy(error = error.message ?: "导入文件夹失败") }
+                _state.update { it.copy(error = error.message ?: context.getString(R.string.workspace_import_failed)) }
             } finally {
                 _state.update { it.copy(isTransferring = false) }
             }
@@ -661,7 +691,7 @@ class WorkspaceDetailVM(
                     )
                 }
                 _state.update {
-                    it.copy(transferNotice = "已导出 ${result.fileCount} 个文件")
+                    it.copy(transferNotice = context.getString(R.string.workspace_export_directory_done, result.fileCount))
                 }
                 refresh()
             } catch (error: CancellationException) {
@@ -669,7 +699,7 @@ class WorkspaceDetailVM(
                 throw error
             } catch (error: Throwable) {
                 if (openedForWrite) deletePartialDocument(destinationUri)
-                _state.update { it.copy(error = error.message ?: "导出文件失败") }
+                _state.update { it.copy(error = error.message ?: context.getString(R.string.workspace_files_export_failed)) }
             } finally {
                 _state.update { it.copy(isTransferring = false) }
             }
@@ -843,7 +873,7 @@ class WorkspaceDetailVM(
                 }
                 file
             }.onSuccess(onReady).onFailure { error ->
-                _state.update { it.copy(error = error.message ?: "导出文件失败") }
+                _state.update { it.copy(error = error.message ?: context.getString(R.string.workspace_files_export_failed)) }
             }
         }
     }
@@ -1101,7 +1131,39 @@ class WorkspaceDetailVM(
         patchWorkspace { it.copy(toolEnablement = WorkspaceToolEnablement.validatedJson(emptyMap())) }
     }
 
-    fun installRootfs(url: String) {
+    fun refreshEnvStatus() {
+        viewModelScope.launch {
+            _envStatus.value = try {
+                envSetupService.check(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (error: Throwable) {
+                null
+            }
+        }
+    }
+
+    fun startEnvSetup(items: Set<WorkspaceEnvItem>, mirror: WorkspaceEnvMirror) {
+        envSetupService.dismiss(id)
+        runCatching { envSetupService.start(id, items, mirror) }
+    }
+
+    fun cancelEnvSetup() {
+        envSetupService.cancel(id)
+    }
+
+    fun dismissEnvSetup() {
+        envSetupService.dismiss(id)
+    }
+
+    /** [envMirror] non-null: run the default one-click setup from that source once the rootfs is READY. */
+    fun installRootfs(url: String, envMirror: WorkspaceEnvMirror? = null) {
+        if (envMirror != null) {
+            _installStartError.value = null
+            envSetupService.dismiss(id)
+            runCatching { envSetupService.installRootfsThenSetup(id, url, WorkspaceEnvItem.DEFAULT, envMirror) }
+            return
+        }
         viewModelScope.launch {
             _installStartError.value = null
             rootfsInstallService.dismiss(id)
@@ -1112,7 +1174,7 @@ class WorkspaceDetailVM(
             } catch (_: RootfsInstallAlreadyRunningException) {
                 // 另一端（Web）已经在装，进度会照常显示
             } catch (error: Throwable) {
-                _installStartError.value = error.message ?: "Rootfs 安装失败"
+                _installStartError.value = error.message ?: context.getString(R.string.workspace_detail_rootfs_install_failed)
             }
         }
     }
@@ -1156,7 +1218,7 @@ class WorkspaceDetailVM(
                 _terminalState.update {
                     it.copy(
                         running = false,
-                        history = it.history + WorkspaceTerminalEntry.Error(error.message ?: "命令执行失败"),
+                        history = it.history + WorkspaceTerminalEntry.Error(error.message ?: context.getString(R.string.workspace_terminal_command_failed)),
                     )
                 }
             }

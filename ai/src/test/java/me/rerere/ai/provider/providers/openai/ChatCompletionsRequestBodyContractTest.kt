@@ -19,7 +19,6 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.ai.util.KeyRoulette
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,7 +46,7 @@ class ChatCompletionsRequestBodyContractTest {
 
     @Before
     fun setUp() {
-        api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+        api = ChatCompletionsAPI(OkHttpClient())
     }
 
     // 与 ChatCompletionsMoonshotRequestTest 相同的反射入口（保留的历史兼容签名）

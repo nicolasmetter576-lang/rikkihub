@@ -12,7 +12,7 @@ import me.rerere.workspace.WorkspaceFileEntry
 enum class WorkspaceFileType { TEXT, IMAGE, OTHER }
 
 private val IMAGE_EXTENSIONS = setOf(
-    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "heic", "heif", "avif", "ico",
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "avif", "ico",
 )
 
 fun WorkspaceFileEntry.detectFileType(): WorkspaceFileType {

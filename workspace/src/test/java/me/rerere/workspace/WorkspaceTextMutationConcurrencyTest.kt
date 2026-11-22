@@ -32,7 +32,7 @@ class WorkspaceTextMutationConcurrencyTest {
             start.countDown()
             assertEquals(1, futures.count { it.get(5, TimeUnit.SECONDS) })
             assertTrue(file.readText() in listOf("writer 1", "writer 2"))
-            assertTrue(root.listFiles()!!.none { it.name.startsWith(".l2s.edit.") })
+            assertTrue(root.listFiles()!!.none { it.name.startsWith(".rikkihub-tmp-") })
         } finally { start.countDown(); pool.shutdownNow() }
     }
 

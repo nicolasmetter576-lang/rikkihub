@@ -454,14 +454,14 @@ class ResponseApiToolIdentityFallbackTest {
     }
 
     @Test
-    fun `onClosed flushes each ledger exactly once including call-only calls`() {
+    fun `completed flushes each ledger exactly once including call-only calls and EOF without terminal fails`() {
         val decoder = ResponseApiStreamDecoder()
         val streamed = buildList {
             addAll(accept(decoder, functionCallItem("response.output_item.added",
                 id = "fc_1", callId = "call_1", name = "a", arguments = "{\"p\":1}")))
             addAll(accept(decoder, argsDelta(itemId = null, callId = "call_2", delta = "\"x\"")))
         }
-        val closed = decoder.onClosed()
+        val closed = accept(decoder, completedResponse())
 
         // 正常收尾：两个账本（一个 item-bound、一个 call-only）各发一次 End；
         // call_1 只登记了 initial 快照，在 finish 一次性 flush
@@ -482,6 +482,12 @@ class ResponseApiToolIdentityFallbackTest {
         assertEquals(2, tools.size)
         assertEquals("{\"p\":1}", tools.single { it.toolCallId == "call_1" }.input)
         assertEquals("\"x\"", tools.single { it.toolCallId == "call_2" }.input)
+
+        val truncated = ResponseApiStreamDecoder()
+        accept(truncated, functionCallItem("response.output_item.added",
+            id = "fc_1", callId = "call_1", name = "a", arguments = "{\"p\":1}"))
+        assertThrows(java.io.IOException::class.java) { truncated.onClosed() }
+        assertTrue(truncated.onClosed().isEmpty())
     }
 
     @Test

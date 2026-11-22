@@ -438,7 +438,7 @@ export default function StoragePage() {
           )}
 
           {/* 按时间清理 */}
-          <div className="rounded-xl border p-4">
+          <div className="rounded-xl border p-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <BrushCleaning className="size-4" />
               {t("cleanup.title")}

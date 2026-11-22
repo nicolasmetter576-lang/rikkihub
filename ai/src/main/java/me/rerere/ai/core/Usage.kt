@@ -11,32 +11,61 @@ data class TokenUsage(
 )
 
 /**
- * 合并同一次请求内的 usage 快照：各字段取最新的非零值。
- * 跨请求（如多轮工具调用的各个步骤）累计请用 [sum]。
+ * One request's reported fields, not a delta to add. Null means unreported; zero is an explicit
+ * correction. [totalTokens] is ONLY an upstream total, never a locally computed p+c.
+ * [partial] describes known incompleteness in the current snapshot (e.g. a folded Claude pass).
+ * This transport type is deliberately separate from persisted [TokenUsage].
  */
-fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
-    val promptTokens = if (other.promptTokens > 0) {
-        other.promptTokens
-    } else {
-        this?.promptTokens ?: 0
-    }
-    val completionTokens = if (other.completionTokens > 0) {
-        other.completionTokens
-    } else {
-        this?.completionTokens ?: 0
-    }
-    val totalTokens = promptTokens + completionTokens
-    val cachedTokens = if (other.cachedTokens > 0) {
-        other.cachedTokens
-    } else {
-        this?.cachedTokens ?: 0
-    }
-    return TokenUsage(
-        promptTokens = promptTokens,
-        completionTokens = completionTokens,
-        totalTokens = totalTokens,
-        cachedTokens = cachedTokens
+@Serializable
+data class UsageUpdate(
+    val promptTokens: Int? = null,
+    val completionTokens: Int? = null,
+    val cachedTokens: Int? = null,
+    val totalTokens: Int? = null,
+    val partial: Boolean = false,
+) {
+    /** For callers that already have a fully materialized snapshot, not for wire decoders. */
+    constructor(usage: TokenUsage, partial: Boolean = false) : this(
+        usage.promptTokens, usage.completionTokens, usage.cachedTokens, usage.totalTokens, partial,
     )
+}
+
+/** Fixed-size state for exactly one attempt. Repeated snapshots replace; successful steps sum. */
+class UsageAccumulator {
+    private var promptTokens: Int? = null
+    private var completionTokens: Int? = null
+    private var cachedTokens: Int? = null
+    private var totalTokens: Int? = null
+    private var partial = false
+
+    val snapshot: TokenUsage?
+        get() {
+            if (promptTokens == null && completionTokens == null && cachedTokens == null && totalTokens == null) {
+                return null
+            }
+            return TokenUsage(
+                promptTokens = promptTokens ?: 0,
+                completionTokens = completionTokens ?: 0,
+                cachedTokens = cachedTokens ?: 0,
+                totalTokens = totalTokens ?: ((promptTokens ?: 0) + (completionTokens ?: 0)),
+            )
+        }
+
+    /** Input/output were reported and cache is a consistent subset; total remains independent. */
+    val hasCompleteUsage: Boolean
+        get() = promptTokens != null && completionTokens != null && !partial &&
+            (cachedTokens ?: 0) <= (promptTokens ?: 0)
+
+    fun update(update: UsageUpdate) {
+        var reported = false
+        update.promptTokens?.takeIf { it >= 0 }?.let { promptTokens = it; reported = true }
+        update.completionTokens?.takeIf { it >= 0 }?.let { completionTokens = it; reported = true }
+        update.cachedTokens?.takeIf { it >= 0 }?.let { cachedTokens = it; reported = true }
+        update.totalTokens?.takeIf { it >= 0 }?.let { totalTokens = it; reported = true }
+        // A later complete folded snapshot may replace an earlier partial preview. Empty/invalid
+        // reports are no-ops, except an explicit partial marker for a pass with no usage at all.
+        if (reported || update.partial) partial = update.partial
+    }
 }
 
 /**

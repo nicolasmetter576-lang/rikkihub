@@ -3,6 +3,7 @@ package me.rerere.rikkihub.data.management.adapters.conversation
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkihub.data.creator.definition.AssistantRegistry
+import me.rerere.rikkihub.data.management.adapters.character.CharacterCollections
 import me.rerere.rikkihub.data.management.adapters.reject
 import me.rerere.rikkihub.data.management.adapters.rejectBusy
 import me.rerere.rikkihub.data.management.adapters.rejectInvalid
@@ -90,7 +92,7 @@ class ConversationDomainAdapter : ManagementDomainAdapter {
         }
 
         fun requireReferences(modes: Set<String>?, books: Set<String>?) {
-            val knownModes = settings.settings.modeInjections.map { it.id.toString() }.toSet()
+            val knownModes = settings.settings.promptLibrary.map { it.identifier }.toSet()
             val knownBooks = settings.settings.lorebooks.map { it.id.toString() }.toSet()
             if (modes != null && !knownModes.containsAll(modes)) rejectNotFound("Unknown mode injection")
             if (books != null && !knownBooks.containsAll(books)) rejectNotFound("Unknown lorebook")
@@ -153,8 +155,26 @@ class ConversationDomainAdapter : ManagementDomainAdapter {
                         view["customSystemPrompt"]?.jsonPrimitive?.contentOrNull, cmd.customSystemPrompt)
                 if (cmd.clearWorkspaceCwd || cmd.workspaceCwd != null)
                     diff += DiffLine("conversation[$id].workspaceCwd", view["workspaceCwd"]?.jsonPrimitive?.contentOrNull, cmd.workspaceCwd)
+                if (cmd.clearCharacter || cmd.characterId != null) {
+                    cmd.characterId?.let { characterId ->
+                        runCatching { Uuid.parse(characterId) }.getOrElse { rejectInvalid("Invalid character id") }
+                        ctx.read.readObjectJson(CharacterCollections.CARDS, characterId) ?: rejectNotFound("Character unavailable")
+                    }
+                    val now = view["characterId"]?.jsonPrimitive?.contentOrNull
+                    val next = if (cmd.clearCharacter) null else cmd.characterId
+                    if (now != next) diff += DiffLine("conversation[$id].characterId", now, next)
+                }
                 cmd.modeInjectionIds?.let { diff += DiffLine("conversation[$id].modeInjectionIds", view["modeInjectionIds"].toString(), it.sorted().toString()) }
                 cmd.lorebookIds?.let { diff += DiffLine("conversation[$id].lorebookIds", view["lorebookIds"].toString(), it.sorted().toString()) }
+                cmd.tavernMetadata?.let { patch ->
+                    val current = view["tavernMetadata"] as? JsonObject ?: JsonObject(emptyMap())
+                    // the same check the commit makes, so a bad value is refused at proposal time
+                    me.rerere.rikkihub.data.ai.tavern.TavernConversationState.mergeMetadata(current, patch)
+                    patch.forEach { (key, value) ->
+                        if (current[key] != value && !(value is JsonNull && key !in current))
+                            diff += DiffLine("conversation[$id].tavernMetadata.$key", current[key]?.toString(), value.toString())
+                    }
+                }
                 if (diff.isEmpty()) rejectInvalid("Patch has no effect")
             }
             is ConversationMutationCommand.AppendPlainMessage -> {

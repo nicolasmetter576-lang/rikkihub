@@ -100,8 +100,9 @@ class CreatorToolSurfaceTest {
         }
         val lorebook = text(tool.execute(buildJsonObject { put("kind", JsonPrimitive("world book")) }))
         assertTrue(lorebook, lorebook.contains("\"kind\":\"LOREBOOK\""))
-        // Enum values are the stored serial names.
-        assertTrue(lorebook, lorebook.contains("after_system_prompt"))
+        // Entries are their own objects with every SillyTavern field.
+        val entry = text(tool.execute(buildJsonObject { put("kind", JsonPrimitive("lorebook entry")) }))
+        assertTrue(entry, entry.contains("\"kind\":\"LOREBOOK_ENTRY\"") && entry.contains("selectiveLogic") && entry.contains("keysecondary"))
         val unknown = text(tool.execute(buildJsonObject { put("kind", JsonPrimitive("EVERYTHING")) }))
         assertEquals("BAD_INPUT", JsonInstant.parseToJsonElement(unknown).jsonObject["reason"]?.jsonPrimitive?.content)
     }

@@ -81,6 +81,21 @@ class BuildEntriesTest(unittest.TestCase):
         api = {"p": "nope", "q": {}, "r": {"models": {"m": {}}}}
         self.assertEqual(update.build_entries(api)["m"], [0, 0])
 
+    def test_reference_price_prefers_official_and_does_not_change_capabilities(self):
+        api = {
+            "openai": {"models": {"m": {**model(tool=True, context=8000), "cost": {"input": 2, "output": 4, "cache_read": 1}}}},
+            "reseller": {"models": {"m": {**model(tool=True, context=8000), "cost": {"input": 1, "output": 2}}}},
+        }
+        self.assertEqual(update.build_entries(api)["m"], [update.TOOL_CALL, 8000, 2, 4, 1])
+
+    def test_zero_prices_are_known_and_invalid_prices_are_ignored(self):
+        for value in [-1, True, "1", float("nan"), float("inf"), 1_000_001]:
+            api = {"p": {"models": {"m": {**model(), "cost": {"input": value, "output": 1}}}}}
+            self.assertEqual(update.build_entries(api)["m"], [0, 0], str(value))
+        api = {"p": {"models": {"free": {**model(), "cost": {"input": 0, "output": 0}}, "bad": {**model(), "cost": "oops"}}}}
+        self.assertEqual(update.build_entries(api)["free"], [0, 0, 0, 0, None])
+        self.assertEqual(update.build_entries(api)["bad"], [0, 0])
+
 
 class RenderTest(unittest.TestCase):
     def test_output_is_valid_json_sorted_and_stable(self):

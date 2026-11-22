@@ -8,8 +8,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkihub.AppScope
 import me.rerere.rikkihub.data.ai.MemoryDreamConfig
+import me.rerere.rikkihub.data.ai.CompressionConfig
 import me.rerere.rikkihub.data.ai.polish.PromptPolishConfig
 import me.rerere.rikkihub.data.ai.tuiqiao.TuiqiaoConfig
+import me.rerere.rikkihub.data.ai.qubagu.QubaguConfig
 import me.rerere.rikkihub.data.ai.zaizao.ZaizaoConfig
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.datastore.DisplaySetting
@@ -53,6 +55,12 @@ class SettingVM(
         }
     }
 
+    fun updateQubagu(transform: (QubaguConfig) -> QubaguConfig) {
+        appScope.launch {
+            settingsStore.update { latest -> latest.copy(qubagu = transform(latest.qubagu)) }
+        }
+    }
+
     fun updatePromptPolish(transform: (PromptPolishConfig) -> PromptPolishConfig) {
         appScope.launch {
             settingsStore.update { latest -> latest.copy(promptPolish = transform(latest.promptPolish)) }
@@ -60,6 +68,12 @@ class SettingVM(
     }
 
     /** 做梦设置同样在最新值上改 */
+    fun updateCompression(transform: (CompressionConfig) -> CompressionConfig) {
+        appScope.launch {
+            settingsStore.update { latest -> latest.copy(compression = transform(latest.compression)) }
+        }
+    }
+
     fun updateMemoryDream(transform: (MemoryDreamConfig) -> MemoryDreamConfig) {
         appScope.launch {
             settingsStore.update { latest -> latest.copy(memoryDream = transform(latest.memoryDream)) }

@@ -32,27 +32,50 @@ fun Route.installWebSettingsRoutes(
     editorFonts: me.rerere.rikkihub.data.fonts.EditorFontFiles? = null,
     translationHistoryRepo: me.rerere.rikkihub.data.repository.TranslationHistoryRepository? = null,
     memoryScheduler: me.rerere.rikkihub.data.ai.MemoryConsolidationScheduler? = null,
+    tavernRuntime: me.rerere.rikkihub.data.ai.tavern.TavernRuntime? = null,
+    managementRuntime: me.rerere.rikkihub.data.management.runtime.ManagementRuntime? = null,
+    characterRepository: me.rerere.rikkihub.data.repository.CharacterRepository? = null,
+    characterService: me.rerere.rikkihub.data.character.CharacterService? = null,
+    usageStats: WebUsageStats? = null,
+    fileManager: me.rerere.rikkihub.data.files.FileManagerService? = null,
 ) {
     assistantRoutes(
         settingsStore, conversationRepo, memoryRepo, filesManager,
         workspaceExists = workspaceRepository?.let { repo -> { id -> repo.getById(id) != null } },
         availableSkillNames = skillManager?.let { manager -> { manager.listSkills().mapTo(HashSet()) { it.name } } },
+        memoryScheduler = memoryScheduler,
     )
+    assistantQuickConfigRoutes(settingsStore)
+    if (fileManager != null) fileManagerRoutes(fileManager, filesManager, settingsStore)
+    assistantPresetRoutes(settingsStore)
     memoryRoutes(settingsStore, memoryRepo, memoryScheduler)
     if (skillManager != null) skillRoutes(skillManager) { settingsStore.settingsFlow.value.assistants }
     providerRoutes(settingsStore, providerManager)
     extensionRoutes(settingsStore)
+    tavernLibraryRoutes(settingsStore)
+    tavernSettingsRoutes(settingsStore, tavernRuntime)
+    if (characterRepository != null && characterService != null) {
+        characterRoutes(settingsStore, characterRepository, characterService, chatService)
+    }
+    if (managementRuntime != null) creatorProposalRoutes(managementRuntime)
     cacheKeepAliveRoutes(settingsStore)
     toolExecutionRoutes(settingsStore)
-    tuiqiaoRoutes(settingsStore, me.rerere.rikkihub.data.ai.tuiqiao.TuiqiaoHandler(providerManager))
-    zaizaoRoutes(settingsStore, me.rerere.rikkihub.data.ai.zaizao.ZaizaoHandler(providerManager))
-    promptPolishRoutes(settingsStore, me.rerere.rikkihub.data.ai.polish.PromptPolishHandler(providerManager), conversationRepo)
+    // 网页端发起的推敲 / 再造 / 润色同样记用量
+    val recorder = usageStats?.recorder
+    tuiqiaoRoutes(settingsStore, me.rerere.rikkihub.data.ai.tuiqiao.TuiqiaoHandler(providerManager, recorder))
+    zaizaoRoutes(settingsStore, me.rerere.rikkihub.data.ai.zaizao.ZaizaoHandler(providerManager, recorder))
+    promptPolishRoutes(settingsStore, me.rerere.rikkihub.data.ai.polish.PromptPolishHandler(providerManager, recorder), conversationRepo)
+    if (tavernRuntime != null) {
+        qubaguRoutes(settingsStore, me.rerere.rikkihub.data.ai.qubagu.Qubagu(tavernRuntime.regexFactory), chatService, conversationRepo)
+    }
+    if (usageStats != null) statsRoutes(settingsStore, usageStats)
     editorTypographyRoutes(settingsStore)
     if (editorFonts != null) fontRoutes(editorFonts, settingsStore)
     if (chatService != null) {
         storageRoutes(filesManager, conversationRepo, settingsStore, chatService)
         if (favoriteRepo != null) favoriteRoutes(favoriteRepo, conversationRepo, chatService)
-        compressRoutes(chatService, conversationRepo)
+        compressRoutes(chatService, conversationRepo, settingsStore)
+        tavernConversationRoutes(settingsStore, chatService, conversationRepo)
     }
     if (translationHandler != null) {
         translatorRoutes(settingsStore, translationHandler, translationHistoryRepo)

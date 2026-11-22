@@ -8,6 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import i18next from "i18next";
@@ -28,11 +29,14 @@ import {
 } from "../app/lib/sidebar-state";
 import en from "../app/locales/en-US/common.json";
 import enSettings from "../app/overlay/locales/en-US/settings.json";
+import enFileManager from "../app/overlay/locales/en-US/fileManager.json";
+import enTavern from "../app/overlay/locales/en-US/tavern.json";
+import zhTavern from "../app/overlay/locales/zh-CN/tavern.json";
 
 await i18next.use(initReactI18next).init({
   lng: "en-US",
   defaultNS: "common",
-  resources: { "en-US": { common: en, settings: enSettings } },
+  resources: { "en-US": { common: en, settings: enSettings, tavern: enTavern, fileManager: enFileManager } },
   interpolation: { escapeValue: false },
 });
 
@@ -77,19 +81,20 @@ function ariaLabels(fragment: string): string[] {
   return [...fragment.matchAll(/aria-label="([^"]*)"/g)].map((match) => match[1]);
 }
 
-test("footer is a single row: four links, display menu, collapse button", () => {
+test("footer is a single row: five links, display menu, collapse button", () => {
   const row = footerActions(renderSidebar(true));
   assert.deepEqual(ariaLabels(row), [
     "Open settings",
     "Open workspaces",
     enSettings.nav.translator,
     enSettings.nav.storage,
+    enFileManager.title,
     "Display",
     "Collapse sidebar",
   ]);
   assert.deepEqual(
     [...row.matchAll(/href="([^"]*)"/g)].map((match) => match[1]),
-    ["/settings", "/workspaces", "/translator", "/storage"],
+    ["/settings", "/workspaces", "/translator", "/storage", "/files"],
   );
   assert.doesNotMatch(row, /flex-wrap/);
 });
@@ -163,7 +168,7 @@ test("sidebar width is sized to the footer row, so the row has no empty slot", (
   );
   // 桌面与手机抽屉同宽
   assert.equal(style["--sidebar-width"], CONVERSATION_SIDEBAR_WIDTH);
-  assert.equal(SIDEBAR_FOOTER_BUTTONS * 32 + SIDEBAR_FOOTER_BUTTONS * 4 + 16 + 1, 233);
+  assert.equal(SIDEBAR_FOOTER_BUTTONS * 32 + SIDEBAR_FOOTER_BUTTONS * 4 + 16 + 1, 269);
   assert.equal(style["--sidebar-width-icon"], "calc(3rem + 1px)");
 });
 
@@ -229,4 +234,56 @@ test("an empty workbench is not mounted, so chat and workspace share one separat
   assert.match(page, /\{showWorkbenchPanel && panel \? \(\s*<>\s*<ResizableHandle withHandle \/>\s*<ResizablePanel\s+id="workbench"/);
   assert.ok(!/id="workbench"[\s\S]{0,200}collapsible/.test(page), "no zero-width collapsible workbench left behind");
   assert.match(page, /onLayoutChanged=\{handlePanelLayoutChanged\}/);
+});
+
+// 角色入口：侧边栏顶部的“角色”按钮（弹窗）和收藏头像条，图标栏里收成方块
+function renderWithQueries(open: boolean, props: Partial<ConversationSidebarProps>): string {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(
+          SidebarProvider,
+          { open, onOpenChange: () => {} },
+          createElement(ConversationSidebar, { ...baseProps, ...props }),
+        ),
+      ),
+    ),
+  );
+}
+
+test("the character button sits under favorites and shrinks to a square in the icon rail", () => {
+  const html = renderWithQueries(true, { onStartCharacterChat: () => {} });
+  const label = enTavern.characters.title;
+  const button = html.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? "";
+  assert.ok(button, "the Characters button is rendered");
+  assert.ok(button.includes("group-data-[collapsible=icon]:size-8!"), button);
+  assert.match(html, new RegExp(`<span class="group-data-\\[collapsible=icon\\]:hidden">${label}</span>`));
+  // New conversation, search, favorites, characters: in that order
+  const order = ["New conversation", "Search conversations", "Favorites", label].map((name) => html.indexOf(`aria-label="${name}`));
+  assert.ok(order.every((index) => index >= 0), `all four buttons are there: ${order}`);
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+});
+
+test("without a handler the sidebar has no character entry at all", () => {
+  const html = renderWithQueries(true, {});
+  assert.doesNotMatch(html, new RegExp(`aria-label="${enTavern.characters.title}"`));
+  assert.doesNotMatch(html, /favorite-characters/);
+});
+
+test("the picker texts exist in both languages", () => {
+  for (const key of ["pickerManage", "pickerAssistant", "pickerMore", "pickerQuick", "pickerStart"] as const) {
+    assert.ok(enTavern.characters[key], `en ${key}`);
+    assert.ok(zhTavern.characters[key], `zh ${key}`);
+  }
+  assert.match(enTavern.characters.pickerAssistant, /\{\{name\}\}/);
+  assert.match(zhTavern.characters.pickerAssistant, /\{\{name\}\}/);
+  assert.match(enTavern.characters.pickerMore, /\{\{count\}\}/);
+  assert.match(zhTavern.characters.pickerMore, /\{\{count\}\}/);
+  assert.match(enTavern.characters.pickerStart, /\{\{name\}\}/);
+  assert.match(zhTavern.characters.pickerStart, /\{\{name\}\}/);
 });

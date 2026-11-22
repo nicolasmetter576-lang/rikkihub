@@ -70,8 +70,9 @@ class WorkspaceTerminalSessionManager internal constructor(
         launchCreateTab(root = root, onlyIfEmpty = true, shellCompatibilityMode = shellCompatibilityMode)
     }
 
-    internal fun createTab(root: String, shellCompatibilityMode: Boolean) {
-        launchCreateTab(root = root, onlyIfEmpty = false, shellCompatibilityMode = shellCompatibilityMode)
+    /** [initialCommand] is typed into the new tab's shell (CLI install/login from the chat). */
+    internal fun createTab(root: String, shellCompatibilityMode: Boolean, initialCommand: String? = null) {
+        launchCreateTab(root = root, onlyIfEmpty = false, shellCompatibilityMode = shellCompatibilityMode, initialCommand = initialCommand)
     }
 
     internal fun selectTab(root: String, tabId: Long) {
@@ -159,13 +160,13 @@ class WorkspaceTerminalSessionManager internal constructor(
         }
     }
 
-    private fun launchCreateTab(root: String, onlyIfEmpty: Boolean, shellCompatibilityMode: Boolean) {
+    private fun launchCreateTab(root: String, onlyIfEmpty: Boolean, shellCompatibilityMode: Boolean, initialCommand: String? = null) {
         if (root in creationJobs || root in closingRoots) return
 
         lateinit var job: Job
         job = appScope.launch(start = CoroutineStart.LAZY) {
             try {
-                createTab(root = root, onlyIfEmpty = onlyIfEmpty, shellCompatibilityMode = shellCompatibilityMode)
+                createTab(root = root, onlyIfEmpty = onlyIfEmpty, shellCompatibilityMode = shellCompatibilityMode, initialCommand = initialCommand)
             } finally {
                 creationJobs.remove(root, job)
             }
@@ -174,7 +175,12 @@ class WorkspaceTerminalSessionManager internal constructor(
         job.start()
     }
 
-    private suspend fun createTab(root: String, onlyIfEmpty: Boolean, shellCompatibilityMode: Boolean) = withContext(Dispatchers.Main.immediate) {
+    private suspend fun createTab(
+        root: String,
+        onlyIfEmpty: Boolean,
+        shellCompatibilityMode: Boolean,
+        initialCommand: String? = null,
+    ) = withContext(Dispatchers.Main.immediate) {
         if (root in closingRoots) return@withContext
         val revision = lifecycleRevisions[root] ?: 0L
         val initialState = currentState(root)
@@ -327,6 +333,8 @@ class WorkspaceTerminalSessionManager internal constructor(
                 nextTabNumber = tabNumber + 1,
             )
         }
+        // The tty buffers it until the shell reads input.
+        initialCommand?.let { command -> appScope.launch { runCatching { pty.write("$command\n".toByteArray()) } } }
     }
 
     /**

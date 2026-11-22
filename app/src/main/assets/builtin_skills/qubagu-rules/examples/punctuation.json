@@ -1,0 +1,62 @@
+{
+  "type": "rikkihub.qubagu.rules",
+  "version": 1,
+  "packs": [
+    {
+      "id": "punctuation",
+      "name": "标点整理",
+      "description": "…………、——————、！！！！！",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "punct_dash_run",
+          "name": "过长的破折号",
+          "sample": "——————",
+          "find": "[—―]{3,}|-{4,}",
+          "regex": true,
+          "replacements": [
+            "——"
+          ],
+          "dialogue": true,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "punct_ellipsis_run",
+          "name": "过长的省略号",
+          "sample": "…………",
+          "find": "…{3,}|\\.{7,}|。{3,}",
+          "regex": true,
+          "replacements": [
+            "……"
+          ],
+          "dialogue": true,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "punct_mark_run",
+          "name": "一长串感叹号或问号",
+          "sample": "！！！！！",
+          "find": "([！？!?])\\1{3,}",
+          "regex": true,
+          "replacements": [
+            "$1$1$1"
+          ],
+          "dialogue": true,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    }
+  ]
+}

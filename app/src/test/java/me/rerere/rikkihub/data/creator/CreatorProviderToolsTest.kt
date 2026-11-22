@@ -296,9 +296,16 @@ class CreatorProviderToolsTest {
     }
 
     @Test fun secretsAreSplitLikeTheKeyRotation() {
-        val provider = ProviderSetting.OpenAI(apiKey = "sk-aaaaaaaa, sk-bbbbbbbb\nsk-cccccccc", customHeaders = listOf(CustomHeader("A", "hdr-value-1")))
-        val masked = CreatorProviderTester.mask("x sk-aaaaaaaa y sk-cccccccc z hdr-value-1", CreatorProviderTester.secretsOf(provider))
-        assertEquals("x *** y *** z ***", masked)
+        val provider = ProviderSetting.OpenAI(
+            apiKey = "sk-aaaaaaaa, sk-bbbbbbbb\nsk-cccccccc",
+            apiKeys = listOf(me.rerere.ai.provider.ApiKeyEntry(id = "k4", key = "sk-dddddddd", label = "Four")),
+            customHeaders = listOf(CustomHeader("A", "hdr-value-1")),
+        )
+        val masked = CreatorProviderTester.mask(
+            "x sk-aaaaaaaa y sk-cccccccc w sk-dddddddd z hdr-value-1",
+            CreatorProviderTester.secretsOf(provider),
+        )
+        assertEquals("x *** y *** w *** z ***", masked)
     }
 
     @Test fun describeDocumentsEveryProviderType() = runBlocking {

@@ -24,7 +24,7 @@ export function WorkspaceSubagentLibrary({ workspaceId }: { workspaceId: string 
     catch (caught) { setError(isSubagentPresetConflict(caught) ? t("presets.conflict") : caught instanceof Error ? caught.message : t("presets.save_failed")); }
     finally { invalidateSubagentPresetLibrary(queries); setBusy(false); }
   };
-  return <section className="space-y-3 rounded-lg border p-4">
+  return <section className="space-y-3 rounded-xl border p-3">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-medium">{t("library.workspace_title")}</h2>
       <Button variant="outline" size="sm" asChild><Link to="/settings/subagent-presets">{t("library.manage")}</Link></Button>
     </div>
@@ -32,10 +32,10 @@ export function WorkspaceSubagentLibrary({ workspaceId }: { workspaceId: string 
     {library.isPending || local.isPending ? <p className="text-sm">{t("list.loading")}</p> : null}
     {library.isError || local.isError ? <div role="alert" className="text-sm text-destructive">{t("presets.load_failed")} <Button variant="outline" onClick={() => { void library.refetch(); void local.refetch(); }}>{t("presets.retry")}</Button></div> : null}
     {library.data?.corrupt || (library.data && library.data.presets === null) ? <p role="alert" className="text-sm text-destructive">{t("library.corrupt")}</p> : null}
-    <ul className="space-y-2">{(library.data?.presets ?? []).map((preset) => {
+    <ul className="divide-y overflow-hidden rounded-xl border">{(library.data?.presets ?? []).map((preset) => {
       const assigned = isLibraryPresetAssigned(preset, workspaceId, local.data);
       const block = libraryPresetAssignmentBlock(preset, local.data);
-      return <li key={preset.id} className="rounded border p-3 text-sm">
+      return <li key={preset.id} className="p-3 text-sm">
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex min-w-0 max-w-full items-center gap-2"><input type="checkbox" checked={assigned} disabled={busy || !!block || library.data?.corrupt}
             onChange={(event) => void change(preset.id, event.target.checked, preset.version)} />

@@ -28,6 +28,9 @@ import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.MemoryFile
 import me.rerere.rikkihub.data.model.Avatar
 import me.rerere.rikkihub.data.model.Tag
+import me.rerere.rikkihub.data.repository.MemoryConflictStrategy
+import me.rerere.rikkihub.data.repository.MemoryMigrationPreview
+import me.rerere.rikkihub.data.repository.MemoryMigrationResult
 import me.rerere.rikkihub.data.repository.MemoryRepository
 import me.rerere.rikkihub.data.repository.memoryId
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
@@ -90,6 +93,26 @@ class AssistantDetailVM(
         .stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = MemoryConsolidationStatus()
         )
+
+    /** 本助手独立记忆库的文件数（即使开启全局记忆仍独立统计，用于提示原私有记忆仍保留） */
+    val privateMemoryCount: StateFlow<Int> = memoryRepository
+        .getFileCountFlow(assistantId.toString())
+        .stateIn(scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = 0)
+
+    /** 全局共享记忆库的文件数 */
+    val globalMemoryCount: StateFlow<Int> = memoryRepository
+        .getFileCountFlow(MemoryRepository.GLOBAL_MEMORY_ID)
+        .stateIn(scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = 0)
+
+    val globalMemoryDreamRunning: StateFlow<Boolean> = memoryConsolidationScheduler
+        .statusOf(MemoryRepository.GLOBAL_MEMORY_ID)
+        .map { it.running }
+        .stateIn(scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = false)
+
+    val globalMemoryAssistantCount: StateFlow<Int> = settingsStore
+        .settingsFlow
+        .map { settings -> settings.assistants.count { it.enableMemory && it.useGlobalMemory } }
+        .stateIn(scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = 0)
 
     val providers = settingsStore
         .settingsFlow
@@ -183,7 +206,16 @@ class AssistantDetailVM(
                 replaced = current to merged
                 latest.copy(assistants = latest.assistants.map { if (it.id == assistant.id) merged else it })
             }
-            replaced?.takeIf { committed }?.let { (before, after) -> releaseReplacedFiles(before, after) }
+            replaced?.takeIf { committed }?.let { (before, after) ->
+                releaseReplacedFiles(before, after)
+                if (before.useGlobalMemory != after.useGlobalMemory || before.enableMemory != after.enableMemory) {
+                    memoryConsolidationScheduler.onAssistantMemoryScopeChanged(
+                        assistantId = assistantId,
+                        oldMemoryId = before.memoryId,
+                        newMemoryId = after.memoryId,
+                    )
+                }
+            }
         }
     }
 
@@ -210,6 +242,38 @@ class AssistantDetailVM(
     /** 立即做梦：先整理所有待整理的对话，再把整个记忆库清理一遍 */
     fun organizeMemory() {
         memoryConsolidationScheduler.organize(memoryId)
+    }
+
+    fun cancelDream() {
+        memoryConsolidationScheduler.cancel(memoryId)
+    }
+
+    suspend fun countBackfillCandidates(sinceMs: Long): Int =
+        memoryConsolidationScheduler.countBackfillCandidates(memoryId, sinceMs)
+
+    fun backfillMemory(sinceMs: Long) {
+        memoryConsolidationScheduler.backfill(memoryId, sinceMs)
+    }
+
+    suspend fun previewMigrateToGlobal(): MemoryMigrationPreview =
+        memoryRepository.previewMigration(
+            fromMemoryId = assistantId.toString(),
+            toMemoryId = MemoryRepository.GLOBAL_MEMORY_ID,
+        )
+
+    suspend fun migrateToGlobal(
+        strategy: MemoryConflictStrategy,
+        syncMarks: Boolean,
+    ): MemoryMigrationResult {
+        val result = memoryRepository.migrateFiles(
+            fromMemoryId = assistantId.toString(),
+            toMemoryId = MemoryRepository.GLOBAL_MEMORY_ID,
+            strategy = strategy,
+        )
+        if (syncMarks) {
+            memoryConsolidationScheduler.syncMarksToGlobal(assistantId)
+        }
+        return result
     }
 
     fun deleteMemory(memory: MemoryFile) {

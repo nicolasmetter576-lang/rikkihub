@@ -23,6 +23,7 @@ import { extractErrorMessage } from "~/lib/error";
 import { cn } from "~/lib/utils";
 import {
   ConfirmDeleteDialog,
+  SettingsList,
   SettingsListCard,
   SettingsPageHeader,
 } from "@overlay/components/settings/settings-ui";
@@ -81,7 +82,7 @@ export function SkillListView({ skills, query }: { skills: SkillSummary[]; query
     );
   }
   return (
-    <div className="space-y-3">
+    <SettingsList>
       {visible.map((skill) => (
         <SettingsListCard
           key={skill.name}
@@ -91,7 +92,7 @@ export function SkillListView({ skills, query }: { skills: SkillSummary[]; query
           badges={<SkillBadges skill={skill} />}
         />
       ))}
-    </div>
+    </SettingsList>
   );
 }
 
@@ -114,25 +115,27 @@ export function InvalidSkillDirsView({
         <AlertTriangle className="size-4" />
         {t("skills.invalid_dirs.title")}
       </h2>
-      {visible.map((dir) => (
-        <SettingsListCard
-          key={dir.dirName}
-          title={dir.dirName}
-          description={t(`skills.invalid_dirs.reason_${dir.reason}`)}
-          actions={
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("common.delete")}
-              title={t("common.delete")}
-              onClick={() => onDelete(dir)}
-            >
-              <Trash2 className="size-4 text-destructive" />
-            </Button>
-          }
-        />
-      ))}
+      <SettingsList>
+        {visible.map((dir) => (
+          <SettingsListCard
+            key={dir.dirName}
+            title={dir.dirName}
+            description={t(`skills.invalid_dirs.reason_${dir.reason}`)}
+            actions={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("common.delete")}
+                title={t("common.delete")}
+                onClick={() => onDelete(dir)}
+              >
+                <Trash2 className="size-4 text-destructive" />
+              </Button>
+            }
+          />
+        ))}
+      </SettingsList>
     </section>
   );
 }

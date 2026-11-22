@@ -171,6 +171,11 @@ export function SettingsSegmented<T extends string>({
   );
 }
 
+/** 设置列表：整组一张卡，项与项之间细分隔线（与 App 的卡片组一致），里面放 SettingsListCard */
+export function SettingsList({ children }: { children: React.ReactNode }) {
+  return <div className="divide-y overflow-hidden rounded-xl border">{children}</div>;
+}
+
 export function SettingsListCard({
   title,
   description,
@@ -185,8 +190,8 @@ export function SettingsListCard({
   actions?: React.ReactNode;
 }) {
   const content = (
-    <div className="flex items-start justify-between gap-3 rounded-xl border p-4">
-      <div className="min-w-0 space-y-1">
+    <div className="flex min-h-12 items-center justify-between gap-3 px-3 py-2">
+      <div className="min-w-0 space-y-0.5">
         <div className="flex flex-wrap items-center gap-2">
           <p className="truncate font-medium">{title}</p>
           {badges}
@@ -301,7 +306,7 @@ export function CreateNameDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader className={submitInHeader ? "flex-row items-center justify-between space-y-0" : undefined}>
+        <DialogHeader className={submitInHeader ? "flex-row items-center justify-between space-y-0 pr-8" : undefined}>
           <DialogTitle>{title}</DialogTitle>
           {submitInHeader ? submitButton : null}
         </DialogHeader>

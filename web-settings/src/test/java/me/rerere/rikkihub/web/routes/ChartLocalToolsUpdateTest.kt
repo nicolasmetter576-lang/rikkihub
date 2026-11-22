@@ -34,7 +34,8 @@ class ChartLocalToolsUpdateTest {
             avatar = Avatar.Emoji("📊"), background = "file://existing.png", enabledSkills = setOf("existing"))
         val raw = JsonInstant.encodeToJsonElement(original).jsonObject
         assertEquals(body("chart_display")["localTools"], raw["localTools"])
-        assertEquals(original, JsonInstant.decodeFromJsonElement<Assistant>(raw))
+        // 构造出来的助手与解码出来的助手在预设的键顺序记录上不同（只影响序列化版式），所以比较再编码后的 JSON
+        assertEquals(raw, JsonInstant.encodeToJsonElement(JsonInstant.decodeFromJsonElement<Assistant>(raw)).jsonObject)
         assertEquals(original.localTools, original.copy(name = "Renamed").localTools)
     }
 
@@ -46,8 +47,8 @@ class ChartLocalToolsUpdateTest {
         assertEquals(LocalToolOption.ChartDisplay, parsed.last())
     }
 
-    @Test fun `nine raw entries rejected before deduplication`() {
-        val error = runCatching { parseAssistantUpdate(body(*Array(9) { "chart_display" })) }.exceptionOrNull()
+    @Test fun `ten raw entries rejected before deduplication`() {
+        val error = runCatching { parseAssistantUpdate(body(*Array(10) { "chart_display" })) }.exceptionOrNull()
         assertTrue(error is BadRequestException)
     }
 

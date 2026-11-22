@@ -19,13 +19,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -37,7 +35,8 @@ import me.rerere.ai.ccdisguise.ClaudeCodeIdentity
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
-import me.rerere.ai.core.merge
+import me.rerere.ai.core.UsageUpdate
+import me.rerere.ai.provider.accumulateUsage
 import me.rerere.ai.core.sum
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.ClaudePromptCacheTtl
@@ -48,8 +47,11 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.providers.LEADING_USER_PLACEHOLDER
+import me.rerere.ai.provider.providers.splitSystemPrompt
 import me.rerere.ai.provider.providers.PartGroup
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
+import me.rerere.ai.provider.rotationStrategyOrDefault
 import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
@@ -63,13 +65,17 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleTextGenerationResult
 import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
-import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.CredentialLogTag
+import me.rerere.ai.util.CredentialPool
+import me.rerere.ai.util.HttpException
+import me.rerere.ai.util.apiKeyCandidates
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
+import me.rerere.ai.util.parseRetryAfterMillis
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.common.http.await
@@ -100,6 +106,7 @@ internal suspend fun generateClaudeWithPauseTurn(
     var requestMessages = messages
     var combinedMessage = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
     var combinedUsage: TokenUsage? = null
+    var combinedHasCompleteUsage = true
     var nextServerToolBlockIndex = 0
 
     repeat(maxContinuations + 1) { continuationCount ->
@@ -114,11 +121,13 @@ internal suspend fun generateClaudeWithPauseTurn(
             .handleTextGenerationResult(result, model)
             .last()
         combinedUsage = combinedUsage.sum(result.usage)
+        combinedHasCompleteUsage = combinedHasCompleteUsage && result.hasCompleteUsage == true
 
         if (result.finishReason != CLAUDE_PAUSE_TURN || continuationCount == maxContinuations) {
             return result.copy(
                 message = combinedMessage.copy(usage = combinedUsage),
                 usage = combinedUsage,
+                hasCompleteUsage = combinedHasCompleteUsage,
             )
         }
 
@@ -139,14 +148,25 @@ internal fun streamClaudeWithPauseTurn(
 
     var requestMessages = messages
     var completedUsage: TokenUsage? = null
+    var completedHasCompleteUsage = true
     var nextServerToolBlockIndex = 0
 
     repeat(maxContinuations + 1) { continuationCount ->
         val handler = StreamChunkHandler(model)
         var responseMessages = requestMessages
-        var passUsage: TokenUsage? = null
         var finish: StreamChunk.Finish? = null
         val responseIndexOffset = nextServerToolBlockIndex
+
+        suspend fun emitUsageSnapshot() {
+            val usage = completedUsage.sum(handler.usage)
+            emit(StreamChunk.Usage(UsageUpdate(
+                promptTokens = usage?.promptTokens,
+                completionTokens = usage?.completionTokens,
+                cachedTokens = usage?.cachedTokens,
+                // Every Claude pass has a derived total; do not label p+c as upstream total.
+                partial = !completedHasCompleteUsage || !handler.hasCompleteUsage,
+            )))
+        }
 
         request(requestMessages).collect { rawChunk ->
             val chunk = rawChunk.rebaseClaudeServerToolIndexes(responseIndexOffset)
@@ -155,12 +175,11 @@ internal fun streamClaudeWithPauseTurn(
             }
             responseMessages = handler.handle(responseMessages, chunk)
             when (chunk) {
-                is StreamChunk.Usage -> {
-                    passUsage = passUsage.merge(chunk.usage)
-                    completedUsage.sum(passUsage)?.let { emit(StreamChunk.Usage(it)) }
-                }
+                is StreamChunk.Usage -> emitUsageSnapshot()
 
                 is StreamChunk.Finish -> {
+                    // Also publish a missing-usage pass: the previous pass cannot masquerade as complete.
+                    emitUsageSnapshot()
                     finish = chunk
                     if (chunk.finishReason != CLAUDE_PAUSE_TURN ||
                         continuationCount == maxContinuations
@@ -173,11 +192,13 @@ internal fun streamClaudeWithPauseTurn(
             }
         }
 
+        if (finish == null) emitUsageSnapshot()
         if (finish?.finishReason != CLAUDE_PAUSE_TURN || continuationCount == maxContinuations) {
             return@flow
         }
 
-        completedUsage = completedUsage.sum(passUsage)
+        completedUsage = completedUsage.sum(handler.usage)
+        completedHasCompleteUsage = completedHasCompleteUsage && handler.hasCompleteUsage
         requestMessages = responseMessages
     }
 }
@@ -236,43 +257,58 @@ private fun StreamChunk.maxClaudeServerToolIndex(): Int? {
 
 private fun ServerToolMetadata.maxIndex(): Int? = listOfNotNull(callIndex, resultIndex).maxOrNull()
 
-
 class ClaudeProvider(
     private val client: OkHttpClient,
     context: Context? = null,
     private val configProvider: () -> ClaudeCodeDisguiseConfig = { ClaudeCodeDisguiseConfig() },
+    private val credentialPool: CredentialPool = CredentialPool(),
 ) : Provider<ProviderSetting.Claude> {
-    private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
     val identity = ClaudeCodeIdentity(context)
 
     override suspend fun listModels(providerSetting: ProviderSetting.Claude): List<Model> =
         withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url("${providerSetting.baseUrl}/models")
-                .headers(providerSetting.mergeCustomHeaders())
-                .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
-                .addHeader("anthropic-version", ANTHROPIC_VERSION)
-                .get()
-                .build()
+            credentialPool.executeWithFailover(
+                providerId = providerSetting.id.toString(),
+                modelId = null,
+                candidates = providerSetting.apiKeyCandidates(),
+                strategy = providerSetting.rotationStrategyOrDefault(),
+            ) { cred ->
+                val request = Request.Builder()
+                    .url("${providerSetting.baseUrl}/models")
+                    .headers(providerSetting.mergeCustomHeaders())
+                    .addHeader("x-api-key", cred.value)
+                    .addHeader("anthropic-version", ANTHROPIC_VERSION)
+                    .apply {
+                        if (cred.displayLabel.isNotBlank()) {
+                            tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                        }
+                    }
+                    .get()
+                    .build()
 
-            client.newCall(request).await().use { response ->
-                if (!response.isSuccessful) {
-                    error("Failed to get models: ${response.code} ${response.body?.string()}")
-                }
+                client.newCall(request).await().use { response ->
+                    if (!response.isSuccessful) {
+                        throw HttpException(
+                            "Failed to get models: ${response.code} ${response.body?.string()}",
+                            statusCode = response.code,
+                            retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                        )
+                    }
 
-                val bodyStr = response.body?.string() ?: ""
-                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-                val data = bodyJson["data"]?.jsonArray ?: return@use emptyList()
+                    val bodyStr = response.body?.string() ?: ""
+                    val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+                    val data = bodyJson["data"]?.jsonArray ?: return@use emptyList()
 
-                data.mapNotNull { modelJson ->
-                    val modelObj = modelJson.jsonObject
-                    val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                    val displayName = modelObj["display_name"]?.jsonPrimitive?.contentOrNull ?: id
+                    data.mapNotNull { modelJson ->
+                        val modelObj = modelJson.jsonObject
+                        val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                        val displayName = modelObj["display_name"]?.jsonPrimitive?.contentOrNull ?: id
 
-                    Model(
-                        modelId = id,
-                        displayName = displayName,
-                    )
+                        Model(
+                            modelId = id,
+                            displayName = displayName,
+                        )
+                    }
                 }
             }
         }
@@ -301,41 +337,58 @@ class ClaudeProvider(
     ): TextGenerationResult {
         val requestBody = buildMessageRequest(providerSetting, messages, params)
         val encodedBody = json.encodeToString(requestBody)
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/messages")
-            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-            .post(encodedBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
-            .addHeader("anthropic-version", ANTHROPIC_VERSION)
-            .configureReferHeaders(providerSetting.baseUrl)
-            .applyClaudeCodeDisguise(params)
-            .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
-            .build()
-
         Log.i(TAG, "generateText: $encodedBody")
 
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+        return credentialPool.executeWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = providerSetting.apiKeyCandidates(),
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            val request = Request.Builder()
+                .url("${providerSetting.baseUrl}/messages")
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(encodedBody.toRequestBody("application/json".toMediaType()))
+                .addHeader("x-api-key", cred.value)
+                .addHeader("anthropic-version", ANTHROPIC_VERSION)
+                .apply {
+                    if (cred.displayLabel.isNotBlank()) {
+                        tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                    }
+                }
+                .configureReferHeaders(providerSetting.baseUrl)
+                .applyClaudeCodeDisguise(params)
+                .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
+                .build()
+
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) {
+                    throw HttpException(
+                        "Failed to get response: ${response.code} ${response.body?.string()}",
+                        statusCode = response.code,
+                        retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                    )
+                }
+
+                val bodyStr = response.body?.string() ?: ""
+                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+
+                // 从 JsonObject 中提取必要的信息
+                val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
+                val content = bodyJson["content"]?.jsonArray ?: JsonArray(emptyList())
+                val stopReason = bodyJson["stop_reason"]?.jsonPrimitive?.contentOrNull ?: "unknown"
+                val usage = ClaudeUsageNormalizer().update(bodyJson).accumulateUsage()
+
+                TextGenerationResult(
+                    id = id,
+                    model = model,
+                    message = parseMessage(content),
+                    finishReason = stopReason,
+                    usage = usage.snapshot,
+                    hasCompleteUsage = usage.hasCompleteUsage,
+                )
             }
-
-            val bodyStr = response.body?.string() ?: ""
-            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-
-            // 从 JsonObject 中提取必要的信息
-            val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
-            val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
-            val content = bodyJson["content"]?.jsonArray ?: JsonArray(emptyList())
-            val stopReason = bodyJson["stop_reason"]?.jsonPrimitive?.contentOrNull ?: "unknown"
-            val usage = parseTokenUsage(bodyJson)
-
-            return TextGenerationResult(
-                id = id,
-                model = model,
-                message = parseMessage(content),
-                finishReason = stopReason,
-                usage = usage
-            )
         }
     }
 
@@ -351,25 +404,46 @@ class ClaudeProvider(
         providerSetting: ProviderSetting.Claude,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-    ): Flow<StreamChunk> = callbackFlow {
+    ): Flow<StreamChunk> {
         val requestBody = buildMessageRequest(providerSetting, messages, params, stream = true)
         val encodedBody = json.encodeToString(requestBody)
+        Log.i(TAG, "streamText: $encodedBody")
+        (requestBody["messages"] as? JsonArray)?.forEach {
+            Log.i(TAG, "streamText: $it")
+        }
+
+        return credentialPool.streamWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = providerSetting.apiKeyCandidates(),
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            streamSinglePass(providerSetting, params, encodedBody, cred.value, cred.displayLabel)
+        }
+    }
+
+    private fun streamSinglePass(
+        providerSetting: ProviderSetting.Claude,
+        params: TextGenerationParams,
+        encodedBody: String,
+        apiKey: String,
+        credentialLabel: String,
+    ): Flow<StreamChunk> = callbackFlow {
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/messages")
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .post(encodedBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("x-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+            .addHeader("x-api-key", apiKey)
             .addHeader("anthropic-version", ANTHROPIC_VERSION)
+            .apply {
+                if (credentialLabel.isNotBlank()) {
+                    tag(CredentialLogTag::class.java, CredentialLogTag(credentialLabel))
+                }
+            }
             .configureReferHeaders(providerSetting.baseUrl)
             .applyClaudeCodeDisguise(params)
             .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
             .build()
-
-        Log.i(TAG, "streamText: $encodedBody")
-
-        (requestBody["messages"] as? JsonArray)?.forEach {
-            Log.i(TAG, "streamText: $it")
-        }
 
         val decoder = ClaudeStreamDecoder()
 
@@ -396,10 +470,12 @@ class ClaudeProvider(
                     if (result.completed) close()
                 } catch (e: Throwable) {
                     close(e)
+                    eventSource.cancel()
                 }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                if (isClosedForSend) return
                 var exception = t
 
                 Log.e(TAG, "onFailure: ${t?.javaClass?.name} ${t?.message} / $response", t)
@@ -419,8 +495,12 @@ class ClaudeProvider(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                sendChunks(decoder.onClosed())
-                close()
+                try {
+                    sendChunks(decoder.onClosed())
+                    close()
+                } catch (e: Throwable) {
+                    close(e)
+                }
             }
         }
 
@@ -458,12 +538,13 @@ class ClaudeProvider(
                 params.temperature
             )
             if (params.topP != null) put("top_p", params.topP)
+            // 扩展思考与 top_k 不兼容，和 temperature 一样开着思考就不发
+            if (params.topK != null && !params.reasoningLevel.isEnabled) put("top_k", params.topK)
 
             put("stream", stream)
 
             // system prompt
-            val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
-            val systemTextParts = systemMessage?.parts?.filterIsInstance<UIMessagePart.Text>().orEmpty()
+            val systemTextParts = messages.splitSystemPrompt().system.flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }
             if (systemTextParts.isNotEmpty()) {
                 put("system", buildJsonArray {
                     systemTextParts.forEachIndexed { index, part ->
@@ -585,8 +666,9 @@ class ClaudeProvider(
         promptCaching: Boolean,
         promptCacheTtl: ClaudePromptCacheTtl
     ) = buildJsonArray {
-        messages
-            .filter { it.isValidToUpload() && it.role != MessageRole.SYSTEM }
+        val sendable = messages.splitSystemPrompt().conversation.filter { it.isValidToUpload() }
+        if (sendable.firstOrNull()?.role == MessageRole.ASSISTANT) addUserMessage(UIMessage.user(LEADING_USER_PLACEHOLDER))
+        sendable
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
                     addAssistantMessage(message)
@@ -780,9 +862,16 @@ class ClaudeProvider(
         }
 
         is UIMessagePart.Reasoning -> buildJsonObject {
-            put("type", "thinking")
-            put("thinking", reasoning)
-            metadataAs<ClaudeReasoningMetadata>()?.signature?.let { put("signature", it) }
+            val claudeMetadata = metadataAs<ClaudeReasoningMetadata>()
+            val redactedData = claudeMetadata?.redactedData
+            if (redactedData != null) {
+                put("type", "redacted_thinking")
+                put("data", redactedData)
+            } else {
+                put("type", "thinking")
+                put("thinking", reasoning)
+                claudeMetadata?.signature?.let { put("signature", it) }
+            }
         }
 
         else -> null
@@ -836,8 +925,16 @@ class ClaudeProvider(
                 }
 
                 "redacted_thinking" -> {
-                    val data = block["data"]?.jsonPrimitiveOrNull?.contentOrNull
-                    Log.d(TAG, "redacted_thinking: $data")
+                    block["data"]?.jsonPrimitiveOrNull?.contentOrNull?.let { data ->
+                        parts.add(
+                            UIMessagePart.Reasoning(
+                                reasoning = "",
+                                createdAt = Clock.System.now(),
+                                finishedAt = null,
+                                metadata = ClaudeReasoningMetadata(redactedData = data).toMetadata(),
+                            )
+                        )
+                    }
                 }
 
                 "tool_use" -> {
@@ -922,26 +1019,6 @@ class ClaudeProvider(
         return UIMessage(
             role = MessageRole.ASSISTANT,
             parts = parts
-        )
-    }
-
-    private fun parseTokenUsage(bodyJson: JsonObject?): TokenUsage? {
-        if (bodyJson == null) return null
-
-        // 回退到标准 usage 字段
-        val usageJson = bodyJson["usage"]?.jsonObject
-            ?: bodyJson["message"]?.jsonObject?.get("usage")?.jsonObject
-            ?: return null
-        val inputTokens = usageJson["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cachedInputTokens = usageJson["cache_read_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val cachedCreationTokens = usageJson["cache_creation_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val completionTokens = usageJson["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val promptTokens = inputTokens + cachedInputTokens + cachedCreationTokens
-        return TokenUsage(
-            promptTokens = promptTokens,
-            completionTokens = completionTokens,
-            totalTokens = promptTokens + completionTokens,
-            cachedTokens = cachedInputTokens,
         )
     }
 }

@@ -73,7 +73,7 @@ export default function SettingsZaizaoPage() {
     <div className="space-y-6">
       <SettingsPageHeader title={t("zaizao.title")} description={t("zaizao.description")} />
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("zaizao.model_section")}</h2>
         <SettingsSelectField
           label={t("zaizao.model")}
@@ -109,7 +109,7 @@ export default function SettingsZaizaoPage() {
         <p className="text-xs text-muted-foreground">{t("zaizao.params_hint")}</p>
       </section>
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("zaizao.context_section")}</h2>
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -121,7 +121,7 @@ export default function SettingsZaizaoPage() {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("zaizao.types_section")}</h2>
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm">{t("zaizao.default_type")}</span>
@@ -159,14 +159,14 @@ export default function SettingsZaizaoPage() {
         })}
       </section>
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("zaizao.recent_section")}</h2>
         {config.recentRequirements.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("zaizao.recent_empty")}</p>
         ) : (
-          <ul className="space-y-1" data-testid="zaizao-recent-list">
+          <ul className="divide-y overflow-hidden rounded-xl border" data-testid="zaizao-recent-list">
             {config.recentRequirements.map(text => (
-              <li key={text} className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+              <li key={text} className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <span className="min-w-0 flex-1 truncate" title={text}>{text}</span>
                 <Button variant="ghost" size="icon" className="size-7" aria-label={t("zaizao.recent_remove")}
                   onClick={() => void apply({ recentRequirements: config.recentRequirements.filter(item => item !== text) })}>
@@ -181,7 +181,7 @@ export default function SettingsZaizaoPage() {
         ) : null}
       </section>
 
-      <section className="space-y-2 rounded-xl border p-4">
+      <section className="space-y-2 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("zaizao.files_section")}</h2>
         <p className="text-sm text-muted-foreground">
           {t("zaizao.files_hint", { list: config.extensions.map(ext => `.${ext}`).join(" ") })}

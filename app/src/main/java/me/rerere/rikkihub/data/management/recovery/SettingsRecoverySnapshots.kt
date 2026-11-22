@@ -11,7 +11,7 @@ import kotlin.uuid.Uuid
 internal object SettingsRecoverySnapshots {
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = false }
     private val collections = mapOf(
-        "settings.quickMessages" to "quickMessages", "settings.modeInjections" to "modeInjections",
+        "settings.quickMessages" to "quickMessages", "settings.modeInjections" to "promptLibrary",
         "settings.lorebooks" to "lorebooks", "settings.assistants" to "assistants",
         "settings.assistantTags" to "assistantTags")
     private val scalars = mapOf(
@@ -23,11 +23,19 @@ internal object SettingsRecoverySnapshots {
 
     private val providerList = kotlinx.serialization.builtins.ListSerializer(ProviderSetting.serializer())
 
+    /** 嵌套集合（世界书条目、助手预设条目与正则、全局正则、全局酒馆设置）的镜像取父集合：条目在世界书里、预设条目在助手里、全局设置在 `tavern`。 */
+    private val nested = Regex("^settings\\.(lorebooks|assistants)\\.[0-9a-fA-F-]{36}\\.(entries|presetEntries|regexScripts)$")
+    private fun parentOf(target: String): String? = when {
+        target == "settings.tavern" || target == "settings.tavern.regexScripts" -> "tavern"
+        else -> nested.matchEntire(target)?.let { if (it.groupValues[1] == "lorebooks") "lorebooks" else "assistants" }
+    }
+
     fun capture(settings: Settings, targets: Set<String>): JsonObject {
         val raw = json.encodeToJsonElement(Settings.serializer(), settings).jsonObject
         return JsonObject(targets.associateWith { target ->
             when {
                 target in collections -> raw.getValue(collections.getValue(target))
+                parentOf(target) != null -> raw.getValue(parentOf(target)!!)
                 target in scalars -> raw.getValue(scalars.getValue(target))
                 target == PROVIDERS -> json.encodeToJsonElement(providerList, settings.providers)
                 else -> {
@@ -45,6 +53,7 @@ internal object SettingsRecoverySnapshots {
         var providers = snapshot[PROVIDERS]?.let { json.decodeFromJsonElement(providerList, it) } ?: current.providers
         snapshot.forEach { (target, value) -> when {
             target in collections -> raw[collections.getValue(target)] = value
+            parentOf(target) != null -> raw[parentOf(target)!!] = value
             target in scalars -> raw[scalars.getValue(target)] = value
             target == PROVIDERS || value is JsonNull -> Unit
             else -> {

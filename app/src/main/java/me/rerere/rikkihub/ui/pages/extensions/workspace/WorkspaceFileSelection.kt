@@ -5,14 +5,14 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceStorageArea
 
 /**
- * Snapshots captured right before a SAF picker is launched.
+ * Snapshots captured right before a SAF picker or the built-in file manager picker opens.
  *
- * The system picker can destroy and recreate the activity, so the result
+ * The picker can destroy and recreate the activity, so the result
  * callback must not depend on state that only lives in composition (or on the
  * VM's current area/path, which may have changed while picking). These are
  * [Serializable] so they survive `rememberSaveable`.
  */
-internal data class PendingFolderImport(
+internal data class PendingImport(
     val area: WorkspaceStorageArea,
     val destinationPath: String,
 ) : Serializable

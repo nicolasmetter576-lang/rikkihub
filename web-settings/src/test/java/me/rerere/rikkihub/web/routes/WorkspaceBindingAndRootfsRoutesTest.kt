@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.web.routes
 
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -29,7 +30,7 @@ class WorkspaceBindingAndRootfsRoutesTest {
     @Test
     fun `only the target assistant's workspace changes, everything else is kept`() {
         val other = Assistant(name = "other", workspaceId = Uuid.random())
-        val target = Assistant(name = "target", systemPrompt = "keep me", enabledSkills = setOf("s"))
+        val target = Assistant(name = "target", promptPreset = AssistantPresets.withSystemPrompt("keep me"), enabledSkills = setOf("s"))
         val workspace = Uuid.random()
         val updated = withWorkspaceId(listOf(other, target), target.id, workspace)!!
         assertEquals(other, updated[0])

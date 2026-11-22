@@ -14,8 +14,6 @@ class TransformerContext(
     val model: Model,
     val assistant: Assistant,
     val settings: Settings,
-    val conversationModeInjectionIds: Set<Uuid> = emptySet(),
-    val conversationLorebookIds: Set<Uuid> = emptySet(),
     val processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
     val workspaceCwd: String? = null,
     val harnessMinimalWorkspace: Boolean = false,
@@ -28,6 +26,10 @@ class TransformerContext(
      * null = 旧调用方未提供快照 → transformer 走旧 DB/固定清单行为。
      */
     val workspaceCapabilities: WorkspaceRequestCapabilities? = null,
+    /** 本回合的酒馆准备结果（正则脚本表与宏环境，含角色自带的脚本和角色名）；没有回合的调用方为 null。 */
+    val turn: me.rerere.rikkihub.data.ai.tavern.PreparedTurn? = null,
+    /** 这一步之前的会话消息；只有 [OutputMessageTransformer.onGenerationFinish] 能拿到。 */
+    val history: List<UIMessage> = emptyList(),
 )
 
 interface MessageTransformer {
@@ -47,6 +49,12 @@ interface MessageTransformer {
 }
 
 interface InputMessageTransformer : MessageTransformer
+
+/**
+ * 在酒馆组装之前运行的输入转换器：处理的是聊天消息本身（比如在用户消息前插时间提醒），
+ * 此时还没有系统块和注入。其余输入转换器在组装之后处理完整的请求消息。
+ */
+interface PreAssemblyTransformer : InputMessageTransformer
 
 interface OutputMessageTransformer : MessageTransformer {
     /**
@@ -78,26 +86,24 @@ suspend fun List<UIMessage>.transforms(
     model: Model,
     assistant: Assistant,
     settings: Settings,
-    conversationModeInjectionIds: Set<Uuid> = emptySet(),
-    conversationLorebookIds: Set<Uuid> = emptySet(),
     processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
     workspaceCwd: String? = null,
     harnessMinimalWorkspace: Boolean = false,
     exposeUpload: Boolean = true,
     workspaceCapabilities: WorkspaceRequestCapabilities? = null,
+    turn: me.rerere.rikkihub.data.ai.tavern.PreparedTurn? = null,
 ): List<UIMessage> {
     val ctx = TransformerContext(
         context = context,
         model = model,
         assistant = assistant,
         settings = settings,
-        conversationModeInjectionIds = conversationModeInjectionIds,
-        conversationLorebookIds = conversationLorebookIds,
         processingStatus = processingStatus,
         workspaceCwd = workspaceCwd,
         harnessMinimalWorkspace = harnessMinimalWorkspace,
         exposeUpload = exposeUpload,
         workspaceCapabilities = workspaceCapabilities,
+        turn = turn,
     )
     return transformers.fold(this) { acc, transformer ->
         transformer.transform(ctx, acc)
@@ -110,8 +116,9 @@ suspend fun List<UIMessage>.visualTransforms(
     model: Model,
     assistant: Assistant,
     settings: Settings,
+    turn: me.rerere.rikkihub.data.ai.tavern.PreparedTurn? = null,
 ): List<UIMessage> {
-    val ctx = TransformerContext(context, model, assistant, settings)
+    val ctx = TransformerContext(context, model, assistant, settings, turn = turn)
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
             transformer.visualTransform(ctx, acc)
@@ -127,8 +134,10 @@ suspend fun List<UIMessage>.onGenerationFinish(
     model: Model,
     assistant: Assistant,
     settings: Settings,
+    turn: me.rerere.rikkihub.data.ai.tavern.PreparedTurn? = null,
+    history: List<UIMessage> = emptyList(),
 ): List<UIMessage> {
-    val ctx = TransformerContext(context, model, assistant, settings)
+    val ctx = TransformerContext(context, model, assistant, settings, turn = turn, history = history)
     return transformers.fold(this) { acc, transformer ->
         if (transformer is OutputMessageTransformer) {
             transformer.onGenerationFinish(ctx, acc)

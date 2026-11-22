@@ -346,7 +346,7 @@ class ConversationSessionReliabilityTest {
         }
 
     @Test
-    fun `stale full snapshot cannot undo pin assistant title system prompt and cwd`() =
+    fun `stale full snapshot cannot undo pin assistant title system prompt cwd and cli session`() =
         runBlocking {
             val scope = newScope()
             val id = Uuid.random()
@@ -378,6 +378,12 @@ class ConversationSessionReliabilityTest {
                     },
                     persist = {},
                 )
+                // CLI 回合把新开的 ACP 会话 id 写进单列。
+                val cliSession = me.rerere.rikkihub.data.cli.ConversationCliSession(
+                    agentId = me.rerere.rikkihub.data.cli.CliAgent.AGY,
+                    acpSessionId = "acp-1",
+                )
+                session.updateMetadata(update = { it.copy(cliSession = cliSession) }, persist = {})
 
                 // 迟到全量快照：旧 assistant、未 pin、空 title，但带更新的消息树。
                 // 生产对应 saveConversation 里 replaceConversation 的合并语义。
@@ -401,6 +407,7 @@ class ConversationSessionReliabilityTest {
                 assertEquals("/workspace/app", updated.workspaceCwd)
                 assertEquals(modeInjectionIds, updated.modeInjectionIds)
                 assertEquals(lorebookIds, updated.lorebookIds)
+                assertEquals(cliSession, updated.cliSession)
                 assertEquals(stale.messageNodes, updated.messageNodes)
                 assertSame(updated, replacedWith)
                 assertSame(session.state.value, updated)

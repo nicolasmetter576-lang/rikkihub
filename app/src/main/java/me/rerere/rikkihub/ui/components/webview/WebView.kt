@@ -2,6 +2,7 @@ package me.rerere.rikkihub.ui.components.webview
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup.LayoutParams
 import android.webkit.ConsoleMessage
@@ -53,7 +54,8 @@ internal class MyWebViewClient(private val state: WebViewState) : WebViewClient(
         view: WebView,
         request: WebResourceRequest
     ): WebResourceResponse? {
-        return WebViewLocalAssets.intercept(view.context.applicationContext, request.url)
+        return state.interceptRequest?.invoke(request.url)
+            ?: WebViewLocalAssets.intercept(view.context.applicationContext, request.url)
             ?: super.shouldInterceptRequest(view, request)
     }
 
@@ -228,7 +230,9 @@ sealed class WebContent {
 class WebViewState(
     initialContent: WebContent = WebContent.NavigatorOnly,
     val interfaces: Map<String, Any> = emptyMap(),
-    val settings: WebSettings.() -> Unit = {}
+    val settings: WebSettings.() -> Unit = {},
+    /** Answers requests before the built-in asset mapping (runs on a WebView background thread); null = not handled. */
+    val interceptRequest: ((Uri) -> WebResourceResponse?)? = null,
 ) {
     // --- Content State ---
     var content: WebContent by mutableStateOf(initialContent)
@@ -349,10 +353,12 @@ fun rememberWebViewState(
     historyUrl: String? = null,
     interfaces: Map<String, Any> = emptyMap(),
     settings: WebSettings.() -> Unit = {},
+    interceptRequest: ((Uri) -> WebResourceResponse?)? = null,
 ) = remember(data, baseUrl, encoding, mimeType, historyUrl) { // Use keys
     WebViewState(
         initialContent = WebContent.Data(data, baseUrl, encoding, mimeType, historyUrl),
         interfaces = interfaces,
-        settings = settings
+        settings = settings,
+        interceptRequest = interceptRequest,
     )
 }

@@ -171,10 +171,20 @@ internal fun preserveWorkspaceTextMetadata(target: Path, temp: Path) {
             ?: throw IOException("Cannot preserve file permissions")
         val current = tempView.readAttributes()
         // Avoid unnecessary privileged chown/chgrp; do not silently drop either.
-        if (current.owner() != original.owner()) tempView.setOwner(original.owner())
-        if (current.group() != original.group()) tempView.setGroup(original.group())
-        // chown can clear permission bits, so permissions are copied afterwards.
-        tempView.setPermissions(original.permissions())
+        var ownerChanged = false
+        if (current.owner() != original.owner()) {
+            tempView.setOwner(original.owner())
+            ownerChanged = true
+        }
+        if (current.group() != original.group()) {
+            tempView.setGroup(original.group())
+            ownerChanged = true
+        }
+        // chown can clear permission bits, so permissions are copied afterwards;
+        // skip redundant chmod when unchanged (e.g. shared storage / FUSE).
+        if (ownerChanged || current.permissions() != original.permissions()) {
+            tempView.setPermissions(original.permissions())
+        }
     } else {
         val ownerView = Files.getFileAttributeView(target, FileOwnerAttributeView::class.java, NOFOLLOW_LINKS)
         if (ownerView != null) {
@@ -194,6 +204,27 @@ internal fun preserveWorkspaceTextMetadata(target: Path, temp: Path) {
 }
 
 /**
+ * Prefix of the sibling temporary files an atomic replace writes first. They are listed like ordinary files so
+ * one left behind by a killed write can be found and recovered next to the file it was meant to replace.
+ */
+const val WORKSPACE_TEMP_FILE_PREFIX = ".rikkihub-tmp-"
+
+/**
+ * Glob of the names [workspaceTempFileName] produces, for both the shell and NIO. The stale sweep only deletes
+ * these: a user file may start with the same prefix. Digits are listed because `[a-f]` depends on the locale.
+ */
+val WORKSPACE_TEMP_FILE_GLOB = WORKSPACE_TEMP_FILE_PREFIX + "[0123456789abcdef]".repeat(16)
+
+/**
+ * Stale [WORKSPACE_TEMP_FILE_GLOB] regular files older than this are swept from the same directory after a successful
+ * overwrite. Well above the 30 s shell timeout so an in-flight write is never touched, while leaving a day to recover.
+ */
+const val WORKSPACE_TEMP_FILE_MAX_AGE_MINUTES = 24L * 60L
+
+fun workspaceTempFileName(): String =
+    WORKSPACE_TEMP_FILE_PREFIX + UUID.randomUUID().toString().replace("-", "").take(16)
+
+/**
  * Same-directory exclusive temporary file, fsync, then atomic replacement ONLY.
  * No truncate/copy fallback. POSIX permissions/owner/group and ACLs are copied
  * where the filesystem exposes those views; failed preservation aborts the save.
@@ -210,7 +241,7 @@ internal fun atomicWorkspaceTextSave(
     io: WorkspaceTextSaveIo = WorkspaceTextSaveIo(),
     verifyRevision: () -> Unit,
 ) {
-    val temp = target.resolveSibling(".l2s.edit.${UUID.randomUUID()}")
+    val temp = target.resolveSibling(workspaceTempFileName())
     var ownedKey: Any? = null
     var claimed = false
     try {
@@ -251,5 +282,31 @@ internal fun atomicWorkspaceTextSave(
                 if (actual.fileKey() == ownedKey) Files.delete(temp)
             }
         }
+    }
+    pruneStaleWorkspaceTempFiles(target, excludeTemp = temp)
+}
+
+private fun pruneStaleWorkspaceTempFiles(target: Path, excludeTemp: Path) {
+    val parent = target.parent ?: return
+    val cutoffMillis = System.currentTimeMillis() - WORKSPACE_TEMP_FILE_MAX_AGE_MINUTES * 60_000L
+    val targetName = target.fileName
+    val tempName = excludeTemp.fileName
+    try {
+        Files.newDirectoryStream(parent, WORKSPACE_TEMP_FILE_GLOB).use { stream ->
+            for (entry in stream) {
+                val name = entry.fileName ?: continue
+                if (name == targetName || name == tempName) continue
+                try {
+                    val attrs = Files.readAttributes(entry, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+                    if (attrs.isRegularFile && attrs.lastModifiedTime().toMillis() < cutoffMillis) {
+                        Files.deleteIfExists(entry)
+                    }
+                } catch (_: Exception) {
+                    // Best-effort per entry; one unreadable or busy file never blocks the rest.
+                }
+            }
+        }
+    } catch (_: Exception) {
+        // Best-effort cleanup never fails a completed write.
     }
 }

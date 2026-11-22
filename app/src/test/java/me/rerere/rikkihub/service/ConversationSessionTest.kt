@@ -543,4 +543,28 @@ class ConversationSessionTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun `starting a job records its start time before the job runs and keeps it after the job ends`() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val id = Uuid.random()
+        val session = ConversationSession(id, Conversation.ofId(id), scope, {})
+        try {
+            assertNull(session.generationStartedAt.value)
+            val before = System.currentTimeMillis()
+            var seenInsideJob: Long? = null
+            val job = scope.launch(start = CoroutineStart.LAZY) { seenInsideJob = session.generationStartedAt.value }
+            session.setJob(job)
+            job.join()
+            val startedAt = session.generationStartedAt.value
+            assertTrue(startedAt != null && startedAt >= before)
+            // 任务里报的错不会早于它
+            assertEquals(startedAt, seenInsideJob)
+            // 结束后留着，悬浮窗还要靠它认出这一轮的错误
+            assertEquals(startedAt, session.generationStartedAt.value)
+        } finally {
+            session.cleanup()
+            scope.cancel()
+        }
+    }
 }

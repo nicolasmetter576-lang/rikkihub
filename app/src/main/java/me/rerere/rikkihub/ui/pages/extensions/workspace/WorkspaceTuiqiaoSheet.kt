@@ -142,10 +142,10 @@ internal fun WorkspaceTuiqiaoSheet(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onExpandSentence, modifier = Modifier.testTag("tuiqiao-expand-sentence")) {
+                OutlinedButton(onClick = onExpandSentence, modifier = Modifier.testTag("tuiqiao-expand-sentence"), shape = MaterialTheme.shapes.medium) {
                     Text(stringResource(R.string.tuiqiao_expand_sentence))
                 }
-                OutlinedButton(onClick = onExpandParagraph, modifier = Modifier.testTag("tuiqiao-expand-paragraph")) {
+                OutlinedButton(onClick = onExpandParagraph, modifier = Modifier.testTag("tuiqiao-expand-paragraph"), shape = MaterialTheme.shapes.medium) {
                     Text(stringResource(R.string.tuiqiao_expand_paragraph))
                 }
             }

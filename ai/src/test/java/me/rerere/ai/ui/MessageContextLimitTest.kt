@@ -191,6 +191,24 @@ class MessageContextLimitTest {
         assertEquals(messages.subList(24, 30), messages.limitContext(10))
     }
 
+    @Test
+    fun `limitContext skips clear-context checkpoint itself and returns only trailing messages`() {
+        val messages = createTestMessages(6)
+        val clearCheckpoint = UIMessage(
+            role = MessageRole.USER,
+            parts = emptyList(),
+            isContextCheckpoint = true,
+            checkpointMeta = ContextCheckpointMetadata(kind = ContextCheckpointKind.CLEAR, summarizedCount = 4),
+        )
+        val withClearAtMiddle = messages.subList(0, 4) + clearCheckpoint + messages.subList(4, 6)
+
+        assertEquals(messages.subList(4, 6), withClearAtMiddle.limitContext(0))
+        assertEquals(messages.subList(4, 6), withClearAtMiddle.limitContext(10))
+
+        val withClearAtEnd = messages + clearCheckpoint
+        assertTrue(withClearAtEnd.limitContext(0).isEmpty())
+    }
+
     private fun List<UIMessage>.withCheckpointsAt(vararg indices: Int): List<UIMessage> =
         mapIndexed { index, message -> message.copy(isContextCheckpoint = index in indices) }
 

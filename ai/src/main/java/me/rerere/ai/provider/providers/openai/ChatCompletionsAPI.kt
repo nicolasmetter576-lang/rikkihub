@@ -23,7 +23,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -32,13 +31,14 @@ import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
-import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.provider.accumulateUsage
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.rotationStrategyOrDefault
 import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.provider.providers.PartGroup
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
@@ -50,13 +50,17 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
-import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.CredentialLogTag
+import me.rerere.ai.util.CredentialPool
+import me.rerere.ai.util.HttpException
+import me.rerere.ai.util.apiKeyCandidates
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
+import me.rerere.ai.util.parseRetryAfterMillis
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.common.http.await
@@ -78,7 +82,7 @@ private const val TAG = "ChatCompletionsAPI"
 
 class ChatCompletionsAPI(
     private val client: OkHttpClient,
-    private val keyRoulette: KeyRoulette
+    private val credentialPool: CredentialPool = CredentialPool(),
 ) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
@@ -91,45 +95,61 @@ class ChatCompletionsAPI(
             providerSetting = providerSetting,
         )
         val encodedBody = json.encodeToString(builtRequest.body)
-
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-            .post(encodedBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
-            .build()
-
         Log.i(TAG, "generateText: $encodedBody")
 
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+        credentialPool.executeWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = providerSetting.apiKeyCandidates(),
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            val request = Request.Builder()
+                .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(encodedBody.toRequestBody("application/json".toMediaType()))
+                .addHeader("Authorization", "Bearer ${cred.value}")
+                .apply {
+                    if (cred.displayLabel.isNotBlank()) {
+                        tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                    }
+                }
+                .configureReferHeaders(providerSetting.baseUrl)
+                .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
+                .build()
+
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) {
+                    throw HttpException(
+                        "Failed to get response: ${response.code} ${response.body?.string()}",
+                        statusCode = response.code,
+                        retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                    )
+                }
+
+                val bodyStr = response.body?.string() ?: ""
+                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+
+                // 从 JsonObject 中提取必要的信息
+                val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
+                val choice = bodyJson["choices"]?.jsonArray?.get(0)?.jsonObject ?: error("choices is null")
+
+                val message = choice["message"]?.jsonObject ?: throw Exception("message is null")
+                val finishReason = choice["finish_reason"]
+                    ?.jsonPrimitive
+                    ?.content
+                    ?: "unknown"
+                val usage = parseChatCompletionsUsage(bodyJson["usage"] as? JsonObject).accumulateUsage()
+
+                TextGenerationResult(
+                    id = id,
+                    model = model,
+                    message = parseMessage(message),
+                    finishReason = finishReason,
+                    usage = usage.snapshot,
+                    hasCompleteUsage = usage.hasCompleteUsage,
+                )
             }
-
-            val bodyStr = response.body?.string() ?: ""
-            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-
-            // 从 JsonObject 中提取必要的信息
-            val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
-            val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
-            val choice = bodyJson["choices"]?.jsonArray?.get(0)?.jsonObject ?: error("choices is null")
-
-            val message = choice["message"]?.jsonObject ?: throw Exception("message is null")
-            val finishReason = choice["finish_reason"]
-                ?.jsonPrimitive
-                ?.content
-                ?: "unknown"
-            val usage = parseTokenUsage(bodyJson["usage"] as? JsonObject)
-
-            TextGenerationResult(
-                id = id,
-                model = model,
-                message = parseMessage(message),
-                finishReason = finishReason,
-                usage = usage
-            )
         }
     }
 
@@ -137,7 +157,7 @@ class ChatCompletionsAPI(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-    ): Flow<StreamChunk> = callbackFlow {
+    ): Flow<StreamChunk> {
         val builtRequest = buildChatRequest(
             messages = messages,
             params = params,
@@ -145,26 +165,45 @@ class ChatCompletionsAPI(
             stream = true,
         )
         val encodedBody = json.encodeToString(builtRequest.body)
+        Log.i(TAG, "streamText: $encodedBody")
 
+        return credentialPool.streamWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = providerSetting.apiKeyCandidates(),
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            streamSingleRequest(providerSetting, params, builtRequest.wireToolNames, encodedBody, cred.value, cred.displayLabel)
+        }
+    }
+
+    private fun streamSingleRequest(
+        providerSetting: ProviderSetting.OpenAI,
+        params: TextGenerationParams,
+        wireToolNames: Set<String>,
+        encodedBody: String,
+        apiKey: String,
+        credentialLabel: String,
+    ): Flow<StreamChunk> = callbackFlow {
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .post(encodedBody.toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .apply {
+                if (credentialLabel.isNotBlank()) {
+                    tag(CredentialLogTag::class.java, CredentialLogTag(credentialLabel))
+                }
+            }
             .configureReferHeaders(providerSetting.baseUrl)
             .configureSessionHeaders(providerSetting.baseUrl, params.resolvedSessionId(providerSetting))
             .build()
-
-        Log.i(TAG, "streamText: $encodedBody")
-
-        // just for debugging response body
-        // println(client.newCall(request).await().body?.string())
 
         // 把本轮最终 wire 上实际暴露的工具名交给解码器消解 name 字段的
         // “重发/累计快照 vs 真增量”歧义；customBody 删减/重排过的子集以
         // preflight 结果为准，不能只按 params.tools 直传。
         val decoder = ChatCompletionsStreamDecoder(
-            knownToolNames = builtRequest.wireToolNames,
+            knownToolNames = wireToolNames,
         )
 
         fun sendChunks(chunks: Iterable<StreamChunk>) {
@@ -190,10 +229,12 @@ class ChatCompletionsAPI(
                     if (result.completed) close()
                 } catch (e: Throwable) {
                     close(e)
+                    eventSource.cancel()
                 }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                if (isClosedForSend) return
                 var exception = t
 
                 Log.e(TAG, "[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response", t)
@@ -215,8 +256,12 @@ class ChatCompletionsAPI(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                sendChunks(decoder.onClosed())
-                close()
+                try {
+                    sendChunks(decoder.onClosed())
+                    close()
+                } catch (e: Throwable) {
+                    close(e)
+                }
             }
         }
 
@@ -289,6 +334,13 @@ class ChatCompletionsAPI(
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) put("temperature", params.temperature)
                 if (params.topP != null) put("top_p", params.topP)
+                if (params.topK != null) put("top_k", params.topK)
+                if (params.frequencyPenalty != null) put("frequency_penalty", params.frequencyPenalty)
+                if (params.presencePenalty != null) put("presence_penalty", params.presencePenalty)
+                if (params.repetitionPenalty != null) put("repetition_penalty", params.repetitionPenalty)
+                if (params.minP != null) put("min_p", params.minP)
+                if (params.topA != null) put("top_a", params.topA)
+                if (params.seed != null) put("seed", params.seed)
             }
             if (params.maxTokens != null) put("max_tokens", params.maxTokens)
 
@@ -851,21 +903,6 @@ class ChatCompletionsAPI(
                 else -> error("unknown annotation type: $type")
             }
         }
-    }
-
-    private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
-        if (jsonObject == null) return null
-        return TokenUsage(
-            promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            // 各 provider 汇报缓存命中的字段形状不统一，按方言兜底解析（#1576）：
-            // OpenAI 嵌套 -> Moonshot 顶层 cached_tokens -> DeepSeek prompt_cache_hit_tokens
-            cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
-                ?: 0
-        )
     }
 
     private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {

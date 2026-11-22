@@ -19,6 +19,7 @@ data class DevinAccount(
     /** epoch 秒, 0 = 未知 */
     val dailyQuotaResetAt: Long = 0,
     val weeklyQuotaResetAt: Long = 0,
+    val quotaUpdatedAt: Long = 0,
 )
 
 @Serializable

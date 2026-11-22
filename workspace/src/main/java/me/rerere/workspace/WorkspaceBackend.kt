@@ -110,6 +110,24 @@ interface WorkspaceBackend {
         mode: WorkspaceTransferMode,
         onProgress: (WorkspaceTransferProgress) -> Unit = {},
     ): WorkspaceTransferResult
+    /** Copies [paths] of a host folder [sourceRoot] into [area] of workspace [root] (file manager import). */
+    suspend fun importFromHost(
+        sourceRoot: java.io.File,
+        paths: List<String>,
+        root: String,
+        area: WorkspaceStorageArea,
+        targetDir: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit = {},
+    ): WorkspaceTransferResult
+    /** Copies all of the host folder [sourceDir] into [area]/[targetDir] of workspace [root] as a new folder [name]. */
+    suspend fun importFolderFromHost(
+        sourceDir: java.io.File,
+        name: String,
+        root: String,
+        area: WorkspaceStorageArea,
+        targetDir: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit = {},
+    ): WorkspaceTransferItemResult
     fun glob(root: String, pattern: String, path: String = ""): List<WorkspaceFileEntry>
     fun grep(root: String, query: String, path: String = "", regex: Boolean = false, ignoreCase: Boolean = true,
              includeGlob: String? = null): List<WorkspaceSearchMatch>
@@ -127,4 +145,6 @@ interface WorkspaceBackend {
     fun installRootfs(root: String, url: String, onProgress: (RootfsInstallProgress) -> Unit = {})
 
     fun openShell(root: String, request: WorkspaceShellRequest): WorkspacePty
+
+    fun openSubprocess(root: String, request: WorkspaceSubprocessRequest): WorkspaceSubprocess
 }

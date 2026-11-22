@@ -5,9 +5,13 @@
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.CAMERA" />
   <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <!-- 文件管理器在 API26~29 用旧存储权限（29 另需 requestLegacyExternalStorage） -->
+  <uses-permission
+    android:name="android.permission.READ_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
   <uses-permission
     android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-    android:maxSdkVersion="28" />
+    android:maxSdkVersion="29" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -21,7 +25,7 @@
     tools:ignore="ProtectedPermissions" />
   <uses-permission android:name="android.permission.READ_CALENDAR" />
   <uses-permission android:name="android.permission.WRITE_CALENDAR" />
-  <!-- 设备目录直连：API30+ 共享存储所有文件访问；仅主卷受控目录选择，API26-29 不生效 -->
+  <!-- 设备目录直连与文件管理器：API30+ 共享存储所有文件访问 -->
   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
   <uses-feature
@@ -60,6 +64,7 @@
   <application
     android:name=".RikkihubApp"
     android:largeHeap="true"
+    android:requestLegacyExternalStorage="true"
     android:allowBackup="true"
     android:appCategory="productivity"
     android:dataExtractionRules="@xml/data_extraction_rules"
@@ -67,6 +72,7 @@
     android:fullBackupContent="@xml/backup_rules"
     android:icon="@mipmap/ic_launcher"
     android:label="${appName}" tools:replace="android:label"
+    android:networkSecurityConfig="@xml/network_security_config"
     android:supportsRtl="true"
     android:theme="@style/Theme.Rikkihub"
     android:usesCleartextTraffic="true"

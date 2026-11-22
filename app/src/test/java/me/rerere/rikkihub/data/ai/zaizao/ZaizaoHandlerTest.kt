@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.ai.zaizao
 
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
@@ -66,7 +67,7 @@ class ZaizaoHandlerTest {
 
     private val assistantModel = Model(modelId = "assistant-model")
     private val ownModel = Model(modelId = "zaizao-model")
-    private val assistant = Assistant(chatModelId = assistantModel.id, systemPrompt = "助手提示词不该出现")
+    private val assistant = Assistant(chatModelId = assistantModel.id, promptPreset = AssistantPresets.withSystemPrompt("助手提示词不该出现"))
 
     private fun settings(config: ZaizaoConfig = ZaizaoConfig()) = Settings(
         providers = listOf(ProviderSetting.OpenAI(apiKey = "k", baseUrl = "http://localhost", models = listOf(assistantModel, ownModel))),

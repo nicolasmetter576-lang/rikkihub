@@ -17,6 +17,7 @@ enum class ManagementDomain {
     SUBAGENT_PRESET,
     USER_SKILL,
     CONVERSATION,
+    CHARACTER,
 }
 
 /** 管理目标引用。id 为字符串（适配 Room 主键/文件名等非 UUID 目标）。 */

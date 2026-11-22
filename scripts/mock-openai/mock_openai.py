@@ -26,19 +26,31 @@ POST /v1/chat/completions (stream or not):
     plus "（参考了 N 条上下文）" when a <conversation> block was sent. In the input,
     "[[polish:slow]]" holds it back ~5 s (cancel mid-way), "[[polish:fail]]" returns HTTP 500,
     "[[polish:empty]]" returns only whitespace.
+  * A 去八股 AI-refine request (the user message has "【需要重写的句子】") gets a JSON object {"N": sentence} where each
+    flagged phrase of sentence N is replaced by "〔精修〕"; a workspace file's single sentence gets three rewrites
+    {"1".."3"} with the phrases replaced by "〔改法N〕". In the reply text sent as context: "[[qubagu:fail]]" returns
+    HTTP 500, "[[qubagu:bad]]" answers without JSON, "[[qubagu:slow]]" holds the answer back ~5 s.
   * A compression request (last user message is the structured-summary instruction "Stop the current
     task and write a structured summary ...") gets "[Summary of previous conversation]" plus a short
     section listing how many earlier user/assistant messages were sent. Put "[[compress:slow]]" in the
     additional instructions to hold it back ~4 s, "[[compress:tool]]" to answer with a tool call instead
     of a summary, "[[compress:fail]]" for HTTP 500.
+  * "[[overflow]]" in the last user message returns HTTP 400 context_length_exceeded (OpenAI wording) until the
+    request carries a compression summary ("[Summary of previous conversation]"), for compress-and-retry.
   * A memory dreaming request (the tools include "conversation_read") writes /topics/tea.md when the new
     turns contain "[[dream:tea]]" (memory_write with if_version "new", or memory_append with the listed
     version when the file exists), then answers "dream done". "[[dream:fail]]" in the new turns returns
     HTTP 500; "[[dream:slow]]" holds every step back ~4 s. A full review (manual "Dream now") answers
     "dream done (full review)". Nothing to record: answers "nothing to remember" without tool calls.
   * Otherwise echoes "mock reply #N: <last user text>".
+  * A step with "slow_args": {"chunk": N, "delay": S} streams its tool arguments N characters at a time,
+    S seconds apart (script "write_file_stream": a 40-line workspace_write_file for the streaming card).
   * A step with "null_noise" streams relay noise first (`data: null`, null elements in
     reasoning_details / annotations); "with_text" sends that text together with a tool call.
+POST /v1/messages (Claude Messages API, stream or not): replies with a redacted_thinking block, a
+    thinking block whose signature arrives in two signature_delta pieces, and the text
+    "mock claude reply: <N> redacted_thinking replayed" where N counts the redacted_thinking blocks the
+    request sent back (they must be replayed verbatim on the next turn).
 POST /v1/responses (Responses API, stream only): echoes "mock responses reply #N: <last user text>".
 POST /v1/images/generations and /v1/images/edits: one tiny PNG as b64_json.
 POST /mcp: a minimal MCP server (Streamable HTTP, JSON responses) with four tools: "echo",
@@ -49,14 +61,39 @@ GET /v1/models -> one model "mock-chat".
 Every request is appended to mock-requests.jsonl next to this file (for assertions), with the
 Authorization and X-Mock request headers.
 """
-import json, sys, time, threading, os
+import json, re, socket, struct, sys, time, threading, os
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mock-requests.jsonl")
 COUNTER = {"n": 0}
 LOCK = threading.Lock()
+RESET_DONE = set()
+
+QUBAGU_SKILL_PACK = {"id": "skill_test", "name": "技能测试", "description": "mock 技能写入的包", "rules": [
+    {"kind": "replace", "id": "throat", "name": "喉结滚动", "sample": "他喉结滚动。", "find": "喉结(?:上下)?滚动", "regex": True,
+     "replacements": ["顿了顿", "沉默片刻"], "refinePrompt": "写出人物此刻具体在做什么，不要用生理反应代替情绪"}]}
 
 SCRIPTS = {
+    # workspace_write_file whose arguments arrive slowly (~10 s), to watch the write-file card fill up
+    "write_file_stream": [
+        {"tool": "workspace_write_file", "slow_args": {"chunk": 24, "delay": 0.2},
+         "args": {"path": "/workspace/write/stream-demo.md",
+                  "text": "\n".join(f"第 {i} 行：流式写入演示，line {i}" for i in range(1, 41))}},
+        {"text": "written"},
+    ],
+    # two large shell outputs under the same call id ("call_id" fixes the id; like Chat Completions
+    # relays that send none and get response:tool-N), then list /tool_outputs: both full outputs must be there
+    "tool_output_reuse": [
+        {"tool": "workspace_shell", "call_id": "call_reused", "args": {"command": "yes AAAA | head -c 40000"}},
+        {"tool": "workspace_shell", "call_id": "call_reused", "args": {"command": "yes BBBB | head -c 40000"}},
+        {"tool": "workspace_shell", "args": {"command": "for f in /tool_outputs/call_reused*; do echo \"$f $(grep -o -m1 -E 'AAAA|BBBB' \"$f\" | head -1) $(wc -c < \"$f\")\"; done"}},
+        {"text": "listed"},
+    ],
+    # a shell call that runs ~20 s (unbind the assistant's workspace while it runs)
+    "slow_shell": [
+        {"tool": "workspace_shell", "args": {"timeout": 60, "command": "sleep 20; echo SLOW_DONE"}},
+        {"text": "shell finished"},
+    ],
     # Alpine rootfs (busybox ash, no bash): the persistent bash tool keeps variables and cwd between calls
     "alpine_bash": [
         {"tool": "bash", "args": {"command": "head -2 /etc/os-release; readlink /bin/sh; X=persisted; cd /tmp; echo ALPINE_STEP1"}},
@@ -75,6 +112,12 @@ SCRIPTS = {
     # a reply streamed over ~8 s (delete or edit earlier messages while it streams)
     "slow_reply": [
         {"text": "streaming " * 30 + "done", "chunk_size": 10, "chunk_delay": 0.25},
+    ],
+    # a long reply with reasoning streamed over ~45 s (background floating window: bubble, panel preview, quick reply)
+    "floating_long": [
+        {"reasoning": "thinking about the floating window",
+         "text": "\n".join(f"第 {i} 行 line {i} floating preview" for i in range(1, 61)),
+         "chunk_size": 12, "chunk_delay": 0.3},
     ],
     # the user asks the assistant to remember something: it writes memory in the main chat
     "remember_short": [
@@ -116,6 +159,16 @@ SCRIPTS = {
     ],
     # a reply that calls a tool needing no approval together with ask_user (needs an answer):
     # after the answer both run, in order, and the model gets both results
+    # reasoning followed by three ask_user calls that all wait for an answer: the collapsed thinking
+    # chain must keep every pending call visible, not just the last two steps
+    "multi_pending": [
+        {"reasoning": "need three answers", "calls": [
+            {"tool": "ask_user", "args": {"questions": [{"id": "q1", "question": "First question?"}]}},
+            {"tool": "ask_user", "args": {"questions": [{"id": "q2", "question": "Second question?"}]}},
+            {"tool": "ask_user", "args": {"questions": [{"id": "q3", "question": "Third question?"}]}},
+        ]},
+        {"text": "all three answered"},
+    ],
     "mixed_approval": [
         {"calls": [
             {"tool": "get_time_info", "args": {}},
@@ -124,9 +177,34 @@ SCRIPTS = {
         {"text": "both tools done"},
     ],
     # two steps whose text an assistant regex rewrites ("tick" -> "tick✓"); it must apply once per step
+    # several articles via tool steps, then the third request overflows the context until a compression
+    # summary is in the request (overflow on a later step of a multi-step turn → compress-and-retry)
+    "articles_overflow": [
+        {"tool": "get_time_info", "args": {}, "with_text": "ARTICLE-ONE written."},
+        {"tool": "get_time_info", "args": {}, "with_text": "ARTICLE-TWO written."},
+        {"overflow_unless_summary": True, "text": "ARTICLE-THREE written, all done."},
+    ],
+    # same two article steps, then a slow third step (~25 s) to kill the app mid-turn
+    "articles_slow": [
+        {"tool": "get_time_info", "args": {}, "with_text": "ARTICLE-ONE written."},
+        {"tool": "get_time_info", "args": {}, "with_text": "ARTICLE-TWO written."},
+        {"text": "ARTICLE-THREE written, all done.", "delay": 25.0},
+    ],
+    # two complete article tool calls in one response, then the connection is reset before the finish
+    # chunk (once per conversation text): the app's network retry replays the whole response
+    "articles_reset": [
+        {"calls": [{"tool": "get_time_info", "args": {}}, {"tool": "get_time_info", "args": {}}],
+         "with_text": "Drafting ARTICLE-ONE and ARTICLE-TWO.", "reset_once": 4.0},
+        {"text": "ARTICLE-THREE written, all done."},
+    ],
     "regex_steps": [
         {"tool": "get_time_info", "args": {}, "with_text": "tick one"},
         {"text": "tick two"},
+    ],
+    # two steps that both carry stock phrases (去八股 must clean each step's text once, before the next request)
+    "qubagu_steps": [
+        {"tool": "get_time_info", "args": {}, "with_text": "他喉结滚动，瞳孔骤缩。那不是愤怒，而是执念。"},
+        {"text": "她瞳孔骤缩，喉结滚动。夜还很长。"},
     ],
     # <think> at the start of the second step (the first step already has a reasoning part)
     "think_steps": [
@@ -150,6 +228,14 @@ SCRIPTS = {
         {"text": "odd tool finished"},
     ],
     # one search citation badge
+    # per-turn title: the reply ends with <rk-title>, streamed 3 chars at a time so half-written tags show up mid-stream
+    "title_reply": [
+        {"text": "这是带标题的回复。\n第二行正文。\n<rk-title>天气查询</rk-title>", "chunk_size": 3, "chunk_delay": 0.2},
+    ],
+    # the same reply 2 chars every 0.8 s: slow enough to screenshot each half-written tag state
+    "title_reply_slow": [
+        {"text": "这是带标题的回复。\n第二行正文。\n<rk-title>天气查询</rk-title>", "chunk_size": 2, "chunk_delay": 0.8},
+    ],
     "citation": [
         {"text": "See the source [citation,example.com](abc123) for details."},
     ],
@@ -178,8 +264,49 @@ SCRIPTS = {
              "params": {"fields": {"title": "Mock batch greeting", "content": "Hello from the batch test"}}},
             {"kind": "MODE_INJECTION", "command": "Create",
              "params": {"fields": {"name": "Mock batch mode", "content": "Be brief.",
-                                   "position": "AFTER_SYSTEM_PROMPT", "role": "USER"}}}]}},
+                                   "libraryAnchor": "AFTER_SYSTEM", "role": "USER"}}}]}},
         {"text": "I proposed both changes. Please review and approve them."},
+    ],
+    # creator: a lorebook with bulk entries, a global regex script and tavern settings in one proposal
+    "creator_native_book": [
+        {"tool": "creator_describe", "args": {"kind": "LOREBOOK_ENTRY"}},
+        {"tool": "creator_preview_change", "args": {"operations": [
+            {"kind": "LOREBOOK", "command": "Create", "params": {"fields": {"name": "Mock Aurora", "description": "native smoke"}}},
+            {"kind": "LOREBOOK_ENTRY", "command": "Create", "params": {"bookId": "$0", "items": [
+                {"comment": "Capital", "key": ["capital", "Aurum"], "content": "Aurum floats."},
+                {"comment": "Dragons", "key": ["dragon"], "keysecondary": ["fire"], "selective": True, "content": "Dragons breathe fire.", "probability": 60},
+                {"comment": "Weather", "key": ["rain"], "content": "It rains on Tuesdays.", "constant": False}]}},
+            {"kind": "REGEX_SCRIPT", "command": "Create", "params": {"fields": {
+                "scriptName": "Mock cat to dog", "findRegex": "/cat/g", "replaceString": "dog", "placement": [2], "markdownOnly": True}}},
+            {"kind": "TAVERN_SETTINGS", "command": "Patch", "targetId": "tavern", "params": {"fields": {
+                "worldInfo": {"world_info_depth": 5}, "authorsNote": {"prompt": "Keep it light.", "depth": 2}}}}]}},
+        {"text": "I proposed the lorebook, its entries, the regex script and the settings. Please review and approve."},
+    ],
+    # creator: search and read what the previous script created
+    "creator_native_read": [
+        {"tool": "creator_list_objects", "args": {"kind": "LOREBOOK_ENTRY", "filter": "dragon"}},
+        {"tool": "creator_list_objects", "args": {"kind": "REGEX_SCRIPT", "filter": "global"}},
+        {"tool": "creator_read_object", "args": {"kind": "TAVERN_SETTINGS", "id": "tavern"}},
+        {"text": "Read the entries, the regex script and the tavern settings."},
+    ],
+    # creator: a character with its card fields, then (next script) read and patch it
+    "creator_character": [
+        {"tool": "creator_describe", "args": {"kind": "CHARACTER"}},
+        {"tool": "creator_preview_change", "args": {"operations": [
+            {"kind": "CHARACTER", "command": "Create", "params": {"fields": {
+                "name": "Mock Pilot", "description": "{{char}} flies the mail boat between the islands.",
+                "personality": "calm, dry", "scenario": "{{char}} is waiting for {{user}} at the pier.",
+                "first_mes": "Climb aboard, {{user}}.", "tags": ["mock", "boat"], "alternate_greetings": ["Mind the rope."],
+                "depth_prompt": {"prompt": "[{{char}} checks the horizon.]", "depth": 2, "role": "system"}}}}]}},
+        {"text": "I proposed the character. Please review and approve it."},
+    ],
+    "creator_character_patch": [
+        {"tool": "creator_list_objects", "args": {"kind": "CHARACTER", "filter": "pilot"}},
+        {"tool": "creator_read_object", "args": {"kind": "CHARACTER", "id": "{{character:Mock Pilot}}"}},
+        {"tool": "creator_preview_change", "args": {"operations": [
+            {"kind": "CHARACTER", "command": "Patch", "targetId": "{{character:Mock Pilot}}", "params": {"fields": {
+                "personality": "calm, dry, a little superstitious", "fav": True}}}]}},
+        {"text": "I proposed the change. Please review and approve it."},
     ],
     # creator: create a provider pointing back at this mock, plus its model, in one proposal
     "creator_provider": [
@@ -294,6 +421,20 @@ SCRIPTS = {
             "x_axis": {"title": "step", "data": ["a", "b", "c"]}, "y_axis": {"format": ".1f"},
             "series": [{"name": "s1", "values": [1, 2.5, 3]}]}},
         {"text": "chart shown"},
+    ],
+    # the built-in qubagu-rules skill: load it, read the rules, test a candidate pack, then write it (needs approval)
+    "qubagu_skill": [
+        {"tool": "use_skill", "args": {"name": "qubagu-rules"}},
+        {"tool": "qubagu_rules_read", "args": {}},
+        {"tool": "qubagu_rules_test", "args": {"text": "他喉结滚动，没有说话。她的手在抖。", "packs": [QUBAGU_SKILL_PACK]}},
+        {"tool": "qubagu_rules_write", "args": {"packs": [QUBAGU_SKILL_PACK]}},
+        {"text": "已写入「技能测试」包。"},
+    ],
+    # a write the engine rejects (broken regex): the error comes back, nothing is saved
+    "qubagu_skill_bad": [
+        {"tool": "qubagu_rules_write", "args": {"packs": [{"id": "broken", "name": "坏包", "rules": [
+            {"kind": "replace", "id": "bad", "find": "(", "regex": True}]}]}},
+        {"text": "写入被拒绝。"},
     ],
     # a conversation confined to /workspace/a/b probes for files outside it
     "scoped_probe": [
@@ -437,6 +578,12 @@ def resolve_refs(step, messages):
                 if item.get("kind") == "PROVIDER" and item.get("title", "").startswith(name):
                     return item["id"]
         return "missing-" + name
+    def character_id(name):
+        for result in results():
+            for item in result.get("items", []) if isinstance(result, dict) else []:
+                if item.get("kind") == "CHARACTER" and item.get("title", "").startswith(name):
+                    return item["id"]
+        return "missing-" + name
     def proposal_id(text):
         for result in results():
             for item in result if isinstance(result, list) else []:
@@ -450,6 +597,8 @@ def resolve_refs(step, messages):
             return [walk(x) for x in v]
         if isinstance(v, str) and v.startswith("{{provider:") and v.endswith("}}"):
             return provider_id(v[len("{{provider:"):-2])
+        if isinstance(v, str) and v.startswith("{{character:") and v.endswith("}}"):
+            return character_id(v[len("{{character:"):-2])
         if isinstance(v, str) and v.startswith("{{proposal:") and v.endswith("}}"):
             return proposal_id(v[len("{{proposal:"):-2])
         return v
@@ -457,21 +606,73 @@ def resolve_refs(step, messages):
 
 
 COMPRESS_INSTRUCTION = "Stop the current task and write a structured summary"
+STAGE_COMPRESS_INSTRUCTION = "Write an updated running summary for staged context compression."
+FINAL_CHUNK_COMPRESS_INSTRUCTION = "Write the final structured summary of the conversation"
+
+
+def _message_text(m):
+    c = m.get("content")
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return "\n".join(p.get("text", "") for p in c if isinstance(p, dict))
+    return ""
+
+
+def _segment_item_count(prompt_text):
+    start = prompt_text.find("<conversation_segment>")
+    if start < 0:
+        return 0
+    end = prompt_text.find("</conversation_segment>", start)
+    seg = prompt_text[start:end] if end >= 0 else prompt_text[start:]
+    return seg.count("[Message #") + seg.count("[Fragment ")
 
 
 def compress_reply(messages, text):
-    """Context compression: the app appends the structured-summary instruction to the normal request."""
-    if not text.lstrip().startswith(COMPRESS_INSTRUCTION):
+    """Context compression: single-pass prefix-preserving or standalone staged/final requests."""
+    stripped = text.lstrip()
+    is_single = stripped.startswith(COMPRESS_INSTRUCTION)
+    is_stage = stripped.startswith(STAGE_COMPRESS_INSTRUCTION)
+    is_final_chunk = stripped.startswith(FINAL_CHUNK_COMPRESS_INSTRUCTION)
+    if not (is_single or is_stage or is_final_chunk):
         return None
     if "[[compress:fail]]" in text:
         return {"http_error": 500}
     if "[[compress:tool]]" in text:
         return {"tool": "creator_describe", "args": {"kind": "QUICK_MESSAGE"}, "with_text": "Let me look first."}
-    earlier = [m for m in messages[:-1] if m.get("role") in ("user", "assistant")]
-    users = sum(1 for m in earlier if m.get("role") == "user")
-    step = {"text": "[Summary of previous conversation]\n\n## Current State\n"
-                    f"summary ready ({users} user / {len(earlier) - users} assistant messages)"}
-    if "[[compress:slow]]" in text:
+    all_text = "\n".join(_message_text(m) for m in messages)
+    if "[[compress:chunk_overflow]]" in all_text:
+        overflow_count = (
+            len([m for m in messages[:-1] if m.get("role") in ("user", "assistant")])
+            if is_single else _segment_item_count(text)
+        )
+        if overflow_count > 2:
+            return {
+                "http_error": 400,
+                "error_body": {
+                    "error": {
+                        "message": "This model's maximum context length is 500 tokens. Please reduce the length of the messages.",
+                        "type": "invalid_request_error",
+                        "code": "context_length_exceeded",
+                    }
+                },
+            }
+    if is_stage:
+        seg_items = _segment_item_count(text)
+        has_prev = "yes" if "\n<previous_summary>\n" in text else "no"
+        step = {"text": f"Stage summary ({seg_items} msgs, prev={has_prev})"}
+    elif is_final_chunk:
+        seg_items = _segment_item_count(text)
+        has_prev = "yes" if "\n<previous_summary>\n" in text else "no"
+        step = {"text": f"[Summary of previous conversation]\n\n## Current State\nchunked summary ready ({seg_items} msgs, prev={has_prev})"}
+    else:
+        earlier = [m for m in messages[:-1] if m.get("role") in ("user", "assistant")]
+        users = sum(1 for m in earlier if m.get("role") == "user")
+        step = {"text": "[Summary of previous conversation]\n\n## Current State\n"
+                        f"summary ready ({users} user / {len(earlier) - users} assistant messages)"}
+    if "[[compress:timeout]]" in text:
+        step["delay"] = 35.0
+    elif "[[compress:slow]]" in text:
         step["delay"] = 4.0
     return step
 
@@ -535,6 +736,35 @@ def polish_reply(text):
     return reply
 
 
+def qubagu_reply(text):
+    """Scripted 去八股 AI-refine answer: a JSON object numbering each listed sentence with its flagged phrases swapped out."""
+    marker = "【需要重写的句子】"
+    at = text.rfind(marker)
+    if at < 0:
+        return None
+    if "[[qubagu:fail]]" in text:
+        return {"http_error": 500}
+    if "[[qubagu:bad]]" in text:
+        return {"text": "抱歉，我没法重写。"}
+    single = re.match(r"【需要重写的句子】\n([\s\S]*?)(?:\n套话：(.*))?$", text[at:])
+    if single and "原句：" not in text[at:]:
+        # a workspace file's sentence: three rewrites, the flagged phrases swapped for 〔改法N〕
+        sentence, phrases = single.group(1), re.findall(r"「(.*?)」", single.group(2) or "")
+        options = {}
+        for number in ("1", "2", "3"):
+            option = sentence
+            for phrase in phrases:
+                option = option.replace(phrase, f"〔改法{number}〕")
+            options[number] = option.replace("\n", "")
+        return {"text": json.dumps(options, ensure_ascii=False), "delay": 5.0 if "[[qubagu:slow]]" in text else 0.3}
+    rewrites = {}
+    for number, sentence, phrases in re.findall(r"\n(\d+)\. 原句：(.*)\n   套话：(.*)", text[at:]):
+        for phrase in re.findall(r"「(.*?)」", phrases):
+            sentence = sentence.replace(phrase, "〔精修〕")
+        rewrites[number] = sentence
+    return {"text": json.dumps(rewrites, ensure_ascii=False), "delay": 5.0 if "[[qubagu:slow]]" in text else 0.3}
+
+
 # 16x16 opaque red PNG
 TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGO4Y2NDEmIY1TCqYfhqAABhl1QQ50OvrwAAAABJRU5ErkJggg=="
 
@@ -580,6 +810,42 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _claude(self, n, req):
+        replayed = sum(1 for m in req.get("messages", []) if m.get("role") == "assistant"
+                       for b in (m.get("content") if isinstance(m.get("content"), list) else [])
+                       if b.get("type") == "redacted_thinking")
+        redacted = f"opaque-redacted-{n}"
+        text = f"mock claude reply: {replayed} redacted_thinking replayed"
+        usage = {"input_tokens": 10, "output_tokens": 5}
+        if not req.get("stream"):
+            return self._json(200, {"id": f"msg_{n}", "type": "message", "role": "assistant", "model": req.get("model"),
+                                    "content": [{"type": "redacted_thinking", "data": redacted},
+                                                {"type": "thinking", "thinking": "visible thought", "signature": f"sig-{n}"},
+                                                {"type": "text", "text": text}],
+                                    "stop_reason": "end_turn", "usage": usage})
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        def ev(obj):
+            self.wfile.write(b"event: " + obj["type"].encode() + b"\ndata: " + json.dumps(obj).encode() + b"\n\n"); self.wfile.flush()
+        ev({"type": "message_start", "message": {"id": f"msg_{n}", "type": "message", "role": "assistant",
+                                                 "model": req.get("model"), "content": [], "usage": usage}})
+        ev({"type": "content_block_start", "index": 0, "content_block": {"type": "redacted_thinking", "data": redacted}})
+        ev({"type": "content_block_stop", "index": 0})
+        ev({"type": "content_block_start", "index": 1, "content_block": {"type": "thinking", "thinking": ""}})
+        ev({"type": "content_block_delta", "index": 1, "delta": {"type": "thinking_delta", "thinking": "visible thought"}})
+        ev({"type": "content_block_delta", "index": 1, "delta": {"type": "signature_delta", "signature": f"sig-{n}-a"}})
+        ev({"type": "content_block_delta", "index": 1, "delta": {"type": "signature_delta", "signature": "-b"}})
+        ev({"type": "content_block_stop", "index": 1})
+        ev({"type": "content_block_start", "index": 2, "content_block": {"type": "text", "text": ""}})
+        ev({"type": "content_block_delta", "index": 2, "delta": {"type": "text_delta", "text": text}})
+        ev({"type": "content_block_stop", "index": 2})
+        ev({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}})
+        ev({"type": "message_stop"})
+        self.close_connection = True
 
     def _responses(self, n, req):
         """Minimal Responses API stream: one message item with streamed output_text."""
@@ -719,6 +985,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"created": int(time.time()), "data": [{"b64_json": TINY_PNG}]})
         if self.path.rstrip("/").endswith("/responses"):
             return self._responses(n, req)
+        if self.path.rstrip("/").endswith("/messages"):
+            return self._claude(n, req)
         messages = req.get("messages", [])
         text = last_user_text(messages)
         # dreaming first: its input quotes the chat, script markers included
@@ -744,6 +1012,12 @@ class Handler(BaseHTTPRequestHandler):
             step = {"text": f"probe tools={','.join(n for n in names if n.startswith('creator_'))}; updates={updates}"}
         if step is None:
             step = compress_reply(messages, text)
+        if step is None and "[[overflow]]" in text and not any(
+                "[Summary of previous conversation]" in last_user_text([m]) for m in messages):
+            # Context overflow until a compression checkpoint is in the request (compress-and-retry).
+            return self._json(400, {"error": {
+                "message": "This model's maximum context length is 1000 tokens. However, your messages resulted in 1500 tokens.",
+                "type": "invalid_request_error", "code": "context_length_exceeded"}})
         if step is None:
             step = zaizao_reply(messages)
         if step is None:
@@ -751,12 +1025,22 @@ class Handler(BaseHTTPRequestHandler):
         if step is None:
             step = polish_reply(text)
         if step is None:
+            step = qubagu_reply(text)
+        if step is None:
             step = {"text": f"mock reply #{n}: {text[:200]}"}
+        if step.get("overflow_unless_summary") and not any(
+                "[Summary of previous conversation]" in last_user_text([m]) for m in messages):
+            return self._json(400, {"error": {
+                "message": "This model's maximum context length is 1000 tokens. However, your messages resulted in 1500 tokens.",
+                "type": "invalid_request_error", "code": "context_length_exceeded"}})
         # "delay" holds the reply back (e.g. slow subagents for overlap checks)
         if step.get("delay"):
             time.sleep(float(step["delay"]))
         if step.get("http_error"):
-            return self._json(int(step["http_error"]), {"error": {"message": "mock failure", "type": "server_error"}})
+            return self._json(
+                int(step["http_error"]),
+                step.get("error_body") or {"error": {"message": "mock failure", "type": "server_error"}},
+            )
         if req.get("stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -780,13 +1064,32 @@ class Handler(BaseHTTPRequestHandler):
                     call = {"index": k, "id": f"call_{n}_{k}", "type": "function",
                             "function": {"name": call_step["tool"], "arguments": tool_arguments(call_step)}}
                     ev({**base, "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [call]}, "finish_reason": None}]})
+                reset_key = text + "|" + str(tool_rounds(messages))
+                if step.get("reset_once") and reset_key not in RESET_DONE:
+                    # hold the complete calls on screen, then RST the socket (no finish chunk, no [DONE])
+                    RESET_DONE.add(reset_key)
+                    time.sleep(float(step["reset_once"]))
+                    self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                    self.connection.close()
+                    self.close_connection = True
+                    return
+                ev({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}], "usage": mock_usage(messages)})
+            elif "tool" in step and step.get("slow_args"):
+                full, size, delay = tool_arguments(step), int(step["slow_args"]["chunk"]), float(step["slow_args"]["delay"])
+                for i in range(0, len(full), size):
+                    call = {"index": 0, "function": {"arguments": full[i:i + size]}}
+                    if i == 0:
+                        call.update(id=f"call_{n}", type="function")
+                        call["function"]["name"] = step["tool"]
+                    ev({**base, "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [call]}, "finish_reason": None}]})
+                    time.sleep(delay)
                 ev({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}], "usage": mock_usage(messages)})
             elif "tool" in step:
                 for k, args in enumerate(step.get("same_index") or [None]):
                     call = {"index": 0, "type": "function",
                             "function": {"name": step["tool"], "arguments": tool_arguments(step, args)}}
                     if k == 0:
-                        call["id"] = f"call_{n}"
+                        call["id"] = step.get("call_id", f"call_{n}")
                     ev({**base, "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [call]}, "finish_reason": None}]})
                 ev({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}], "usage": mock_usage(messages)})
             else:

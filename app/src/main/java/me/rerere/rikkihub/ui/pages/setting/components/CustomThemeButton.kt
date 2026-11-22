@@ -31,6 +31,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.rikkihub.ui.theme.CustomTheme
 import me.rerere.rikkihub.ui.theme.LocalDarkMode
+import me.rerere.rikkihub.ui.components.ui.CardGroupCorner
 
 @Composable
 fun CustomThemeButtonGroup(
@@ -75,7 +76,7 @@ private fun CustomThemeButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(CardGroupCorner))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = LocalIndication.current,

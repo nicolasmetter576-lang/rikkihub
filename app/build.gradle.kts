@@ -86,8 +86,8 @@ android {
         applicationId = if (coexist) "me.rerere.rikkihub.subagent" else "me.rerere.rikkihub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 222
-        versionName = "2.32.0"
+        versionCode = 253
+        versionName = "2.50.6"
 
         // 各变体应用名：共存包 RikkiTomo / 发布包 RikkiRana / debug RikkiUmi
         manifestPlaceholders["appName"] = "Rikkihub"
@@ -198,7 +198,11 @@ android {
                     excludes += setOf(
                         "META-INF/*.version",
                         "META-INF/INDEX.LIST",
-                        "META-INF/LICENSE*"
+                        "META-INF/LICENSE*",
+                        // jtokkit 自带四个编码表，只用 cl100k_base；其余三个约 +1.1 MB（压缩后）
+                        "com/knuddels/jtokkit/o200k_base.tiktoken",
+                        "com/knuddels/jtokkit/p50k_base.tiktoken",
+                        "com/knuddels/jtokkit/r50k_base.tiktoken",
                     )
                 }
             }
@@ -418,6 +422,7 @@ dependencies {
     // https://github.com/Petterpx/FloatingX
     implementation(libs.floatingx.app)
     implementation(libs.floatingx.compose)
+    implementation(libs.floatingx.system)
 
     // jsoup (HTML parsing in rich text rendering)
     implementation(libs.jsoup)
@@ -453,6 +458,7 @@ dependencies {
     implementation(project(":workspace"))
     implementation(project(":oauth"))
     implementation(project(":mediagen"))
+    implementation(project(":tavern"))
     implementation(kotlin("reflect"))
 
     // tests

@@ -86,7 +86,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.asr.ASRStatus
@@ -95,18 +94,23 @@ import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Files02
+import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.AiBeautify
 import me.rerere.hugeicons.stroke.Undo
 import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkihub.R
+import me.rerere.rikkihub.Screen
+import me.rerere.rikkihub.data.repository.WorkspaceRepository
+import me.rerere.rikkihub.ui.context.LocalNavController
+import me.rerere.workspace.WorkspaceShellStatus
+import kotlinx.coroutines.flow.flowOf
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.datastore.getCurrentAssistant
 import me.rerere.rikkihub.data.datastore.getCurrentChatModel
 import me.rerere.rikkihub.data.datastore.getQuickMessagesOfAssistant
 import me.rerere.rikkihub.data.files.FilesManager
-import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.QuickMessage
 import me.rerere.rikkihub.service.MessageQueueState
 import me.rerere.rikkihub.service.QueuedMessage
@@ -144,7 +148,6 @@ fun ChatInput(
     placeholderText: String? = null,
     completionProviders: List<ChatCompletionProvider> = emptyList(),
     onUpdateChatModel: (Model) -> Unit,
-    onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onMoreClick: () -> Unit,
     onUploadFileClick: () -> Unit,
@@ -166,6 +169,8 @@ fun ChatInput(
     onUndoPolish: () -> Unit = {},
     onPolishTextChanged: (String) -> Unit = {},
     onOpenPolishSettings: () -> Unit = {},
+    // A CLI chat's own capsule; it replaces the model and search pickers, and polish (HTTP model features) goes away.
+    cliCapsule: (@Composable () -> Unit)? = null,
 ) {
     val toaster = LocalToaster.current
     val polishing = polishState is PromptPolishState.Running
@@ -175,6 +180,11 @@ fun ChatInput(
     val assistant = remember(settings.assistants, settings.assistantId) {
         settings.getCurrentAssistant()
     }
+    val navController = LocalNavController.current
+    val workspaceRepository: WorkspaceRepository = koinInject()
+    val boundWorkspace by remember(assistant.workspaceId, workspaceRepository) {
+        assistant.workspaceId?.let { workspaceRepository.getByIdFlow(it.toString()) } ?: flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
     val hazeTintColor = MaterialTheme.colorScheme.surfaceContainerLow
     val inputHazeStyle = HazeBlurStyle.Material3 {
         blurRadius(12.dp)
@@ -304,54 +314,56 @@ fun ChatInput(
                             modifier = Modifier
                                 .weight(1f)
                                 .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            // Model Picker
-                            ModelSelectorButton(
-                                state = modelListState,
-                                onlyIcon = true,
-                                modifier = Modifier,
-                            )
-
-                            // Search
-                            val enableSearchMsg = stringResource(R.string.web_search_enabled)
-                            val disableSearchMsg = stringResource(R.string.web_search_disabled)
-                            val chatModel = remember(
-                                settings.providers, assistant.chatModelId, settings.chatModelId
-                            ) {
-                                settings.getCurrentChatModel()
-                            }
-                            // 搜索默认关：平时收在「+」面板里，开着（本地或模型内置）时才显示在这里；点按关掉，长按打开搜索设置
-                            if (enableSearch || chatModel?.tools?.contains(BuiltInTools.Search) == true) SearchPickerButton(
-                                enableSearch = enableSearch,
-                                settings = settings,
-                                onToggle = onToggleSearch,
-                                onUpdateSearchMode = { mode ->
-                                    onUpdateSearchMode(mode)
-                                    val enabled = mode != SearchMode.OFF
-                                    toaster.show(
-                                        message = if (enabled) enableSearchMsg else disableSearchMsg,
-                                        duration = 1.seconds,
-                                        type = if (enabled) {
-                                            ToastType.Success
-                                        } else {
-                                            ToastType.Normal
-                                        }
-                                    )
-                                },
-                                onUpdateSearchService = onUpdateSearchService,
-                                model = chatModel,
-                            )
-
-                            // Reasoning
-                            val model = chatModel
-                            if (model?.abilities?.contains(ModelAbility.REASONING) == true) {
-                                ReasoningButton(
-                                    reasoningLevel = assistant.reasoningLevel,
-                                    onUpdateReasoningLevel = {
-                                        onUpdateAssistant(assistant.copy(reasoningLevel = it))
-                                    },
+                            if (cliCapsule != null) {
+                                cliCapsule()
+                            } else {
+                                // Model Picker
+                                ModelSelectorButton(
+                                    state = modelListState,
                                     onlyIcon = true,
+                                    modifier = Modifier,
+                                    onLongClick = { navController.navigate(Screen.SettingProvider) },
+                                )
+
+                                // Search
+                                val enableSearchMsg = stringResource(R.string.web_search_enabled)
+                                val disableSearchMsg = stringResource(R.string.web_search_disabled)
+                                val chatModel = remember(
+                                    settings.providers, assistant.chatModelId, settings.chatModelId
+                                ) {
+                                    settings.getCurrentChatModel()
+                                }
+                                // 搜索默认关：平时收在「+」面板里，开着（本地或模型内置）时才显示在这里；点按关掉，长按打开搜索设置
+                                if (enableSearch || chatModel?.tools?.contains(BuiltInTools.Search) == true) SearchPickerButton(
+                                    enableSearch = enableSearch,
+                                    settings = settings,
+                                    onToggle = onToggleSearch,
+                                    onUpdateSearchMode = { mode ->
+                                        onUpdateSearchMode(mode)
+                                        val enabled = mode != SearchMode.OFF
+                                        toaster.show(
+                                            message = if (enabled) enableSearchMsg else disableSearchMsg,
+                                            duration = 1.seconds,
+                                            type = if (enabled) {
+                                                ToastType.Success
+                                            } else {
+                                                ToastType.Normal
+                                            }
+                                        )
+                                    },
+                                    onUpdateSearchService = onUpdateSearchService,
+                                    model = chatModel,
+                                )
+                            }
+
+                            boundWorkspace?.takeIf { it.shellStatus != WorkspaceShellStatus.DISABLED.name }?.let { workspace ->
+                                ToolbarIconButton(
+                                    onClick = { navController.navigate(Screen.WorkspaceTerminal(workspace.id)) },
+                                    imageVector = HugeIcons.ComputerTerminal01,
+                                    contentDescription = stringResource(R.string.workspace_terminal),
                                 )
                             }
 
@@ -377,7 +389,7 @@ fun ChatInput(
                             )
                         }
 
-                        PolishButton(
+                        if (cliCapsule == null) PolishButton(
                             state = polishState,
                             enabled = !state.textContent.text.isBlank() && !voiceState.isActive && !asrState.isRecording,
                             onPolish = {
@@ -902,6 +914,7 @@ private fun QuickMessageButton(
     enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
     IconButton(
         enabled = enabled,
         onClick = {
@@ -915,13 +928,22 @@ private fun QuickMessageButton(
                 .widthIn(min = 200.dp, max = 360.dp)
         ) {
             quickMessages.forEach { quickMessage ->
+                // 短按追加到输入框末尾，长按替换输入框内容
                 Surface(
-                    onClick = {
-                        state.appendText(quickMessage.content)
-                        expanded = false
-                    },
                     color = Color.Transparent,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = {
+                                state.appendText(quickMessage.content)
+                                expanded = false
+                            },
+                            onLongClick = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                state.setMessageText(quickMessage.content)
+                                expanded = false
+                            },
+                        ),
                 ) {
                     Column(
                         modifier = Modifier.padding(8.dp)

@@ -3,6 +3,7 @@ package me.rerere.ai.ui
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageUpdate
 import me.rerere.ai.util.json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -92,6 +93,21 @@ class StreamChunkSerializationTest {
         chunks.forEach { chunk ->
             assertEquals("${chunk::class.simpleName} roundtrip", chunk, roundtrip(chunk))
         }
+    }
+
+    @Test
+    fun `usage patches preserve absent versus zero and retain old trace envelope`() {
+        val partial = StreamChunk.Usage(UsageUpdate(completionTokens = 0, partial = true))
+        assertEquals(partial, roundtrip(partial))
+        val legacy = json.decodeFromString<StreamChunk>(
+            """{"type":"usage","usage":{"promptTokens":100,"completionTokens":30,"cachedTokens":20,"totalTokens":180}}""",
+        ) as StreamChunk.Usage
+        assertEquals(UsageUpdate(100, 30, 20, 180), legacy.update)
+        assertEquals(TokenUsage(100, 30, 20, 180), legacy.usage)
+        val omitted = json.decodeFromString<StreamChunk>(
+            """{"type":"usage","usage":{"completionTokens":0}}""",
+        ) as StreamChunk.Usage
+        assertEquals(UsageUpdate(completionTokens = 0), omitted.update)
     }
 
     @Test

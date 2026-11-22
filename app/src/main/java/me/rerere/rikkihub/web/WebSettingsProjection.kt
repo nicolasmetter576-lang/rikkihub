@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.web
 
+import me.rerere.rikkihub.web.routes.entriesJson
+import me.rerere.rikkihub.web.routes.summaryJson
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -11,6 +13,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.legacyApiKeyId
+import me.rerere.ai.provider.maskApiKeyPreview
+import me.rerere.ai.provider.splitLegacyApiKeys
 import me.rerere.rikkihub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.model.Assistant
@@ -39,7 +44,6 @@ import java.net.URI
  * - `networkSetting.proxyUrl` → userinfo stripped (may embed credentials);
  *   `proxyPassword` masked + flag.
  * - `providerOverwrite`  → same generic object walk (it is a ProviderSetting).
- * - Creator resources    → filtered/hidden via [WebCreatorResources] hook.
  *
  * Write-back (implemented in SettingsMutationUtils): absent key / null value /
  * `valueConfigured:true` with empty value ⇒ PRESERVE stored secret; `""` ⇒
@@ -75,6 +79,7 @@ private val WEB_OAUTH_SECRET_FIELDS = setOf(
 private val WEB_SECRET_PAIR_LIST_FIELDS = setOf(
     "customHeaders",   // ProviderSetting/Model: {name, value}
     "headers",         // MCP commonOptions: Pair {first, second}
+    "envVars",         // CLI agents: customCliAgents[] / builtInCliEnvOverrides[], {name, value}
 )
 
 /** List keys whose elements are `{key, value: JsonElement}` opaque overrides. */
@@ -84,10 +89,33 @@ private const val CONFIGURED_SUFFIX = "Configured"
 
 // ---------- public API ----------
 
-/** Project a full Settings snapshot for events/REST: secret-free + creator-hidden. */
+/**
+ * Settings keys whose content is user text with an open schema (prompt entries, lorebooks, the tavern block with
+ * its variables, a preset's imported extras): none of it is a credential, and walking it by key name would mask a
+ * variable that happens to be called `password`. They are projected by hand instead.
+ */
+private val WEB_OPEN_CONTENT_KEYS = setOf("promptLibrary", "lorebooks", "tavern", "assistants")
+
+/** Project a full Settings snapshot for events/REST: secret-free. */
 fun projectSettingsForWeb(settings: Settings): JsonObject {
     val tree = JsonInstant.encodeToJsonElement(Settings.serializer(), settings).jsonObject
-    return projectSettingsTree(tree)
+    val projected = projectSettingsTree(JsonObject(tree.filterKeys { it !in WEB_OPEN_CONTENT_KEYS }))
+    return buildJsonObject {
+        for ((key, value) in projected) put(key, value)
+        // 助手、提示词库、酒馆设置照原生数据下发（预设 JSON、库条目 JSON）。创造助手和普通助手一样可见。
+        put("assistants", projectAssistantListForWeb(settings.assistants))
+        tree["promptLibrary"]?.let { put("promptLibrary", it) }
+        // 世界书只带摘要（名称、条目数、内容指纹）；整本和条目走 /api/lorebooks/{id}
+        val bookTrees = tree["lorebooks"] as? JsonArray
+        put("lorebooks", JsonArray(settings.lorebooks.mapIndexed { index, book ->
+            // 快照编码时条目已经编过一份，指纹直接用它
+            val encoded = ((bookTrees?.getOrNull(index) as? JsonObject)?.get("entries") as? JsonArray) ?: book.entriesJson()
+            book.summaryJson(encoded)
+        }))
+        tree["tavern"]?.let { put("tavern", it) }
+        // 去八股的规则包可能很大，快照里不带；设置页走 /api/qubagu/config
+        (projected["qubagu"] as? JsonObject)?.let { put("qubagu", JsonObject(it - "packs")) }
+    }
 }
 
 fun projectProviderForWeb(provider: ProviderSetting): JsonObject =
@@ -99,8 +127,15 @@ fun projectModelForWeb(model: Model): JsonObject =
 fun projectMcpServerForWeb(server: McpServerConfig): JsonObject =
     projectSettingsTree(JsonInstant.encodeToJsonElement(McpServerConfig.serializer(), server).jsonObject)
 
-fun projectAssistantForWeb(assistant: Assistant): JsonObject =
-    projectSettingsTree(JsonInstant.encodeToJsonElement(Assistant.serializer(), assistant).jsonObject)
+fun projectAssistantForWeb(assistant: Assistant): JsonObject {
+    val tree = JsonInstant.encodeToJsonElement(Assistant.serializer(), assistant).jsonObject
+    val projected = projectSettingsTree(JsonObject(tree - "promptPreset"))
+    // 预设 JSON（提示词、顺序、选项、助手正则、导入时带进来的字段）是用户内容，不按键名遍历
+    return buildJsonObject {
+        for ((key, value) in projected) put(key, value)
+        tree["promptPreset"]?.let { put("promptPreset", it) }
+    }
+}
 
 fun projectAssistantListForWeb(assistants: List<Assistant>): JsonArray =
     JsonArray(assistants.map { projectAssistantForWeb(it) })
@@ -115,11 +150,37 @@ fun projectAssistantListForWeb(assistants: List<Assistant>): JsonArray =
  * centrally listed above.
  */
 internal fun projectSettingsTree(tree: JsonObject): JsonObject = buildJsonObject {
+    val providerType = (tree["type"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    val isCredentialProvider = providerType in WEB_CREDENTIAL_PROVIDER_TYPES
+    var rawApiKey = ""
+    var projectedApiKeys = JsonArray(emptyList())
+    var sawApiKeys = false
+    var rawPrivateKey = ""
+    var rawProjectId = ""
+    var rawSaEmail = ""
+    var projectedServiceAccounts = JsonArray(emptyList())
+    var sawServiceAccounts = false
+
     for ((key, value) in tree) {
         when {
             key in WEB_SECRET_STRING_FIELDS -> {
+                val raw = (value as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
+                if (key == "apiKey") rawApiKey = raw
+                if (key == "privateKey") rawPrivateKey = raw
                 put(key, JsonPrimitive(""))
                 put(key + CONFIGURED_SUFFIX, JsonPrimitive(value.hasSecretContent()))
+            }
+
+            key == "apiKeys" && value is JsonArray -> {
+                sawApiKeys = true
+                projectedApiKeys = projectApiKeyEntries(value)
+                put(key, projectedApiKeys)
+            }
+
+            key == "serviceAccounts" && value is JsonArray -> {
+                sawServiceAccounts = true
+                projectedServiceAccounts = projectServiceAccounts(value)
+                put(key, projectedServiceAccounts)
             }
 
             key in WEB_SECRET_OBJECT_FIELDS && value is JsonObject -> {
@@ -142,49 +203,121 @@ internal fun projectSettingsTree(tree: JsonObject): JsonObject = buildJsonObject
                 put(key, JsonPrimitive(sanitizeUrlUserinfo(value.content)))
             }
 
-            key == "assistants" && value is JsonArray -> {
-                // Creator-domain assistants never appear in the web projection.
-                put(
-                    key,
-                    JsonArray(
-                        value.filterIsInstance<JsonObject>()
-                            .filter { !isCreatorResourceObject(it) }
-                            .map { projectSettingsTree(it) }
-                    )
-                )
-            }
-
-            key == "assistantId" && value is JsonPrimitive -> {
-                // If the selected assistant were ever a creator id, hide it
-                // rather than leak the reserved identifier.
-                val raw = runCatching { value.content }.getOrNull()
-                val hidden = raw?.let { idString ->
-                    runCatching { kotlin.uuid.Uuid.parse(idString) }
-                        .map { WebCreatorResources.isCreatorAssistantId(it) }
-                        .getOrDefault(false)
-                } == true
-                put(key, if (hidden) JsonNull else value)
-            }
-
             value is JsonObject -> put(key, projectSettingsTree(value))
             value is JsonArray -> put(
                 key,
                 JsonArray(value.map { element -> if (element is JsonObject) projectSettingsTree(element) else element })
             )
 
-            else -> put(key, value)
+            else -> {
+                if (isCredentialProvider) {
+                    val str = (value as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
+                    if (key == "projectId") rawProjectId = str
+                    if (key == "serviceAccountEmail") rawSaEmail = str
+                }
+                put(key, value)
+            }
+        }
+    }
+
+    if (isCredentialProvider) {
+        val effectiveApiKeys = if (projectedApiKeys.isEmpty() && rawApiKey.isNotBlank()) {
+            JsonArray(
+                splitLegacyApiKeys(rawApiKey).map { legacyKey ->
+                    buildJsonObject {
+                        put("id", JsonPrimitive(legacyApiKeyId(legacyKey)))
+                        put("label", JsonPrimitive(""))
+                        put("enabled", JsonPrimitive(true))
+                        put("key", JsonPrimitive(""))
+                        put("keyConfigured", JsonPrimitive(true))
+                        put("keyPreview", JsonPrimitive(maskApiKeyPreview(legacyKey)))
+                    }
+                }
+            )
+        } else {
+            projectedApiKeys
+        }
+        if (!sawApiKeys || (projectedApiKeys.isEmpty() && effectiveApiKeys.isNotEmpty())) {
+            put("apiKeys", effectiveApiKeys)
+        }
+        val anyApiKeyConfigured = rawApiKey.isNotEmpty() || effectiveApiKeys.any {
+            (it as? JsonObject)?.get("keyConfigured")?.let { flag ->
+                (flag as? JsonPrimitive)?.content == "true"
+            } == true
+        }
+        put("apiKeyConfigured", JsonPrimitive(anyApiKeyConfigured))
+
+        if (providerType == "google") {
+            val effectiveServiceAccounts = if (
+                projectedServiceAccounts.isEmpty() &&
+                (rawProjectId.isNotBlank() || rawSaEmail.isNotBlank() || rawPrivateKey.isNotBlank())
+            ) {
+                JsonArray(
+                    listOf(
+                        buildJsonObject {
+                            put("id", JsonPrimitive("legacy"))
+                            put("label", JsonPrimitive(""))
+                            put("projectId", JsonPrimitive(rawProjectId.trim()))
+                            put("serviceAccountEmail", JsonPrimitive(rawSaEmail.trim()))
+                            put("location", JsonPrimitive(""))
+                            put("enabled", JsonPrimitive(true))
+                            put("privateKey", JsonPrimitive(""))
+                            put("privateKeyConfigured", JsonPrimitive(rawPrivateKey.isNotBlank()))
+                        }
+                    )
+                )
+            } else {
+                projectedServiceAccounts
+            }
+            if (!sawServiceAccounts || (projectedServiceAccounts.isEmpty() && effectiveServiceAccounts.isNotEmpty())) {
+                put("serviceAccounts", effectiveServiceAccounts)
+            }
+            val anyPrivateKeyConfigured = rawPrivateKey.isNotEmpty() || effectiveServiceAccounts.any {
+                (it as? JsonObject)?.get("privateKeyConfigured")?.let { flag ->
+                    (flag as? JsonPrimitive)?.content == "true"
+                } == true
+            }
+            put("privateKeyConfigured", JsonPrimitive(anyPrivateKeyConfigured))
         }
     }
 }
 
+private val WEB_CREDENTIAL_PROVIDER_TYPES = setOf("openai", "google", "claude")
+
+private fun projectApiKeyEntries(list: JsonArray): JsonArray = JsonArray(
+    list.mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val rawKey = (obj["key"] as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
+        buildJsonObject {
+            put("id", obj["id"] ?: JsonPrimitive(""))
+            put("label", obj["label"] ?: JsonPrimitive(""))
+            put("enabled", obj["enabled"] ?: JsonPrimitive(true))
+            put("key", JsonPrimitive(""))
+            put("keyConfigured", JsonPrimitive(rawKey.isNotEmpty()))
+            put("keyPreview", JsonPrimitive(maskApiKeyPreview(rawKey)))
+        }
+    }
+)
+
+private fun projectServiceAccounts(list: JsonArray): JsonArray = JsonArray(
+    list.mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val rawPrivateKey = (obj["privateKey"] as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
+        buildJsonObject {
+            put("id", obj["id"] ?: JsonPrimitive(""))
+            put("label", obj["label"] ?: JsonPrimitive(""))
+            put("projectId", obj["projectId"] ?: JsonPrimitive(""))
+            put("serviceAccountEmail", obj["serviceAccountEmail"] ?: JsonPrimitive(""))
+            put("location", obj["location"] ?: JsonPrimitive(""))
+            put("enabled", obj["enabled"] ?: JsonPrimitive(true))
+            put("privateKey", JsonPrimitive(""))
+            put("privateKeyConfigured", JsonPrimitive(rawPrivateKey.isNotEmpty()))
+        }
+    }
+)
+
 private fun JsonElement.hasSecretContent(): Boolean =
     (this as? JsonPrimitive)?.let { it.isString && it.content.isNotEmpty() } == true
-
-private fun isCreatorResourceObject(obj: JsonObject): Boolean {
-    val idString = (obj["id"] as? JsonPrimitive)?.content ?: return false
-    val id = runCatching { kotlin.uuid.Uuid.parse(idString) }.getOrNull() ?: return false
-    return WebCreatorResources.isCreatorAssistantId(id)
-}
 
 /**
  * Project `[{name,value}]` / `[{first,second}]` credential-pair lists:

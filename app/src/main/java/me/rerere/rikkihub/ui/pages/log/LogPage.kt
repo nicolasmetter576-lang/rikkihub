@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.log
 
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import android.content.ClipData
 import androidx.compose.ui.platform.ClipEntry
 import me.rerere.hugeicons.HugeIcons
@@ -20,12 +22,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.rememberBottomSheetState
@@ -36,7 +37,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboard
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import androidx.compose.ui.res.stringResource
@@ -63,11 +63,10 @@ fun LogPage() {
     val context = LocalContext.current
     var logs by remember { mutableStateOf(Logging.getRecentLogs()) }
     var requestLoggingEnabled by remember { mutableStateOf(Logging.isRequestLoggingEnabled()) }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text("Logs") },
                 navigationIcon = { BackButton() },
                 actions = {
@@ -80,11 +79,10 @@ fun LogPage() {
                         Icon(HugeIcons.Delete01, null)
                     }
                 },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { contentPadding ->
         UnifiedLogList(
@@ -116,7 +114,7 @@ private fun UnifiedLogList(
     LazyColumn(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(AppSpacing.sm)
     ) {
         item {
             RequestLoggingSwitchCard(
@@ -244,6 +242,14 @@ private fun RequestLogCard(log: LogEntry.RequestLog, onClick: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                log.credentialLabel?.takeIf { it.isNotBlank() }?.let { credential ->
+                    Text(
+                        text = credential,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1
+                    )
+                }
             }
 
             log.error?.let { error ->
@@ -268,7 +274,7 @@ private fun RequestLogDetail(log: LogEntry.RequestLog) {
     SelectionContainer {
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
@@ -289,6 +295,12 @@ private fun RequestLogDetail(log: LogEntry.RequestLog) {
 
             item {
                 DetailSection("Method", log.method)
+            }
+
+            log.credentialLabel?.takeIf { it.isNotBlank() }?.let { credential ->
+                item {
+                    DetailSection("Credential", credential)
+                }
             }
 
             log.responseCode?.let { code ->

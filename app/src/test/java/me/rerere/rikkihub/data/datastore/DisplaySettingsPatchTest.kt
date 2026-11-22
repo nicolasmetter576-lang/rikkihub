@@ -47,4 +47,19 @@ class DisplaySettingsPatchTest {
         val latest = stale.copy(workspaceMarkdownHeadingSizes = true)
         assertSame(latest, applyDisplaySettingsPatch(latest, stale, stale))
     }
+
+    @Test fun readerVerticalScrollDefaultsOffRoundTripsAndPatchesCleanly() {
+        assertFalse(DisplaySetting().workspaceReaderVerticalScroll)
+        assertFalse(Json.decodeFromString<DisplaySetting>("{}").workspaceReaderVerticalScroll)
+
+        val enabled = DisplaySetting(workspaceReaderVerticalScroll = true)
+        assertEquals(enabled, Json.decodeFromString<DisplaySetting>(Json.encodeToString(enabled)))
+
+        val previous = DisplaySetting()
+        val latest = previous.copy(workspaceReaderVolumeKeys = true, fontSizeRatio = 1.25f)
+        val patched = applyDisplaySettingsPatch(latest, previous, previous.copy(workspaceReaderVerticalScroll = true))
+        assertTrue(patched.workspaceReaderVerticalScroll)
+        assertTrue(patched.workspaceReaderVolumeKeys)
+        assertEquals(1.25f, patched.fontSizeRatio)
+    }
 }

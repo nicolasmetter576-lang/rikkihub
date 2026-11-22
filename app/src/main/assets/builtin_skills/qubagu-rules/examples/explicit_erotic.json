@@ -1,0 +1,218 @@
+{
+  "type": "rikkihub.qubagu.rules",
+  "version": 1,
+  "packs": [
+    {
+      "id": "explicit_erotic",
+      "name": "隐喻直白化 · 常用色文风",
+      "description": "把肉刃/龙根、花瓣/花唇、蜜穴/幽谷、花蕊/小珍珠、琼浆/蜜露、玉兔/雪峰、龙精/精华等换成直白词（智能防误伤日常词）",
+      "enabled": false,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "nsfw_penis_metaphor",
+          "name": "男性器官代称（肉刃/龙根/凶器/巨物）",
+          "sample": "肉刃 / 龙根 / 欲根 / 胯下灼热的凶器",
+          "find": "(?:那根?|粗壮的|硕大的|滚烫的|狰狞的|昂扬的|灼热的)?(?:肉刃|龙根|欲根|玉茎|阳物|男根)|((?:胯下|双腿间|腿间|挺起|抵住|塞满|贯穿|抽插|吞吐|含住|握住)(?:[^，。；！？\\n]{0,6}?))(?:灼热的|滚烫的|硕大的|狰狞的)?(?:巨物|凶器|火热|分身|巨龙|铁棒)",
+          "regex": true,
+          "replacements": [
+            "$1肉棒",
+            "$1性器",
+            "$1粗长肉柱",
+            "$1阳具"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_glans_metaphor",
+          "name": "前端代称（伞冠/龙头，防误伤水龙头）",
+          "sample": "紫红的伞冠 / 硕大的龙头",
+          "find": "((?:硕大的|紫红的|圆润的|前端的|顶端的|充血的|滚烫的|涨大的|柱身|阴茎|肉棒|阳物|性器|抵住|含住|舔舐|吞吐)(?:[^，。；！？\\n水铜铁金木石船舞行企]{0,4}?))(?:伞冠|龙头)",
+          "regex": true,
+          "replacements": [
+            "$1龟头",
+            "$1饱满顶端",
+            "$1柱头"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_labia_metaphor",
+          "name": "花瓣/花唇（智能识别涩涩语境）",
+          "sample": "拨开湿润的花瓣 / 两片粉嫩花唇",
+          "find": "((?:分开|拨开|捏住|舔舐|含住|摩挲|摩擦|揉捻|湿润|充血|粉嫩|娇嫩|私密|腿间|身下|那里|两片|一对)(?:[^，。；！？\\n]{0,5}?))(?:花瓣|花唇|肉瓣)|(?:花唇|肉瓣)",
+          "regex": true,
+          "replacements": [
+            "$1阴唇",
+            "$1娇嫩软肉",
+            "$1肉唇"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_vagina_metaphor",
+          "name": "女性器官代称（蜜穴/花穴/幽谷/秘处）",
+          "sample": "泥泞的蜜穴 / 花穴 / 探入湿润的秘处",
+          "find": "(?:泥泞的|湿润的|紧致的|温热的)?(?:蜜穴|花穴|蜜洞|肉穴|淫穴)|((?:探入|插入|滑入|没入|填满|撑开|搅动|抽插|分开|拨开|湿透的|泥泞的|紧致的|温热的|腿间的|双腿间|身下的|私密的)(?:[^，。；！？\\n]{0,5}?))(?:秘处|秘境|小嘴|花心|花芯|花径|幽谷|桃花源|秘洞|玉门|芳草地)",
+          "regex": true,
+          "replacements": [
+            "$1小穴",
+            "$1肉穴",
+            "$1嫩穴",
+            "$1紧致甬道"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_clit_metaphor",
+          "name": "敏感点代称（花蕊/花珠/小珍珠/红豆）",
+          "sample": "捻弄充血的花珠 / 按压顶端的小珍珠",
+          "find": "(?:充血的|挺立的|敏感的|颤抖的)?(?:花珠|阴珠)|((?:按压|拨弄|捻弄|吮吸|舔舐|摩擦|揉搓|顶端的|充血的|敏感的|那颗|小小的)(?:[^，。；！？\\n]{0,5}?))(?:花蕊|小珍珠|珍珠|红豆|肉珠)",
+          "regex": true,
+          "replacements": [
+            "$1阴蒂",
+            "$1敏感肉粒",
+            "$1小肉珠"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_fluid_metaphor",
+          "name": "体液代称（琼浆/蜜汁/蜜露，防误伤美食与花露水）",
+          "sample": "涌出粘腻的蜜汁 / 腿间流出的琼浆",
+          "find": "(?:粘腻的|滑腻的)?(?:淫液|淫水)|((?:涌出|泌出|流出|溢出|滴下|淌出|挂着|湿透|泥泞|腿间|双腿间|穴口|阴唇|阴道|小穴|肉穴|舔舐|吮吸|粘腻的|滑腻的)(?:[^，。；！？\\n]{0,6}?))(?:蜜汁|蜜露|花露(?!水)|花蜜|春水|琼浆|甘露|瑶池水)",
+          "regex": true,
+          "replacements": [
+            "$1淫水",
+            "$1爱液",
+            "$1粘腻水液",
+            "$1湿滑津液"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_breast_metaphor",
+          "name": "胸部代称（椒乳/酥胸/雪峰，防误伤真雪山与兔子）",
+          "sample": "饱满的酥胸 / 椒乳 / 胸前高耸的雪峰",
+          "find": "(?:饱满的|高耸的|圆润的|白皙的|晃动的|一对|两团)?(?:椒乳|酥胸|乳肉|雪乳|玉乳)|((?:胸前|胸口|衣襟|内衣|文胸|抹胸|饱满的|圆润的|白皙的|高耸的|挺立的|晃动的|绵软的|揉捏|握住|托起|埋入|一对|两团)(?:[^，。；！？\\n]{0,5}?))(?:玉兔|雪峰|双峰)",
+          "regex": true,
+          "replacements": [
+            "$1奶子",
+            "$1软乳",
+            "$1饱满胸乳",
+            "$1乳肉"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_nipple_metaphor",
+          "name": "胸前顶端代称（红梅/樱桃/茱萸/蓓蕾）",
+          "sample": "胸前挺立的红梅 / 含住粉嫩的樱桃",
+          "find": "((?:胸前|乳晕|乳房|胸乳|顶端|挺立的|充血的|硬起的|粉嫩的|含住|吮吸|捻弄|拉扯)(?:[^，。；！？\\n]{0,5}?))(?:红梅|樱桃|茱萸|相思豆|蓓蕾|红果)",
+          "regex": true,
+          "replacements": [
+            "$1乳尖",
+            "$1乳头",
+            "$1乳首",
+            "$1奶尖"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_semen_metaphor",
+          "name": "精液代称（龙精/阳精/灼热精华/白浊）",
+          "sample": "射出滚烫的龙精 / 尽数喷洒出灼热的精华",
+          "find": "(?:滚烫的|浓稠的|炽热的|乳白的)?(?:龙精|阳精|子孙浆)|((?:射出|喷出|射入|灌满|喷洒|迸发|一股股|浓稠的|滚烫的|炽热的|内射)(?:[^，。；！？\\n]{0,6}?))(?:白浊|精华|生命之源|热流)",
+          "regex": true,
+          "replacements": [
+            "$1精液",
+            "$1滚烫浓精",
+            "$1浓稠白浆"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_anus_metaphor",
+          "name": "后方部位代称（后庭/菊穴/秘谷）",
+          "sample": "探入紧窄的后庭 / 扩张羞耻的菊穴",
+          "find": "(?:紧窄的|羞耻的|未经人事的)?(?:菊穴|菊蕾)|((?:臀瓣|臀缝|后面|探入|插入|扩张|按压|揉弄|紧窄的|羞耻的)(?:[^，。；！？\\n]{0,5}?))(?:后庭|秘谷|小菊花)",
+          "regex": true,
+          "replacements": [
+            "$1后穴",
+            "$1紧窄小穴",
+            "$1臀穴"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_inner_wall_metaphor",
+          "name": "内部包裹代称（媚肉/千层软肉/花肠）",
+          "sample": "层层叠叠的媚肉死死绞紧",
+          "find": "(?:层层叠叠的|湿热的|贪婪的|蠕动的)?(?:媚肉|淫肉|花肠|肉壶)",
+          "regex": true,
+          "replacements": [
+            "$1穴肉",
+            "$1湿热软肉",
+            "$1敏感内壁",
+            "$1肉壁"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    }
+  ]
+}

@@ -10,6 +10,8 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkihub.data.ai.tools.WorkspaceSubagentPreset
 import me.rerere.rikkihub.data.ai.tools.WorkspaceSubagentPresets
 import me.rerere.rikkihub.data.creator.session.CreatorCanonicalizer
+import me.rerere.rikkihub.data.management.adapters.character.CharacterCollections
+import me.rerere.rikkihub.data.management.adapters.character.CharacterNative
 import me.rerere.rikkihub.data.management.adapters.conversation.ConversationCollections
 import me.rerere.rikkihub.data.management.adapters.conversation.conversationNodeJson
 import me.rerere.rikkihub.data.management.adapters.subagent.SubagentCollections
@@ -19,12 +21,15 @@ import me.rerere.rikkihub.data.management.common.ObjectRef
 import me.rerere.rikkihub.data.management.common.ReadSetEntry
 import me.rerere.rikkihub.data.management.common.VersionToken
 import me.rerere.rikkihub.data.management.persistence.ParticipationStore
+import me.rerere.rikkihub.data.character.CardPatch
+import me.rerere.rikkihub.data.model.CharacterRecord
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.data.mutation.ConversationHostIds
 import me.rerere.rikkihub.data.mutation.ConversationMutationCommand
 import me.rerere.rikkihub.data.mutation.ConversationVersion
 import me.rerere.rikkihub.data.mutation.MutationConflictException
 import me.rerere.rikkihub.utils.JsonInstant
+import me.rerere.tavern.card.CharacterCard
 import kotlin.uuid.Uuid
 
 /** Facts and typed writes the Room gateway needs. Production wraps the repositories/ChatService. */
@@ -59,6 +64,15 @@ interface RoomManagementBackend {
     suspend fun localDelete(workspaceId: String, presetId: String, expectedVersion: Long)
     suspend fun localReorder(workspaceId: String, orderedIds: List<String>, expectedVersions: Map<String, Long>)
 
+    // characters
+    suspend fun characterIds(): List<String> = emptyList()
+    suspend fun character(id: Uuid): CharacterRecord? = null
+    suspend fun characterCreate(id: Uuid, card: CharacterCard, extraBookIds: List<Uuid>): Unit =
+        throw UnsupportedOperationException("Characters are not available")
+    /** Applies [transform] when the current revision is [expectedRevision]; a different revision is a [MutationConflictException]. */
+    suspend fun characterPatch(id: Uuid, expectedRevision: Long, transform: (CharacterRecord) -> CharacterRecord): Unit =
+        throw UnsupportedOperationException("Characters are not available")
+
     data class ReferenceRow(val id: String, val modeInjectionIds: String, val lorebookIds: String,
         val revision: Long, val generation: Long)
 
@@ -91,6 +105,7 @@ class RoomManagementPort(
         ConversationCollections.ROWS -> backend.referenceRows().map { it.id }
         SubagentCollections.LIBRARY -> backend.library().sortedBy { it.sortOrder }.map { it.id }
         "room.workspaces" -> backend.workspaces().map { it.id }
+        CharacterCollections.CARDS -> backend.characterIds()
         else -> throw IllegalArgumentException("Unknown Room collection")
     }
 
@@ -100,6 +115,7 @@ class RoomManagementPort(
             backend.conversationTree(uuid)?.let { rowJson(it, backend.busyReason(uuid)) + ("nodes" to treeJson(it)) }
                 ?.let(::JsonObject)
         }
+        CharacterCollections.CARDS -> parseUuid(id)?.let { backend.character(it) }?.let(CharacterNative::view)
         "room.subagentLibrary" -> backend.library().firstOrNull { it.id == id }
             ?.let { JsonInstant.encodeToJsonElement(WorkspaceSubagentPreset.serializer(), it) as JsonObject }
         "room.workspaces" -> backend.workspaces().firstOrNull { it.id == id }?.let {
@@ -111,6 +127,7 @@ class RoomManagementPort(
 
     suspend fun objectToken(collectionId: String, id: String): VersionToken? = when (collectionId) {
         ConversationCollections.ROWS, ConversationCollections.TREE -> currentToken(ObjectRef(ManagementDomain.CONVERSATION, id))
+        CharacterCollections.CARDS -> currentToken(ObjectRef(ManagementDomain.CHARACTER, id))
         "room.subagentLibrary" -> currentToken(ObjectRef(ManagementDomain.SUBAGENT_PRESET, "library:$id"))
         "room.workspacePresets" -> currentToken(ObjectRef(ManagementDomain.SUBAGENT_PRESET, "workspace:$id"))
         else -> throw IllegalArgumentException("Unknown Room collection")
@@ -126,6 +143,8 @@ class RoomManagementPort(
         "workspaceCwd" to (c.workspaceCwd?.let(::JsonPrimitive) ?: JsonNull),
         "modeInjectionIds" to JsonArray(c.modeInjectionIds.map { JsonPrimitive(it.toString()) }.sortedBy { it.content }),
         "lorebookIds" to JsonArray(c.lorebookIds.map { JsonPrimitive(it.toString()) }.sortedBy { it.content }),
+        "tavernMetadata" to c.tavernMetadata,
+        "characterId" to (c.characterId?.let { JsonPrimitive(it.toString()) } ?: JsonNull),
         "deleted" to JsonPrimitive(c.deletedAt != null),
         "busy" to (busy?.let(::JsonPrimitive) ?: JsonNull),
     )
@@ -148,6 +167,9 @@ class RoomManagementPort(
         return when (ref.domain) {
             ManagementDomain.CONVERSATION -> parseUuid(ref.id)?.let { id ->
                 backend.conversationRow(id)?.let { VersionToken(epoch, it.generation, it.revision) }
+            }
+            ManagementDomain.CHARACTER -> parseUuid(ref.id)?.let { id ->
+                backend.character(id)?.let { VersionToken(epoch, 0, it.revision) }
             }
             ManagementDomain.SUBAGENT_PRESET -> when {
                 ref.id == "library" -> VersionToken(epoch, 0, backend.libraryRevision())
@@ -252,7 +274,24 @@ class RoomManagementPort(
                 }
             }
             is SubagentPresetStoreOp -> executeSubagent(op)
+            is CharacterStoreOp -> executeCharacter(op)
             else -> throw IllegalArgumentException("Unknown Room operation")
+        }
+    }
+
+    private suspend fun executeCharacter(op: CharacterStoreOp) {
+        when (op) {
+            is CharacterStoreOp.Create -> {
+                val card = CardPatch.apply(CharacterCard.blank(""), op.fields)
+                backend.characterCreate(Uuid.parse(op.characterId), card, op.extraBookIds.map(Uuid::parse))
+            }
+            is CharacterStoreOp.Patch -> backend.characterPatch(Uuid.parse(op.characterId), op.expectedRevision) { record ->
+                val local = record.local.copy(
+                    embeddedBookId = if (op.detachCardBook) null else record.local.embeddedBookId,
+                    extraBookIds = op.extraBookIds?.map(Uuid::parse)?.distinct() ?: record.local.extraBookIds,
+                )
+                record.copy(card = CardPatch.apply(record.card, op.fields), local = local)
+            }
         }
     }
 

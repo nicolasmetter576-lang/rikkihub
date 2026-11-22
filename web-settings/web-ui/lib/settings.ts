@@ -1,20 +1,12 @@
 import { createId } from "./id";
 import type {
-  AssistantProfile,
-  PromptSection,
-  SystemPromptMode,
   BuiltInTool,
   LocalToolOption,
   LocalToolType,
   ClaudeProviderProfile,
   GoogleProviderProfile,
-  InjectionPosition,
-  InjectionRole,
-  LorebookEntry,
-  LorebookProfile,
   McpHeaderPair,
   McpServerConfig,
-  ModeInjectionProfile,
   ModelAbility,
   ModelCapabilities,
   ModelModality,
@@ -73,16 +65,6 @@ export const REASONING_LEVELS: ReasoningLevel[] = [
   "max",
 ];
 
-export const INJECTION_POSITIONS: InjectionPosition[] = [
-  "before_system_prompt",
-  "after_system_prompt",
-  "top_of_chat",
-  "bottom_of_chat",
-  "at_depth",
-];
-
-export const INJECTION_ROLES: InjectionRole[] = ["system", "user", "assistant", "tool"];
-
 export const MODEL_TYPES: ModelType[] = ["CHAT", "IMAGE", "EMBEDDING"];
 export const MODEL_MODALITIES: ModelModality[] = ["TEXT", "IMAGE"];
 export const MODEL_ABILITIES: ModelAbility[] = ["TOOL", "REASONING"];
@@ -98,6 +80,7 @@ export const LOCAL_TOOL_TYPES: LocalToolType[] = [
   "screen_time",
   "calendar",
   "chart_display",
+  "pseudo_io",
 ];
 
 export function normalizeLocalTools(tools: unknown): LocalToolOption[] | undefined {
@@ -220,207 +203,12 @@ export function listChatModels(settings: Settings | null | undefined): Array<{
     );
 }
 
-export function newModeInjection(): ModeInjectionProfile {
-  return {
-    type: "mode",
-    id: createId(),
-    name: "",
-    enabled: true,
-    priority: 0,
-    position: "after_system_prompt",
-    content: "",
-    injectDepth: 4,
-    role: "user",
-  };
-}
-
-export function newLorebook(): LorebookProfile {
-  return {
-    id: createId(),
-    name: "",
-    description: "",
-    enabled: true,
-    entries: [],
-  };
-}
-
-export function newLorebookEntry(): LorebookEntry {
-  return {
-    type: "regex",
-    id: createId(),
-    name: "",
-    enabled: true,
-    priority: 0,
-    position: "after_system_prompt",
-    content: "",
-    injectDepth: 4,
-    role: "user",
-    keywords: [],
-    useRegex: false,
-    caseSensitive: false,
-    scanDepth: 4,
-    constantActive: false,
-  };
-}
-
 export function newQuickMessage(): QuickMessage {
   return {
     id: createId(),
     title: "",
     content: "",
   };
-}
-
-export function newPromptSection(): PromptSection {
-  return {
-    id: createId(),
-    title: "",
-    content: "",
-    enabled: true,
-  };
-}
-
-export function promptSectionsOf(assistant: Pick<AssistantProfile, "promptSections">): PromptSection[] {
-  return Array.isArray(assistant.promptSections) ? assistant.promptSections : [];
-}
-
-export function systemPromptModeOf(assistant: Pick<AssistantProfile, "systemPromptMode">): SystemPromptMode {
-  return assistant.systemPromptMode === "sections" ? "sections" : "whole";
-}
-
-const SECTION_SEPARATOR = "\n\n";
-
-/** Enabled, non-blank sections joined in order with a blank line; titles are not sent. */
-export function composePromptSections(sections: PromptSection[]): string {
-  return sections
-    .filter((section) => section.enabled && section.content.trim() !== "")
-    .map((section) => section.content)
-    .join(SECTION_SEPARATOR);
-}
-
-/**
- * The assistant's own system prompt as the app sends it (no conversation override). Whole and
- * sections are two views of one prompt: with sections, systemPrompt is their joined text.
- * Mirrors `Assistant.composedSystemPrompt()`.
- */
-export function composeSystemPrompt(
-  assistant: Pick<AssistantProfile, "systemPrompt" | "promptSections">,
-): string {
-  const sections = promptSectionsOf(assistant);
-  return sections.length === 0 ? (assistant.systemPrompt ?? "") : composePromptSections(sections);
-}
-
-/** New sections; the whole prompt follows as their joined text. Mirrors `Assistant.withPromptSections()`. */
-export function withPromptSections(sections: PromptSection[]): Pick<AssistantProfile, "systemPrompt" | "promptSections"> {
-  return { promptSections: sections, systemPrompt: composePromptSections(sections) };
-}
-
-/** A piece of the whole view that belongs to one section; the whole text joins them with a blank line. */
-export interface PromptSegment {
-  sectionId: string;
-  text: string;
-}
-
-/** Initial segments of the whole view. Mirrors `Assistant.systemPromptSegments()`. */
-export function promptSegmentsOf(sections: PromptSection[], fallbackId: string): PromptSegment[] {
-  const visible = sections.filter((section) => section.enabled && section.content.trim() !== "");
-  if (visible.length > 0) return visible.map((section) => ({ sectionId: section.id, text: section.content }));
-  return [{ sectionId: sections.find((section) => section.enabled)?.id ?? fallbackId, text: "" }];
-}
-
-/**
- * Re-splits the whole text after an edit: separators the edit did not touch stay, the edited piece goes
- * to its section, and pieces merged by a removed separator go to the first one (or the last when the first
- * was deleted entirely). Mirrors `remapSystemPromptSegments()`.
- */
-export function remapPromptSegments(
-  segments: PromptSegment[],
-  newText: string,
-): { segments: PromptSegment[]; cleared: string[] } {
-  const oldText = segments.map((segment) => segment.text).join(SECTION_SEPARATOR);
-  if (oldText === newText) return { segments, cleared: [] };
-  const common = Math.min(oldText.length, newText.length);
-  let prefix = 0;
-  while (prefix < common && oldText[prefix] === newText[prefix]) prefix++;
-  let suffix = 0;
-  while (suffix < common - prefix && oldText[oldText.length - 1 - suffix] === newText[newText.length - 1 - suffix]) suffix++;
-  const oldEnd = oldText.length - suffix;
-  const delta = newText.length - oldText.length;
-  const sep = SECTION_SEPARATOR.length;
-  const starts: number[] = [];
-  const ends: number[] = [];
-  segments.forEach((segment, i) => {
-    starts.push(i === 0 ? 0 : ends[i - 1] + sep);
-    ends.push(starts[i] + segment.text.length);
-  });
-  const survives = (k: number) => !(prefix < ends[k] + sep && oldEnd > ends[k]);
-  const result: PromptSegment[] = [];
-  const cleared: string[] = [];
-  let groupStart = 0;
-  let textStart = 0;
-  segments.forEach((_, k) => {
-    const last = k === segments.length - 1;
-    if (!last && !survives(k)) return;
-    const textEnd = last ? newText.length : ends[k] + sep <= prefix ? ends[k] : ends[k] + delta;
-    let keeper = groupStart;
-    if (groupStart !== k) {
-      const head = Math.min(prefix, ends[groupStart]) - starts[groupStart];
-      const tail = ends[k] - Math.max(oldEnd, starts[k]);
-      if (head <= 0 && tail > 0) keeper = k;
-    }
-    result.push({ ...segments[keeper], text: newText.slice(textStart, textEnd) });
-    for (let m = groupStart; m <= k; m++) if (m !== keeper) cleared.push(segments[m].sectionId);
-    textStart = textEnd + sep;
-    groupStart = k + 1;
-  });
-  return { segments: result, cleared };
-}
-
-/** Writes segments back into the sections. Mirrors `Assistant.withSystemPromptSegments()`. */
-export function withPromptSegments(
-  sections: PromptSection[],
-  segments: PromptSegment[],
-  cleared: Iterable<string>,
-): Pick<AssistantProfile, "systemPrompt" | "promptSections"> {
-  const texts = new Map(segments.map((segment) => [segment.sectionId, segment.text]));
-  const clearedIds = new Set(cleared);
-  const updated = sections.map((section) =>
-    texts.has(section.id)
-      ? { ...section, content: texts.get(section.id)! }
-      : clearedIds.has(section.id) ? { ...section, content: "" } : section,
-  );
-  const added = segments
-    .filter((segment) => segment.text !== "" && !sections.some((section) => section.id === segment.sectionId))
-    .map((segment) => ({ id: segment.sectionId, title: "", content: segment.text, enabled: true }));
-  return withPromptSections([...updated, ...added]);
-}
-
-/**
- * Switches the editor view. Switching to sections with none yet seeds the whole prompt as the first
- * one, so the request stays the same. Mirrors `Assistant.switchSystemPromptMode()`.
- */
-export function switchSystemPromptMode(
-  assistant: Pick<AssistantProfile, "systemPrompt" | "systemPromptMode" | "promptSections">,
-  mode: SystemPromptMode,
-  seedTitle: string,
-): Pick<AssistantProfile, "systemPromptMode" | "promptSections"> {
-  const sections = promptSectionsOf(assistant);
-  const whole = assistant.systemPrompt ?? "";
-  const seeded =
-    mode === "sections" && sections.length === 0 && whole.trim() !== ""
-      ? [{ ...newPromptSection(), title: seedTitle, content: whole }]
-      : sections;
-  return { systemPromptMode: mode, promptSections: seeded };
-}
-
-/** Moves the section at [index] by [delta]; out-of-range moves return the same list. */
-export function movePromptSection(sections: PromptSection[], index: number, delta: number): PromptSection[] {
-  const target = index + delta;
-  if (index < 0 || index >= sections.length || target < 0 || target >= sections.length) return sections;
-  const next = [...sections];
-  const [moved] = next.splice(index, 1);
-  next.splice(target, 0, moved);
-  return next;
 }
 
 export function newMcpServer(type: "sse" | "streamable_http"): McpServerConfig {

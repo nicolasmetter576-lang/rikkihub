@@ -18,17 +18,36 @@ import {
   ConversationScrollButton,
 } from "~/components/extended/conversation";
 import { ChatInput } from "~/components/input/chat-input";
-import { CompressDialog } from "~/components/compress-dialog";
+import { CompressDialog, CompressReviewDialog, compressErrorKey, formatCompressResultMeta } from "~/components/compress-dialog";
+import { ContextRecordsDialog } from "~/components/context-records-dialog";
+import { ContextUsageDialog } from "~/components/context-usage-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import {
+  affectedCheckpointsForMessage,
+  clearConversationContext,
+  laterCheckpointsForCheckpointMessage,
+  revokeContextRecord,
+} from "@overlay/lib/compression";
+import { CreatorProposalsButton } from "~/components/creator-proposals";
 import { ConversationNotices } from "~/components/conversation-notices";
 import { conversationSizeInfo, lastContextTokens } from "~/lib/conversation-size";
+import { isCreatorConversation } from "~/lib/creator-proposals";
 import { collectLocalAttachmentUrls } from "@overlay/lib/draft-attachments";
-import type { CacheWarmState } from "@overlay/lib/cache-keep-alive";
 import { useAttachmentDraftLeases } from "@overlay/hooks/use-attachment-draft-leases";
 import { ChatMessage } from "~/components/message/chat-message";
 import { WorkspaceImageProvider } from "~/components/markdown/workspace-image-context";
 import { workspaceImageContext } from "~/lib/workspace-image";
+import { badgeVariants } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Drawer, DrawerContent, DrawerTitle } from "~/components/ui/drawer";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { Sheet, SheetContent, SheetTitle } from "~/components/ui/sheet";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "~/components/ui/resizable";
 import { TypingIndicator } from "~/components/ui/typing-indicator";
@@ -39,12 +58,26 @@ import { useCurrentAssistant } from "~/hooks/use-current-assistant";
 import { useFolders } from "~/hooks/use-folders";
 import { useCurrentModel } from "~/hooks/use-current-model";
 import { getAssistantDisplayName, getModelDisplayName } from "~/lib/display";
+import {
+  EVENT_CLI_RUNTIME,
+  formatCliSessionSummary,
+  isCliControlForbiddenError,
+  normalizeCliPermissionMode,
+  resolveCliAgentName,
+  resolveCliSessionDisplay,
+  restartConversationCli,
+  updateConversationCli,
+} from "~/lib/cli";
 import { convertConversationToMarkdown, downloadMarkdown } from "~/lib/export-markdown";
 import { readSidebarOpen, writeSidebarOpen } from "~/lib/sidebar-state";
 import { fitPanelLayout, widenPanelLayout } from "~/lib/panel-layout";
 import { cn } from "~/lib/utils";
 import api, { ApiError, sse } from "~/services/api";
-import { useChatInputStore, useAppStore } from "~/stores";
+import { subscribeToEvent } from "~/services/events";
+import { createConversationStream } from "~/lib/conversation-stream";
+import { useChatInputStore, useAppStore, useSettingsStore } from "~/stores";
+import { displayScriptsSignature } from "@overlay/lib/tavern";
+import { ActiveCharacterContext, useActiveCharacter } from "@overlay/hooks/use-active-character";
 import { WorkbenchHost } from "~/components/workbench/workbench-host";
 import {
   useWorkbench,
@@ -52,20 +85,17 @@ import {
   WorkbenchProvider,
 } from "~/components/workbench/workbench-context";
 import {
+  type CliRuntimeEvent,
   type CompressStateDto,
-  type ConversationDto,
+  type ConversationCliSession,
+  type CustomCliAgentConfig,
   type MessageNodeDto,
   type MessageDto,
-  type ConversationNodeUpdateEventDto,
-  type ConversationErrorEventDto,
-  type ConversationSnapshotEventDto,
-  type ConversationQueueEventDto,
-  type MessageQueueDto,
   type ProviderModel,
   type Settings,
   type UIMessagePart,
 } from "~/types";
-import { Folder, MessageSquare } from "lucide-react";
+import { Folder, Loader2, LogOut, MessageSquare, RotateCw, Terminal, X } from "lucide-react";
 import Logo from "~/components/logo";
 import type { GroupImperativeHandle } from "react-resizable-panels";
 import { useTranslation } from "react-i18next";
@@ -86,12 +116,6 @@ const WorkspaceChatPanel = React.lazy(() =>
     default: module.WorkspaceChatPanel,
   })),
 );
-
-type ConversationStreamEvent =
-  | ConversationSnapshotEventDto
-  | ConversationNodeUpdateEventDto
-  | ConversationErrorEventDto
-  | ConversationQueueEventDto;
 
 interface SelectedNodeMessage {
   node: MessageNodeDto;
@@ -320,295 +344,56 @@ function buildEditedParts(session: EditingSession, draftParts: UIMessagePart[]):
   return [...preservedParts, ...appendedAttachments];
 }
 
-function applyNodeUpdate(
-  conversation: ConversationDto,
-  event: ConversationNodeUpdateEventDto,
-): ConversationDto {
-  if (conversation.id !== event.conversationId) {
-    return conversation;
-  }
-
-  const nextNodes = [...conversation.messages];
-  const indexById = nextNodes.findIndex((node) => node.id === event.nodeId);
-  const targetIndex = indexById >= 0 ? indexById : event.nodeIndex;
-
-  if (targetIndex < 0) {
-    return conversation;
-  }
-
-  if (targetIndex < nextNodes.length) {
-    nextNodes[targetIndex] = event.node;
-  } else if (targetIndex === nextNodes.length) {
-    nextNodes.push(event.node);
-  } else {
-    return conversation;
-  }
-
-  return {
-    ...conversation,
-    messages: nextNodes,
-    updateAt: event.updateAt,
-    isGenerating: event.isGenerating,
-  };
-}
-
-const NODE_UPDATE_FLUSH_MS = 30;
-const STREAM_RETRY_DELAY_MIN_MS = 1_000;
-const STREAM_RETRY_DELAY_MAX_MS = 30_000;
-
 function useConversationDetail(
   activeId: string | null,
   updateSummary: ConversationSummaryUpdater,
   onStreamError?: () => void,
 ) {
   const { t } = useTranslation("page");
-  const [detail, setDetail] = React.useState<ConversationDto | null>(null);
-  const [detailLoading, setDetailLoading] = React.useState(false);
-  const [detailError, setDetailError] = React.useState<string | null>(null);
-  const [queue, setQueue] = React.useState<MessageQueueDto | null>(null);
-  const [cacheWarm, setCacheWarm] = React.useState<CacheWarmState | null>(null);
-  const [compressState, setCompressState] = React.useState<CompressStateDto | null>(null);
-  const onStreamErrorRef = React.useRef(onStreamError);
-  onStreamErrorRef.current = onStreamError;
+  const callbacks = React.useRef({ updateSummary, onStreamError });
+  callbacks.current = { updateSummary, onStreamError };
 
-  const resetDetail = React.useCallback(() => {
-    setDetail(null);
-    setDetailError(null);
-    setDetailLoading(false);
-    setQueue(null);
-    setCacheWarm(null);
-    setCompressState(null);
-  }, []);
-
+  // A fresh store for every visit masks the previous conversation during render,
+  // not one effect later. Even A -> B -> A cannot reuse A's old callbacks/state.
+  const stream = React.useMemo(() => createConversationStream(activeId, {
+    connect: (handlers, signal) => sse(`conversations/${activeId}/stream`, handlers, { signal }),
+    onSummary: (conversation) => callbacks.current.updateSummary(toConversationSummaryUpdate(conversation)),
+    onClock: (serverTime) => useAppStore.getState().setClockOffset(serverTime),
+    onGenerationError: (message, solution) => {
+      if (solution === "compress_and_retry" && activeId) {
+        // Overflowed the context window: offer to compress, then regenerate. Stays until acted on.
+        toast.error(message, {
+          duration: Infinity,
+          action: {
+            label: t("conversations.compress.compress_and_retry"),
+            onClick: () => {
+              api.post(`conversations/${activeId}/compress/retry`).catch((error) => {
+                const code = error instanceof ApiError ? error.errorCode : undefined;
+                toast.error(t(compressErrorKey(code)));
+              });
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
+      callbacks.current.onStreamError?.();
+    },
+  }), [activeId]);
+  const state = React.useSyncExternalStore(stream.subscribe, stream.getSnapshot, stream.getSnapshot);
   React.useEffect(() => {
-    if (!activeId) {
-      resetDetail();
-      return;
-    }
+    stream.start();
+    return stream.stop;
+  }, [stream]);
 
-    let mounted = true;
-    let retryAttempts = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let stopRetrying = false;
-    const pendingNodeUpdates = new Map<string, ConversationNodeUpdateEventDto>();
-    let lastNodeUpdate: ConversationNodeUpdateEventDto | null = null;
-    let flushTimer: ReturnType<typeof setTimeout> | null = null;
-    setDetailLoading(true);
-    setDetailError(null);
-
-    const abortController = new AbortController();
-    // Drop the previous conversation's queue immediately; the fresh fetch
-    // below repopulates it.
-    setQueue(null);
-    // 保活状态按会话重置，等下一条 cache_warm SSE 重新下发
-    setCacheWarm(null);
-    // 压缩状态同理：连上后若有状态，服务端先推一次 compress_state
-    setCompressState(null);
-
-    const fetchSnapshot = () => {
-      api
-        .get<ConversationDto>(`conversations/${activeId}`)
-        .then((data) => {
-          if (!mounted) return;
-          setDetail(data);
-          updateSummary(toConversationSummaryUpdate(data));
-        })
-        .catch((err: Error) => {
-          if (!mounted) return;
-          setDetailError(err.message || t("conversations.errors.load_detail_failed"));
-          setDetail(null);
-        })
-        .finally(() => {
-          if (!mounted) return;
-          setDetailLoading(false);
-        });
-    };
-
-    const fetchQueue = () => {
-      api
-        .get<MessageQueueDto>(`conversations/${activeId}/queue`)
-        .then((data) => {
-          if (!mounted) return;
-          setQueue(data);
-        })
-        .catch(() => {
-          // Queue snapshot is best-effort; SSE queue_update keeps it fresh.
-        });
-    };
-
-    fetchQueue();
-    fetchSnapshot();
-
-    const flushNodeUpdates = () => {
-      flushTimer = null;
-      if (!mounted) {
-        pendingNodeUpdates.clear();
-        return;
-      }
-      const lastEvent = lastNodeUpdate;
-      lastNodeUpdate = null;
-      // Copy + clear BEFORE setDetail: React may double-invoke updaters in dev.
-      const events = Array.from(pendingNodeUpdates.values());
-      pendingNodeUpdates.clear();
-      if (lastEvent) {
-        useAppStore.getState().setClockOffset(lastEvent.serverTime);
-      }
-      setDetail((prev) => {
-        if (!prev) return prev;
-        let next = prev;
-        for (const event of events) {
-          next = applyNodeUpdate(next, event);
-        }
-        // updateAt/isGenerating are conversation-level fields; the last event wins.
-        if (lastEvent && next === prev && next.id === lastEvent.conversationId) {
-          next = {
-            ...next,
-            updateAt: lastEvent.updateAt,
-            isGenerating: lastEvent.isGenerating,
-          };
-        }
-        if (next === prev) return prev;
-        if (prev.isGenerating !== next.isGenerating) {
-          updateSummary(toConversationSummaryUpdate(next));
-        }
-        return next;
-      });
-      setDetailError(null);
-      setDetailLoading(false);
-    };
-
-    const scheduleNodeUpdate = (data: ConversationNodeUpdateEventDto) => {
-      pendingNodeUpdates.set(data.nodeId, data);
-      lastNodeUpdate = data;
-      if (flushTimer !== null) return;
-      flushTimer = setTimeout(flushNodeUpdates, NODE_UPDATE_FLUSH_MS);
-    };
-
-    const startStream = () => {
-      void sse<ConversationStreamEvent>(
-        `conversations/${activeId}/stream`,
-        {
-          onMessage: ({ event, data }) => {
-            if (!mounted) return;
-
-            if ((event as string) === "cache_warm") {
-              const payload = data as {
-                type?: string;
-                state?: string;
-                nextWarmAt?: number | null;
-                serverTime?: number;
-              };
-              if (
-                payload.type === "cache_warm" &&
-                (payload.state === "inactive" ||
-                  payload.state === "scheduled" ||
-                  payload.state === "refreshing")
-              ) {
-                const offset =
-                  typeof payload.serverTime === "number" ? payload.serverTime - Date.now() : 0;
-                setCacheWarm({
-                  state: payload.state,
-                  nextWarmAt:
-                    typeof payload.nextWarmAt === "number" ? payload.nextWarmAt - offset : null,
-                  serverTime: payload.serverTime ?? Date.now(),
-                });
-              }
-              return;
-            }
-
-            if ((event as string) === "compress_state") {
-              const payload = data as unknown as CompressStateDto;
-              if (payload?.conversationId === activeId) setCompressState(payload);
-              return;
-            }
-
-            if (event === "queue_update") {
-              const payload = data as ConversationQueueEventDto;
-              if (payload.type === "queue_update") {
-                setQueue(payload.queue);
-              }
-              return;
-            }
-
-            if (event === "error") {
-              const payload = data as ConversationErrorEventDto;
-              if (payload.type === "error") {
-                toast.error(payload.message);
-                onStreamErrorRef.current?.();
-              }
-              return;
-            }
-
-            if (event === "snapshot") {
-              const payload = data as ConversationSnapshotEventDto;
-              if (payload.type !== "snapshot") return;
-              useAppStore.getState().setClockOffset(payload.serverTime);
-              setDetail(payload.conversation);
-              updateSummary(toConversationSummaryUpdate(payload.conversation));
-              setDetailError(null);
-              setDetailLoading(false);
-              return;
-            }
-
-            if (event !== "node_update") return;
-            const payload = data as ConversationNodeUpdateEventDto;
-            if (payload.type !== "node_update") return;
-
-            // Coalesce per-token updates into one render per ~30ms window.
-            scheduleNodeUpdate(payload);
-          },
-          onOpen: () => {
-            if (!mounted) return;
-            const wasReconnect = retryAttempts > 0;
-            retryAttempts = 0;
-            if (wasReconnect) {
-              // The stream re-sends a snapshot, but the REST fetch covers any gap
-              // where events were missed while disconnected.
-              fetchSnapshot();
-              fetchQueue();
-            }
-          },
-          onError: (streamError) => {
-            if (!mounted) return;
-            console.error("Conversation detail SSE error:", streamError);
-            // 401 is terminal for this session; the auth gate handles re-auth.
-            if (streamError instanceof ApiError && streamError.code === 401) {
-              stopRetrying = true;
-            }
-          },
-          onClose: () => {
-            if (!mounted || abortController.signal.aborted || stopRetrying) return;
-            const delay = Math.min(
-              STREAM_RETRY_DELAY_MAX_MS,
-              STREAM_RETRY_DELAY_MIN_MS * 2 ** retryAttempts,
-            );
-            retryAttempts += 1;
-            retryTimer = setTimeout(() => {
-              retryTimer = null;
-              if (mounted) startStream();
-            }, delay);
-          },
-        },
-        { signal: abortController.signal },
-      );
-    };
-
-    startStream();
-
-    return () => {
-      mounted = false;
-      abortController.abort();
-      if (retryTimer !== null) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      if (flushTimer !== null) {
-        clearTimeout(flushTimer);
-        flushTimer = null;
-      }
-      pendingNodeUpdates.clear();
-    };
-  }, [activeId, resetDetail, t, updateSummary]);
+  const { detail } = state;
+  const detailAssistantId = detail?.assistantId ?? null;
+  const displaySignature = useSettingsStore((store) => displayScriptsSignature(store.settings, detailAssistantId));
+  React.useEffect(() => {
+    // Display-only text is projected by the server. Reconnect for a new SSE
+    // baseline, never fetch the database's possibly older message tree.
+    stream.setDisplaySignature(detailAssistantId, displaySignature);
+  }, [stream, detailAssistantId, displaySignature]);
 
   const selectedNodeMessages = React.useMemo<SelectedNodeMessage[]>(() => {
     if (!detail) return [];
@@ -617,18 +402,27 @@ function useConversationDetail(
       message: node.messages[node.selectIndex] ?? node.messages[0],
     }));
   }, [detail]);
+  const syncing = state.status !== "idle" && state.status !== "live";
+  const syncError = state.status === "unauthorized"
+    ? t("common:web_auth_gate.title")
+    : state.error || t("conversations.errors.load_detail_failed");
 
   return {
     detail,
-    detailLoading,
-    detailError,
+    detailLoading: !detail && state.status === "connecting",
+    detailError: !detail && syncing && state.status !== "connecting" ? syncError : null,
     selectedNodeMessages,
-    resetDetail,
-    queue,
-    setQueue,
-    setDetail,
-    cacheWarm,
-    compressState,
+    queue: state.queue,
+    cacheWarm: state.cacheWarm,
+    compressState: state.compressState,
+    compressSuggestion: state.compressSuggestion,
+    syncing,
+    syncStatus: state.status,
+    syncNotice: syncing && detail
+      ? state.status === "connecting"
+        ? t("conversations.empty_state.loading_description")
+        : `${syncError} · ${t("conversations.compress.retry")}`
+      : null,
   };
 }
 
@@ -775,6 +569,232 @@ function useDraftInputController({
   };
 }
 
+export function CliSessionBadge({
+  cliSession,
+  customCliAgents,
+  conversationId,
+  busy = false,
+  onControlError,
+}: {
+  cliSession: ConversationCliSession;
+  customCliAgents?: ReadonlyArray<CustomCliAgentConfig> | null;
+  conversationId?: string | null;
+  busy?: boolean;
+  onControlError?: (message: string | null) => void;
+}) {
+  const { t } = useTranslation("page");
+  const [open, setOpen] = React.useState(false);
+  const [pendingAction, setPendingAction] = React.useState<"permission" | "restart" | "exit" | null>(
+    null,
+  );
+  const [localError, setLocalError] = React.useState<string | null>(null);
+
+  const agentName = resolveCliAgentName(cliSession.agentId, customCliAgents);
+  const modelId = cliSession.modelId?.trim() || null;
+  const modeId = cliSession.modeId?.trim() || null;
+  const permissionMode = normalizeCliPermissionMode(cliSession.permissionMode);
+  const summary = formatCliSessionSummary(cliSession, customCliAgents);
+  const interactive = Boolean(conversationId);
+  const readonlyHint = t("conversations.cli.readonly_hint");
+  const titleText = interactive
+    ? busy
+      ? `${summary} · ${t("conversations.cli.busy")}`
+      : summary
+    : `${summary} · ${readonlyHint}`;
+
+  const runControl = React.useCallback(
+    async (action: "permission" | "restart" | "exit", fn: () => Promise<void>) => {
+      setPendingAction(action);
+      setLocalError(null);
+      onControlError?.(null);
+      try {
+        await fn();
+      } catch (err) {
+        const message = isCliControlForbiddenError(err)
+          ? t("common:cli_control_forbidden")
+          : err instanceof Error
+            ? err.message
+            : t("conversations.cli.control_failed");
+        setLocalError(message);
+        onControlError?.(message);
+        toast.error(message);
+      } finally {
+        setPendingAction(null);
+      }
+    },
+    [onControlError, t],
+  );
+
+  const handlePermissionChange = React.useCallback(
+    (nextMode: "ask" | "auto") => {
+      if (!conversationId) return;
+      if ((nextMode === "auto" ? "AUTO" : "ASK") === permissionMode) return;
+      void runControl("permission", () =>
+        updateConversationCli(conversationId, { permissionMode: nextMode }),
+      );
+    },
+    [conversationId, permissionMode, runControl],
+  );
+
+  const handleRestart = React.useCallback(() => {
+    if (!conversationId) return;
+    void runControl("restart", async () => {
+      await restartConversationCli(conversationId);
+      toast.success(t("conversations.cli.restarted"));
+    });
+  }, [conversationId, runControl, t]);
+
+  const handleExitCli = React.useCallback(() => {
+    if (!conversationId) return;
+    void runControl("exit", async () => {
+      await updateConversationCli(conversationId, { agentId: null });
+      setOpen(false);
+      toast.success(t("conversations.cli.exited"));
+    });
+  }, [conversationId, runControl, t]);
+
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-testid="cli-session-badge"
+            title={titleText}
+            aria-label={titleText}
+            className={cn(
+              badgeVariants({ variant: "secondary" }),
+              "max-w-[min(100%,18rem)] cursor-pointer gap-1 font-normal",
+            )}
+          >
+            {busy ? (
+              <Loader2 className="size-3 shrink-0 animate-spin" data-testid="cli-session-busy" />
+            ) : (
+              <Terminal className="size-3 shrink-0" />
+            )}
+            <span className="truncate">{summary}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-80 space-y-2.5 p-3 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-medium text-foreground">
+              {interactive
+                ? t("conversations.cli.badge_title_interactive")
+                : t("conversations.cli.badge_title")}
+            </div>
+            {busy ? (
+              <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                <Loader2 className="size-2.5 animate-spin" />
+                {t("conversations.cli.busy")}
+              </span>
+            ) : null}
+          </div>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+            <dt className="text-muted-foreground">{t("conversations.cli.agent")}</dt>
+            <dd className="truncate font-medium text-foreground">{agentName}</dd>
+            {modelId ? (
+              <>
+                <dt className="text-muted-foreground">{t("conversations.cli.model")}</dt>
+                <dd className="truncate font-mono text-foreground">{modelId}</dd>
+              </>
+            ) : null}
+            {modeId ? (
+              <>
+                <dt className="text-muted-foreground">{t("conversations.cli.mode")}</dt>
+                <dd className="truncate text-foreground">{modeId}</dd>
+              </>
+            ) : null}
+            <dt className="text-muted-foreground">{t("conversations.cli.permission")}</dt>
+            <dd className="text-foreground">
+              {permissionMode === "AUTO"
+                ? t("conversations.cli.permission_auto")
+                : t("conversations.cli.permission_ask")}
+            </dd>
+          </dl>
+          {interactive ? (
+            <div className="space-y-2 border-t pt-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">{t("conversations.cli.permission")}</span>
+                <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant={permissionMode === "ASK" ? "secondary" : "ghost"}
+                    disabled={pendingAction !== null}
+                    data-testid="cli-permission-ask"
+                    onClick={() => handlePermissionChange("ask")}
+                    className="h-6 px-2 text-[11px]"
+                  >
+                    {t("conversations.cli.permission_switch_ask")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant={permissionMode === "AUTO" ? "secondary" : "ghost"}
+                    disabled={pendingAction !== null}
+                    data-testid="cli-permission-auto"
+                    onClick={() => handlePermissionChange("auto")}
+                    className="h-6 px-2 text-[11px]"
+                  >
+                    {t("conversations.cli.permission_switch_auto")}
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={pendingAction !== null}
+                  data-testid="cli-restart-button"
+                  onClick={handleRestart}
+                  className="h-7 flex-1 gap-1 text-[11px]"
+                >
+                  <RotateCw
+                    className={cn("size-3", pendingAction === "restart" && "animate-spin")}
+                  />
+                  {t("conversations.cli.restart")}
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={pendingAction !== null}
+                  data-testid="cli-exit-button"
+                  onClick={handleExitCli}
+                  className="h-7 flex-1 gap-1 text-[11px] text-destructive hover:text-destructive"
+                >
+                  <LogOut className="size-3" />
+                  {t("conversations.cli.exit")}
+                </Button>
+              </div>
+              {localError ? (
+                <div
+                  role="alert"
+                  data-testid="cli-control-popover-error"
+                  className="rounded border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive"
+                >
+                  {localError}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="border-t pt-2 text-[11px] text-muted-foreground">{readonlyHint}</p>
+          )}
+        </PopoverContent>
+      </Popover>
+      {!interactive ? (
+        <span
+          data-testid="cli-session-readonly-hint"
+          className="hidden min-w-0 truncate text-[11px] text-muted-foreground md:inline"
+        >
+          {readonlyHint}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 const ConversationTimeline = React.memo(
   ({
     activeId,
@@ -783,6 +803,7 @@ const ConversationTimeline = React.memo(
     detailError,
     selectedNodeMessages,
     isGenerating,
+    isCliSession = false,
     settings,
     conversationAssistantId,
     translatingIds,
@@ -796,6 +817,7 @@ const ConversationTimeline = React.memo(
     onTranslate,
     onClearTranslation,
     onToolApproval,
+    onOpenContextUsage,
   }: {
     activeId: string | null;
     isHomeRoute: boolean;
@@ -803,11 +825,12 @@ const ConversationTimeline = React.memo(
     detailError: string | null;
     selectedNodeMessages: SelectedNodeMessage[];
     isGenerating: boolean;
+    isCliSession?: boolean;
     settings: Settings | null;
     conversationAssistantId: string | null;
     translatingIds: ReadonlySet<string>;
     contentClassName?: string;
-    onEdit: (message: MessageDto) => void | Promise<void>;
+    onEdit?: (message: MessageDto) => void | Promise<void>;
     onDelete: (messageId: string) => Promise<void>;
     onFork: (messageId: string) => Promise<void>;
     onRegenerate: (messageId: string) => Promise<void>;
@@ -821,6 +844,7 @@ const ConversationTimeline = React.memo(
       reason: string,
       answer?: string,
     ) => Promise<void>;
+    onOpenContextUsage?: () => void;
   }) => {
     const { t } = useTranslation("page");
     const canQuickJump =
@@ -892,12 +916,21 @@ const ConversationTimeline = React.memo(
                     message={message}
                     loading={isGenerating && index === selectedNodeMessages.length - 1}
                     isLastMessage={index === selectedNodeMessages.length - 1}
+                    isCliSession={isCliSession}
                     assistant={assistant}
                     model={model}
                     translating={translatingIds.has(message.id)}
                     onEdit={onEdit}
                     onDelete={onDelete}
+                    skipDeleteConfirm={
+                      Boolean(message.isContextCheckpoint) ||
+                      affectedCheckpointsForMessage(
+                        selectedNodeMessages.map((entry) => entry.node),
+                        message.id,
+                      ).length > 0
+                    }
                     onFork={onFork}
+                    onOpenContextUsage={isCliSession ? undefined : onOpenContextUsage}
                     onRegenerate={onRegenerate}
                     onSelectBranch={onSelectBranch}
                     onToggleFavorite={onToggleFavorite}
@@ -1041,21 +1074,64 @@ function ConversationsPageInner() {
     detailLoading,
     detailError,
     selectedNodeMessages,
-    resetDetail,
     queue,
-    setQueue,
-    setDetail,
     cacheWarm,
     compressState,
+    compressSuggestion,
+    syncing,
+    syncStatus,
+    syncNotice,
   } = useConversationDetail(activeId, updateConversationSummary, clearTranslating);
+  const conversationAssistant = React.useMemo(
+    () => assistants?.find((item) => item.id === detail?.assistantId) ?? null,
+    [assistants, detail?.assistantId],
+  );
+  const isCliSession = Boolean(detail?.cliSession);
+  const [cliRuntime, setCliRuntime] = React.useState<CliRuntimeEvent | null>(null);
+  const [cliControlError, setCliControlError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setCliControlError(null);
+    if (!activeId) {
+      setCliRuntime(null);
+      return;
+    }
+    setCliRuntime(null);
+    return subscribeToEvent<CliRuntimeEvent>(EVENT_CLI_RUNTIME, (event) => {
+      if (!event.active || event.conversationId === activeId) {
+        setCliRuntime(event);
+      }
+    });
+  }, [activeId]);
 
   // Background compression: banners while running / after a failure seen on this page.
   const compressRunning = compressState?.status === "running";
   const [compressDialogOpen, setCompressDialogOpen] = React.useState(false);
+  const [contextRecordsOpen, setContextRecordsOpen] = React.useState(false);
+  const [contextUsageOpen, setContextUsageOpen] = React.useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = React.useState(false);
+  const [clearingContext, setClearingContext] = React.useState(false);
+  const [pendingStaleEdit, setPendingStaleEdit] = React.useState<{
+    messageId: string;
+    parts: ReturnType<typeof stripEditDraftMetadata>;
+    firstAffectedNodeId: string;
+    affectedCount: number;
+  } | null>(null);
+  const [pendingStaleDelete, setPendingStaleDelete] = React.useState<{
+    messageId: string;
+    firstAffectedNodeId: string;
+    affectedCount: number;
+  } | null>(null);
+  const [pendingCascadeCheckpoint, setPendingCascadeCheckpoint] = React.useState<{
+    nodeId: string;
+    laterCount: number;
+  } | null>(null);
+  const [staleActionBusy, setStaleActionBusy] = React.useState(false);
   const [compressFailure, setCompressFailure] = React.useState<CompressStateDto | null>(null);
   const [cancellingCompress, setCancellingCompress] = React.useState(false);
   const [sizeWarningDismissedFor, setSizeWarningDismissedFor] = React.useState<string | null>(null);
   const lastCompressRef = React.useRef<CompressStateDto | null>(null);
+  const [reviewOpen, setReviewOpen] = React.useState(false);
 
   React.useEffect(() => {
     const previous = lastCompressRef.current;
@@ -1068,17 +1144,32 @@ function ConversationsPageInner() {
       setCompressFailure(null);
       return;
     }
+    if (compressState.status === "awaiting_review") {
+      // Opens once for a run started here; otherwise the banner offers it.
+      if (previous?.status === "running" && compressState.origin === "web") setReviewOpen(true);
+      return;
+    }
+    setReviewOpen(false);
     // Only a running → finished transition of the same run is news; a replay on reconnect is not.
     const sameRun =
-      previous?.status === "running" &&
+      (previous?.status === "running" || previous?.status === "awaiting_review") &&
       previous.conversationId === compressState.conversationId &&
       previous.startedAt === compressState.startedAt;
     if (!sameRun) return;
-    if (compressState.status === "succeeded") toast.success(t("conversations.compress.succeeded"));
-    else if (compressState.status === "cancelled")
+    if (compressState.status === "succeeded") {
+      const targetId = compressState.targetConversationId;
+      if (targetId && targetId !== activeId) {
+        toast.success(t("conversations.compress.new_conversation_created"));
+        setActiveId(targetId);
+        navigate(`/c/${targetId}`);
+        refreshList();
+      } else {
+        toast.success(formatCompressResultMeta(compressState, t) ?? t("conversations.compress.succeeded"));
+      }
+    } else if (compressState.status === "cancelled") {
       toast.info(t("conversations.compress.cancelled"));
-    else setCompressFailure(compressState);
-  }, [compressState, t]);
+    } else setCompressFailure(compressState);
+  }, [activeId, compressState, navigate, refreshList, setActiveId, t]);
 
   const handleCancelCompression = React.useCallback(async () => {
     if (!activeId) return;
@@ -1201,13 +1292,12 @@ function ConversationsPageInner() {
     async (assistantId: string) => {
       await api.post<{ status: string }>("settings/assistant", { assistantId });
       setActiveId(null);
-      resetDetail();
       if (routeId) {
         navigate("/", { replace: true });
       }
       refreshList();
     },
-    [navigate, refreshList, resetDetail, routeId, setActiveId],
+    [navigate, refreshList, routeId, setActiveId],
   );
 
   const handleToolApproval = React.useCallback(
@@ -1260,27 +1350,37 @@ function ConversationsPageInner() {
         toast.error(t("conversations.delete_blocked_generating"));
         return;
       }
+      const nodes = detail?.messages ?? [];
+      const targetNode = nodes.find((node) => node.messages.some((msg) => msg.id === messageId));
+      const targetMsg = targetNode?.messages.find((msg) => msg.id === messageId);
+      if (targetMsg?.isContextCheckpoint) {
+        const info = laterCheckpointsForCheckpointMessage(nodes, messageId);
+        if (info && info.laterCount > 0) {
+          setPendingCascadeCheckpoint({ nodeId: info.nodeId, laterCount: info.laterCount });
+          return;
+        }
+      } else {
+        const affected = affectedCheckpointsForMessage(nodes, messageId);
+        if (affected.length > 0) {
+          setPendingStaleDelete({
+            messageId,
+            firstAffectedNodeId: affected[0].id,
+            affectedCount: affected.length,
+          });
+          return;
+        }
+      }
       await api.delete<{ status: string }>(`conversations/${activeId}/messages/${messageId}`);
     },
-    [activeId, detail?.isGenerating, t],
+    [activeId, detail?.isGenerating, detail?.messages, t],
   );
 
   const handleToggleFavorite = React.useCallback(
     async (nodeId: string) => {
       if (!activeId) return;
       try {
-        const response = await api.post<{ isFavorite: boolean }>(
-          `conversations/${activeId}/nodes/${nodeId}/favorite`,
-        );
-        setDetail((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            messages: prev.messages.map((node) =>
-              node.id === nodeId ? { ...node, isFavorite: response.isFavorite } : node,
-            ),
-          };
-        });
+        // The SSE node is authoritative, even if this acknowledgement arrives later.
+        await api.post(`conversations/${activeId}/nodes/${nodeId}/favorite`);
       } catch (favoriteError) {
         toast.error(
           favoriteError instanceof Error
@@ -1289,7 +1389,7 @@ function ConversationsPageInner() {
         );
       }
     },
-    [activeId, setDetail, t],
+    [activeId, t],
   );
 
   const handleTranslateMessage = React.useCallback(
@@ -1324,20 +1424,8 @@ function ConversationsPageInner() {
         );
         return;
       }
-      setDetail((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          messages: prev.messages.map((node) => ({
-            ...node,
-            messages: node.messages.map((message) =>
-              message.id === messageId ? { ...message, translation: null } : message,
-            ),
-          })),
-        };
-      });
     },
-    [activeId, clearTranslating, setDetail, t],
+    [activeId, clearTranslating, t],
   );
 
   const handleForkMessage = React.useCallback(
@@ -1388,6 +1476,26 @@ function ConversationsPageInner() {
     [editingSession, handleInputTextChange],
   );
 
+  const commitEditedMessage = React.useCallback(
+    async (
+      messageId: string,
+      strippedParts: ReturnType<typeof stripEditDraftMetadata>,
+      firstCheckpointNodeIdToRevoke?: string,
+    ) => {
+      if (!activeId) return;
+      await api.post<{ status: string }>(
+        `conversations/${activeId}/messages/${messageId}/edit`,
+        { parts: strippedParts },
+      );
+      if (firstCheckpointNodeIdToRevoke) {
+        await revokeContextRecord(activeId, firstCheckpointNodeIdToRevoke, true);
+      }
+      setEditingSession(null);
+      clearCurrentDraft();
+    },
+    [activeId, clearCurrentDraft],
+  );
+
   const handleSend = React.useCallback(async () => {
     if (!editingSession) {
       await handleSubmit();
@@ -1400,15 +1508,20 @@ function ConversationsPageInner() {
     if (draftParts.length === 0) return;
 
     const nextParts = buildEditedParts(editingSession, draftParts);
+    const stripped = stripEditDraftMetadata(nextParts);
+    const affected = affectedCheckpointsForMessage(detail?.messages ?? [], editingSession.messageId);
+    if (affected.length > 0) {
+      setPendingStaleEdit({
+        messageId: editingSession.messageId,
+        parts: stripped,
+        firstAffectedNodeId: affected[0].id,
+        affectedCount: affected.length,
+      });
+      return;
+    }
 
-    await api.post<{ status: string }>(
-      `conversations/${activeId}/messages/${editingSession.messageId}/edit`,
-      { parts: stripEditDraftMetadata(nextParts) },
-    );
-
-    setEditingSession(null);
-    clearCurrentDraft();
-  }, [activeId, clearCurrentDraft, editingSession, getCurrentSubmitParts, handleSubmit]);
+    await commitEditedMessage(editingSession.messageId, stripped);
+  }, [activeId, commitEditedMessage, detail?.messages, editingSession, getCurrentSubmitParts, handleSubmit]);
 
   const handleSendNoAnswer = React.useCallback(async () => {
     if (editingSession) return;
@@ -1436,7 +1549,6 @@ function ConversationsPageInner() {
       await api.post<{ status: string }>(`conversations/${conversationId}/move`, { assistantId });
       if (conversationId === activeId) {
         setActiveId(null);
-        resetDetail();
         setHomeDraftId(createHomeDraftId());
         if (routeId === conversationId) {
           navigate("/", { replace: true });
@@ -1444,7 +1556,7 @@ function ConversationsPageInner() {
       }
       refreshList();
     },
-    [activeId, navigate, refreshList, resetDetail, routeId, setActiveId],
+    [activeId, navigate, refreshList, routeId, setActiveId],
   );
 
   const handleUpdateConversationTitle = React.useCallback(
@@ -1462,7 +1574,6 @@ function ConversationsPageInner() {
       });
       if (conversationId === activeId) {
         setActiveId(null);
-        resetDetail();
         setHomeDraftId(createHomeDraftId());
         if (routeId === conversationId) {
           navigate("/", { replace: true });
@@ -1470,7 +1581,7 @@ function ConversationsPageInner() {
       }
       refreshList();
     },
-    [activeId, navigate, refreshList, resetDetail, routeId, setActiveId],
+    [activeId, navigate, refreshList, routeId, setActiveId],
   );
 
   const handleSelectFolder = React.useCallback(
@@ -1510,16 +1621,24 @@ function ConversationsPageInner() {
     [moveConversationToFolder, refreshList],
   );
 
+  // The server made the conversation (with the current assistant): list it and open it.
+  const handleStartCharacterChat = React.useCallback(
+    (conversationId: string) => {
+      handleSelect(conversationId);
+      refreshList();
+    },
+    [handleSelect, refreshList],
+  );
+
   const handleCreateConversation = React.useCallback(() => {
     closePanel();
     setActiveId(null);
-    resetDetail();
     setHomeDraftId(createHomeDraftId());
 
     if (routeId) {
       navigate("/");
     }
-  }, [closePanel, navigate, resetDetail, routeId, setActiveId]);
+  }, [closePanel, navigate, routeId, setActiveId]);
 
   const handleStop = React.useCallback(async () => {
     if (!activeId) return;
@@ -1671,33 +1790,44 @@ function ConversationsPageInner() {
     );
   }, [settings, detail?.assistantId, detail?.workspaceCwd, detail?.workspaceCwdScoped]);
 
+  const activeCharacter = useActiveCharacter(detail?.characterId);
+
   const chatContent = (
     <div
       className={cn("flex flex-1 flex-col min-h-0 overflow-hidden", isNewChat && "justify-center")}
     >
+      {syncNotice ? (
+        <p role="status" data-sync-status={syncStatus} className="px-4 py-2 text-center text-xs text-muted-foreground">
+          {syncNotice}
+        </p>
+      ) : null}
       {!isNewChat && (
         <div className="relative flex min-h-0 flex-1">
           <WorkspaceImageProvider value={workspaceImages}>
-            <ConversationTimeline
-              activeId={activeId}
-              isHomeRoute={isHomeRoute}
-              detailLoading={detailLoading}
-              detailError={detailError}
-              selectedNodeMessages={selectedNodeMessages}
-              isGenerating={detail?.isGenerating ?? false}
-              settings={settings}
-              conversationAssistantId={detail?.assistantId ?? null}
-              translatingIds={translatingIds}
-              onEdit={handleStartEdit}
-              onDelete={handleDeleteMessage}
-              onFork={handleForkMessage}
-              onRegenerate={handleRegenerate}
-              onSelectBranch={handleSelectBranch}
-              onToggleFavorite={handleToggleFavorite}
-              onTranslate={handleTranslateMessage}
-              onClearTranslation={handleClearTranslation}
-              onToolApproval={handleToolApproval}
-            />
+            <ActiveCharacterContext.Provider value={activeCharacter}>
+              <ConversationTimeline
+                activeId={activeId}
+                isHomeRoute={isHomeRoute}
+                detailLoading={detailLoading}
+                detailError={detailError}
+                selectedNodeMessages={selectedNodeMessages}
+                isGenerating={!syncing && (detail?.isGenerating ?? false)}
+                isCliSession={isCliSession}
+                settings={settings}
+                conversationAssistantId={detail?.assistantId ?? null}
+                translatingIds={translatingIds}
+                onEdit={isCliSession ? undefined : handleStartEdit}
+                onDelete={handleDeleteMessage}
+                onFork={handleForkMessage}
+                onRegenerate={handleRegenerate}
+                onSelectBranch={handleSelectBranch}
+                onToggleFavorite={handleToggleFavorite}
+                onTranslate={handleTranslateMessage}
+                onClearTranslation={handleClearTranslation}
+                onToolApproval={handleToolApproval}
+                onOpenContextUsage={detail && !isCliSession ? () => setContextUsageOpen(true) : undefined}
+              />
+            </ActiveCharacterContext.Provider>
           </WorkspaceImageProvider>
         </div>
       )}
@@ -1713,27 +1843,48 @@ function ConversationsPageInner() {
             <p className="text-lg text-muted-foreground">{t("conversations.welcome_prompt")}</p>
           </div>
         )}
+        {activeId && !isNewChat && !isCliSession && detail?.characterId && conversationAssistant && conversationAssistant.tavernMode !== true ? (
+          // a character chat on an assistant with SillyTavern mode off: the card is not sent
+          <div className="mx-auto mb-2 w-full max-w-3xl px-4" data-testid="tavern-off-notice">
+            <div role="status" className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+              <div className="min-w-0 flex-1">{t("conversations.tavern_off")}</div>
+              <Button size="sm" variant="outline" onClick={() => navigate(`/settings/assistants/${conversationAssistant.id}`)}>
+                {t("conversations.tavern_open_settings")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {activeId && !isNewChat ? (
           <ConversationNotices
             compressState={compressState}
             compressFailure={compressFailure}
             sizeInfo={sizeInfo}
             sizeWarningDismissed={sizeWarningDismissedFor === activeId}
+            isCliSession={isCliSession}
             cancelling={cancellingCompress}
             onCancelCompression={() => void handleCancelCompression()}
             onOpenCompress={() => setCompressDialogOpen(true)}
+            compressSuggestion={compressSuggestion}
+            onDismissSuggestion={() => void api.delete(`conversations/${activeId}/compress/suggestion`).catch(() => undefined)}
+            onOpenReview={() => setReviewOpen(true)}
             onDismissFailure={() => setCompressFailure(null)}
             onDismissSizeWarning={() => setSizeWarningDismissedFor(activeId)}
             onNewConversation={handleCreateConversation}
           />
         ) : null}
+        {activeId && !isNewChat && isCreatorConversation(detail?.assistantId) ? (
+          <div className="flex justify-end pb-1">
+            <CreatorProposalsButton conversationId={activeId} />
+          </div>
+        ) : null}
         {activeId ? (
           <ConversationQueuePanel
+            key={activeId}
             conversationId={activeId}
             queue={queue}
             queueSize={detail?.queueSize ?? 0}
             queuePaused={detail?.queuePaused ?? false}
-            onQueueChange={setQueue}
+            disabled={syncing}
             className="pb-2"
           />
         ) : null}
@@ -1745,7 +1896,7 @@ function ConversationsPageInner() {
           ready={draftKey !== null}
           isGenerating={detail?.isGenerating ?? false}
           cacheWarm={cacheWarm}
-          disabled={detailLoading || Boolean(detailError)}
+          disabled={syncing}
           onValueChange={handleInputTextChange}
           onAddParts={handleAddInputParts}
           suggestions={displaySuggestions}
@@ -1761,31 +1912,264 @@ function ConversationsPageInner() {
             detail && detail.messages.length > 0 ? handleExportConversation : undefined
           }
           onCompressConversation={
-            detail && detail.messages.length >= 2 && !compressRunning
+            detail && !isCliSession && detail.messages.length >= 2 && !compressRunning
               ? () => setCompressDialogOpen(true)
               : undefined
           }
+          onOpenContextBreakdown={
+            detail && !isCliSession ? () => setContextUsageOpen(true) : undefined
+          }
           adaptiveToolbar={!isMobile}
-          onConversationUpdated={setDetail}
         />
-        {activeId ? (
+        {activeId && !isCliSession ? (
           <CompressDialog
             conversationId={activeId}
             open={compressDialogOpen}
             onOpenChange={setCompressDialogOpen}
             contextTokens={lastContextTokens(detail?.messages ?? [])}
             contextLength={currentModel?.contextLength ?? null}
+            nodes={detail?.messages ?? []}
+            override={detail?.compression ?? null}
           />
         ) : null}
+        {activeId && compressState?.status === "awaiting_review" && compressState.reviewSummary ? (
+          <CompressReviewDialog
+            key={compressState.startedAt}
+            conversationId={activeId}
+            summary={compressState.reviewSummary}
+            compressState={compressState}
+            open={reviewOpen}
+            onOpenChange={setReviewOpen}
+          />
+        ) : null}
+        {activeId && !isCliSession ? (
+          <ContextRecordsDialog
+            conversationId={activeId}
+            open={contextRecordsOpen}
+            onOpenChange={setContextRecordsOpen}
+            refreshKey={detail?.messages.length ?? 0}
+            isBusy={Boolean(detail?.isGenerating) || compressRunning}
+            onJumpToMessage={(_nodeId, messageId) => {
+              scrollToConversationMessage(messageId);
+            }}
+          />
+        ) : null}
+        {activeId && !isCliSession ? (
+          <ContextUsageDialog
+            conversationId={activeId}
+            open={contextUsageOpen}
+            onOpenChange={setContextUsageOpen}
+            draftText={inputText}
+            draftImageCount={inputAttachments.filter((part) => part.type === "image").length}
+            onOpenCompress={() => setCompressDialogOpen(true)}
+          />
+        ) : null}
+        <Dialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+          <DialogContent data-testid="context-clear-confirm-dialog">
+            <DialogHeader>
+              <DialogTitle>{t("conversations.context_records.clear_confirm_title")}</DialogTitle>
+              <DialogDescription>{t("conversations.context_records.clear_confirm_message")}</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setClearConfirmOpen(false)}>
+                {t("conversations.context_records.cancel")}
+              </Button>
+              <Button
+                type="button"
+                disabled={clearingContext}
+                onClick={() => {
+                  if (!activeId) return;
+                  setClearingContext(true);
+                  clearConversationContext(activeId)
+                    .then(() => {
+                      setClearConfirmOpen(false);
+                      toast.success(t("conversations.context_records.cleared"));
+                    })
+                    .catch((error) => {
+                      toast.error(error instanceof Error ? error.message : t("conversations.context_records.action_failed"));
+                    })
+                    .finally(() => {
+                      setClearingContext(false);
+                    });
+                }}
+                data-testid="context-clear-confirm-button"
+              >
+                {t("conversations.context_records.clear_context")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={pendingStaleEdit !== null} onOpenChange={(next) => !next && setPendingStaleEdit(null)}>
+          <DialogContent data-testid="stale-edit-dialog">
+            <DialogHeader>
+              <DialogTitle>{t("conversations.stale.edit_title")}</DialogTitle>
+              <DialogDescription>
+                {t("conversations.stale.edit_message", { count: pendingStaleEdit?.affectedCount ?? 0 })}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => setPendingStaleEdit(null)}>
+                {t("conversations.stale.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={staleActionBusy}
+                onClick={() => {
+                  if (!pendingStaleEdit) return;
+                  const current = pendingStaleEdit;
+                  setStaleActionBusy(true);
+                  void commitEditedMessage(current.messageId, current.parts)
+                    .then(() => setPendingStaleEdit(null))
+                    .catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+                    .finally(() => setStaleActionBusy(false));
+                }}
+                data-testid="stale-edit-only"
+              >
+                {t("conversations.stale.edit_only")}
+              </Button>
+              <Button
+                type="button"
+                disabled={staleActionBusy}
+                onClick={() => {
+                  if (!pendingStaleEdit) return;
+                  const current = pendingStaleEdit;
+                  setStaleActionBusy(true);
+                  void commitEditedMessage(current.messageId, current.parts, current.firstAffectedNodeId)
+                    .then(() => setPendingStaleEdit(null))
+                    .catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+                    .finally(() => setStaleActionBusy(false));
+                }}
+                data-testid="stale-edit-and-revoke"
+              >
+                {t("conversations.stale.edit_and_revoke")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={pendingStaleDelete !== null} onOpenChange={(next) => !next && setPendingStaleDelete(null)}>
+          <DialogContent data-testid="stale-delete-dialog">
+            <DialogHeader>
+              <DialogTitle>{t("conversations.stale.delete_title")}</DialogTitle>
+              <DialogDescription>
+                {t("conversations.stale.delete_message", { count: pendingStaleDelete?.affectedCount ?? 0 })}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => setPendingStaleDelete(null)}>
+                {t("conversations.stale.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={staleActionBusy}
+                onClick={() => {
+                  if (!pendingStaleDelete || !activeId) return;
+                  const current = pendingStaleDelete;
+                  setStaleActionBusy(true);
+                  void api.delete(`conversations/${activeId}/messages/${current.messageId}`)
+                    .then(() => setPendingStaleDelete(null))
+                    .catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+                    .finally(() => setStaleActionBusy(false));
+                }}
+                data-testid="stale-delete-only"
+              >
+                {t("conversations.stale.delete_only")}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={staleActionBusy}
+                onClick={() => {
+                  if (!pendingStaleDelete || !activeId) return;
+                  const current = pendingStaleDelete;
+                  setStaleActionBusy(true);
+                  void api.delete(`conversations/${activeId}/messages/${current.messageId}`)
+                    .then(() => revokeContextRecord(activeId, current.firstAffectedNodeId, true))
+                    .then(() => setPendingStaleDelete(null))
+                    .catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+                    .finally(() => setStaleActionBusy(false));
+                }}
+                data-testid="stale-delete-and-revoke"
+              >
+                {t("conversations.stale.delete_and_revoke")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={pendingCascadeCheckpoint !== null} onOpenChange={(next) => !next && setPendingCascadeCheckpoint(null)}>
+          <DialogContent data-testid="context-record-cascade-dialog">
+            <DialogHeader>
+              <DialogTitle>{t("conversations.context_records.revoke_title")}</DialogTitle>
+              <DialogDescription>
+                {t("conversations.context_records.revoke_later_message", {
+                  count: pendingCascadeCheckpoint?.laterCount ?? 0,
+                })}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => setPendingCascadeCheckpoint(null)}>
+                {t("conversations.context_records.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={staleActionBusy}
+                onClick={() => {
+                  if (!pendingCascadeCheckpoint || !activeId) return;
+                  const current = pendingCascadeCheckpoint;
+                  setStaleActionBusy(true);
+                  void revokeContextRecord(activeId, current.nodeId, false)
+                    .then(() => setPendingCascadeCheckpoint(null))
+                    .catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+                    .finally(() => setStaleActionBusy(false));
+                }}
+                data-testid="context-record-revoke-single"
+              >
+                {t("conversations.context_records.revoke_single")}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={staleActionBusy}
+                onClick={() => {
+                  if (!pendingCascadeCheckpoint || !activeId) return;
+                  const current = pendingCascadeCheckpoint;
+                  setStaleActionBusy(true);
+                  void revokeContextRecord(activeId, current.nodeId, true)
+                    .then(() => setPendingCascadeCheckpoint(null))
+                    .catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+                    .finally(() => setStaleActionBusy(false));
+                }}
+                data-testid="context-record-revoke-cascade"
+              >
+                {t("conversations.context_records.revoke_cascade")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
 
-  // 聊天栏顶部的提示位（会话标题 · 助手 / 模型）：只占聊天栏宽度、一行高
+  // 聊天栏顶部的提示位（会话标题 · 助手 / 模型，或 CLI 徽标）：只占聊天栏宽度、一行高
+  const cliDisplay = React.useMemo(
+    () =>
+      detail?.cliSession
+        ? resolveCliSessionDisplay(detail.cliSession, cliRuntime, activeId)
+        : null,
+    [activeId, cliRuntime, detail?.cliSession],
+  );
+  const cliSession = cliDisplay?.session ?? null;
+  const cliBusy = cliDisplay?.busy ?? false;
+  const cliSummary = cliSession
+    ? formatCliSessionSummary(cliSession, settings?.customCliAgents)
+    : null;
   const modelLabel =
-    currentModel && currentProvider
+    !isCliSession && currentModel && currentProvider
       ? `${getAssistantDisplayName(currentAssistant?.name)} / ${getModelDisplayName(currentModel.displayName, currentModel.modelId)} (${currentProvider.name})`
       : null;
+  const headerSubtitle = cliSummary ?? modelLabel;
   const chatTitle = activeConversation
     ? activeConversation.title
     : t("conversations.header.select_conversation");
@@ -1794,18 +2178,26 @@ function ConversationsPageInner() {
       <div className="flex h-[45px] shrink-0 items-center gap-1 border-b px-1.5" data-testid="chat-header">
         <SidebarTrigger className="size-7" />
         <div
-          className="flex min-w-0 flex-1 items-baseline gap-2 text-xs"
-          title={modelLabel ? `${chatTitle}\n${modelLabel}` : chatTitle}
+          className="flex min-w-0 flex-1 items-center gap-2 text-xs"
+          title={headerSubtitle ? `${chatTitle}\n${headerSubtitle}` : chatTitle}
         >
           <span
             className={cn(
-              "max-w-[65%] shrink-0 truncate",
+              isCliSession ? "max-w-[45%] shrink-0 truncate" : "max-w-[65%] shrink-0 truncate",
               activeConversation ? "text-foreground/90" : "text-muted-foreground",
             )}
           >
             {chatTitle}
           </span>
-          {modelLabel ? (
+          {cliSession ? (
+            <CliSessionBadge
+              cliSession={cliSession}
+              customCliAgents={settings?.customCliAgents}
+              conversationId={activeId}
+              busy={cliBusy}
+              onControlError={setCliControlError}
+            />
+          ) : modelLabel ? (
             <span className="min-w-0 truncate text-muted-foreground/70">{modelLabel}</span>
           ) : null}
         </div>
@@ -1823,6 +2215,7 @@ function ConversationsPageInner() {
         ) : null}
         {detail ? (
           <ConversationSettingsMenu
+            key={detail.id}
             conversation={detail}
             assistant={
               settings?.assistants.find((item) => item.id === detail.assistantId) ?? null
@@ -1831,10 +2224,41 @@ function ConversationsPageInner() {
               settings?.assistants.find((item) => item.id === detail.assistantId)?.workspaceId ??
               null
             }
-            onUpdated={setDetail}
+            canClearContext={(() => {
+              const nodes = detail.messages ?? [];
+              if (nodes.length === 0) return false;
+              const lastNode = nodes[nodes.length - 1];
+              const lastMsg = lastNode.messages[lastNode.selectIndex] ?? lastNode.messages[0];
+              if (!lastMsg?.isContextCheckpoint) return true;
+              const isClear =
+                lastMsg.checkpointMeta?.kind === "clear" ||
+                !lastMsg.parts.some((p) => p.type === "text" && p.text.trim());
+              return !isClear;
+            })()}
+            onOpenCompress={() => setCompressDialogOpen(true)}
+            onOpenContextRecords={() => setContextRecordsOpen(true)}
+            onOpenContextUsage={() => setContextUsageOpen(true)}
+            onClearContext={() => setClearConfirmOpen(true)}
           />
         ) : null}
       </div>
+      {cliControlError ? (
+        <div
+          role="alert"
+          data-testid="cli-control-error-banner"
+          className="flex items-center justify-between gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
+        >
+          <span className="min-w-0 flex-1 truncate">{cliControlError}</span>
+          <button
+            type="button"
+            aria-label={t("common:actions.close")}
+            onClick={() => setCliControlError(null)}
+            className="shrink-0 rounded p-0.5 hover:bg-destructive/15"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      ) : null}
       {chatContent}
     </div>
   );
@@ -1876,6 +2300,7 @@ function ConversationsPageInner() {
         onRenameFolder={handleRenameFolder}
         onDeleteFolder={handleDeleteFolder}
         onMoveToFolder={handleMoveConversationToFolder}
+        onStartCharacterChat={handleStartCharacterChat}
       />
       <SidebarInset className="flex min-h-svh flex-col overflow-hidden">
         {!isMobile ? (

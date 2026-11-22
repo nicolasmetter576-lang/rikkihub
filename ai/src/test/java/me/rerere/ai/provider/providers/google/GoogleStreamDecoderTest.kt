@@ -216,7 +216,7 @@ class GoogleStreamDecoderTest {
     fun `args stay pending until finish and absent args produce no delta`() {
         val decoder = decoder()
         val earlyChunks = decoder.accept(
-            frame(functionCallPart(id = "call-1", name = "noop")),
+            frame(functionCallPart(id = "call-1", name = "noop"), finishReason = "STOP"),
         ).chunks
         assertTrue(earlyChunks.none { it is StreamChunk.ToolCallDelta })
 

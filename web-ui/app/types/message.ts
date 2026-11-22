@@ -15,12 +15,33 @@ export interface UIMessage {
   finishedAt?: string | null;
   modelId?: string | null;
   modelSnapshot?: ModelSnapshot | null;
+  contextLength?: number | null;
   usage?: TokenUsage | null;
+  /** true = complete successful usage; false = partial/in progress; null/absent = legacy unknown */
+  usageComplete?: boolean | null;
   generationTimeMs?: number | null;
   lastUsage?: TokenUsage | null;
   stepCount?: number | null;
   translation?: string | null;
+  title?: string | null;
   isContextCheckpoint?: boolean;
+  checkpointMeta?: ContextCheckpointMetadata | null;
+}
+
+export type ContextCheckpointKind = "manual" | "auto" | "overflow_retry" | "clear";
+
+export interface ContextCheckpointMetadata {
+  kind?: ContextCheckpointKind | null;
+  templateId?: string | null;
+  fromOriginal?: boolean;
+  chunked?: boolean;
+  requestCount?: number | null;
+  carriedCount?: number | null;
+  rangeStartNodeId?: string | null;
+  rangeEndNodeId?: string | null;
+  summarizedCount?: number | null;
+  supersededCheckpointNodeId?: string | null;
+  usage?: TokenUsage | null;
 }
 
 /**

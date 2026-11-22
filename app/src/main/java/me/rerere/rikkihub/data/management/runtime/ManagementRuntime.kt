@@ -124,6 +124,7 @@ class ManagementRuntime(
         put(ManagementDomain.SUBAGENT_PRESET, SubagentPresetAdapter())
         put(ManagementDomain.USER_SKILL, SkillAdapter())
         put(ManagementDomain.CONVERSATION, ConversationDomainAdapter())
+        put(ManagementDomain.CHARACTER, me.rerere.rikkihub.data.management.adapters.character.CharacterDomainAdapter())
     }
 
     fun adapter(domain: ManagementDomain): ManagementDomainAdapter = adapters.getValue(domain)
@@ -225,8 +226,20 @@ class ManagementRuntime(
         "settings.assistants" -> "assistant:"
         "settings.assistantTags" -> "assistantTag:"
         "settings.providers" -> "provider:"
-        else -> if (collection.startsWith("settings.providers.")) "model:" else null
+        "settings.tavern" -> "setting:tavern"
+        "settings.tavern.regexScripts" -> "globalRegex:"
+        else -> NESTED_PREFIX.matchEntire(collection)?.let { m ->
+            val parent = m.groupValues[2]
+            when (m.groupValues[1] to m.groupValues[3]) {
+                "lorebooks" to "entries" -> "lorebookEntry:$parent/"
+                "assistants" to "presetEntries" -> "presetEntry:$parent/"
+                "assistants" to "regexScripts" -> "assistantRegex:$parent/"
+                else -> null
+            }
+        } ?: if (collection.startsWith("settings.providers.")) "model:" else null
     }
+
+    private val NESTED_PREFIX = Regex("^settings\\.(lorebooks|assistants)\\.([0-9a-fA-F-]{36})\\.(entries|presetEntries|regexScripts)$")
 
     /** Is an ordinary conversation fenced by a pending/recovering management operation? */
     fun isConversationFenced(conversationId: Uuid): Boolean =
@@ -254,6 +267,7 @@ class ManagementRuntime(
     /** Stores a planned command as a PENDING_APPROVAL proposal. */
     suspend fun freeze(planned: PlannedCommand, source: Provenance): Proposal =
         proposals.previewPlan(planned.command.domain, encodeCommand(planned.command), planned.plan, source)
+            .also { announce(it.sessionId) }
 
     private fun encodeCommand(command: ManagementCommand): String {
         val json = kotlinx.serialization.json.Json { encodeDefaults = true }
@@ -264,6 +278,8 @@ class ManagementRuntime(
                 json.encodeToString(me.rerere.rikkihub.data.management.adapters.SettingsDomainCommand.serializer(), command)
             is me.rerere.rikkihub.data.management.adapters.conversation.ConversationManagementCommand ->
                 json.encodeToString(me.rerere.rikkihub.data.management.adapters.conversation.ConversationManagementCommand.serializer(), command)
+            is me.rerere.rikkihub.data.management.adapters.character.CharacterManagementCommand ->
+                json.encodeToString(me.rerere.rikkihub.data.management.adapters.character.CharacterManagementCommand.serializer(), command)
             is me.rerere.rikkihub.data.management.adapters.subagent.SubagentPresetCommand ->
                 json.encodeToString(me.rerere.rikkihub.data.management.adapters.subagent.SubagentPresetCommand.serializer(), command)
             is me.rerere.rikkihub.data.management.adapters.skills.SkillCommand ->
@@ -282,6 +298,8 @@ class ManagementRuntime(
     suspend fun previewUndo(applied: Proposal, source: Provenance): Proposal? {
         ensureStarted()
         require(applied.status == ProposalStatus.APPLIED)
+        // The recovery image was taken in the object shapes of its own definition: no automatic undo across a definition change.
+        if (applied.definitionVersion != definitionVersion()) return null
         val receipts = applied.steps.map { it.receipt ?: return null }
         for (receipt in receipts) for (token in receipt.afterTokens) {
             val gateway = gateways[receipt.store] ?: return null
@@ -331,7 +349,7 @@ class ManagementRuntime(
         val json = kotlinx.serialization.json.Json { encodeDefaults = true }
         val raw = json.encodeToJsonElement(me.rerere.rikkihub.data.datastore.Settings.serializer(), current)
             as kotlinx.serialization.json.JsonObject
-        val keyOf = mapOf("settings.quickMessages" to "quickMessages", "settings.modeInjections" to "modeInjections",
+        val keyOf = mapOf("settings.quickMessages" to "quickMessages", "settings.modeInjections" to "promptLibrary",
             "settings.lorebooks" to "lorebooks", "settings.assistants" to "assistants", "settings.assistantTags" to "assistantTags")
         return snapshot.flatMap { (target, value) ->
             val key = keyOf[target]
@@ -341,7 +359,11 @@ class ManagementRuntime(
                     listOf("name", "title").firstNotNullOfOrNull { (obj[it] as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: ""
                 } ?: ""
                 fun byId(e: kotlinx.serialization.json.JsonElement?) = (e as? kotlinx.serialization.json.JsonArray).orEmpty()
-                    .associateBy { ((it as kotlinx.serialization.json.JsonObject)["id"] as kotlinx.serialization.json.JsonPrimitive).content }
+                    // 提示词库条目的 id 叫 identifier（酒馆字段名），其余集合叫 id
+                    .associateBy { obj ->
+                        val o = obj as kotlinx.serialization.json.JsonObject
+                        ((o["id"] ?: o["identifier"]) as kotlinx.serialization.json.JsonPrimitive).content
+                    }
                 val now = byId(raw[key]); val then = byId(value)
                 (now.keys + then.keys).mapNotNull { id ->
                     when {
@@ -354,6 +376,15 @@ class ManagementRuntime(
             }
         }
     }
+
+    // ---------------------------------------------------------------- change notifications
+
+    private val proposalChangeSignals = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 64)
+
+    /** Session ids (a creator conversation id) whose proposals were created, approved, applied, rejected or cancelled. */
+    val proposalChanges: kotlinx.coroutines.flow.Flow<String> get() = proposalChangeSignals
+
+    private fun announce(sessionId: String) { proposalChangeSignals.tryEmit(sessionId) }
 
     // ---------------------------------------------------------------- native approval
 
@@ -370,7 +401,11 @@ class ManagementRuntime(
         refreshEpoch()
         val permit = proposals.approveNative(review)
         val claimed = proposals.claimApprovedForApply(permit)
-        return coordinator.applyClaimed(claimed.proposalId, adapter(claimed.commandDomain))
+        try {
+            return coordinator.applyClaimed(claimed.proposalId, adapter(claimed.commandDomain))
+        } finally {
+            announce(claimed.sessionId)
+        }
     }
 
     /**
@@ -414,12 +449,12 @@ class ManagementRuntime(
 
     suspend fun reject(proposalId: String): Proposal {
         val proposal = proposals.get(proposalId)
-        return proposals.rejectNative(proposalId, proposal.canonicalDigest)
+        return proposals.rejectNative(proposalId, proposal.canonicalDigest).also { announce(it.sessionId) }
     }
 
     suspend fun cancel(proposalId: String): Proposal {
         val proposal = proposals.get(proposalId)
-        return proposals.cancel(proposalId, proposal.sessionId)
+        return proposals.cancel(proposalId, proposal.sessionId).also { announce(it.sessionId) }
     }
 
     suspend fun list(): List<Proposal> {
@@ -437,6 +472,7 @@ class AppRoomManagementBackend(
     private val subagents: SubagentPresetRepository,
     private val workspaces: WorkspaceRepository,
     private val mutationRuntime: MutationRuntime,
+    private val characters: me.rerere.rikkihub.data.repository.CharacterRepository? = null,
 ) : RoomManagementBackend {
     override suspend fun epoch(): Long = mutationRuntime.epochs.epoch(MutationDomain.ROOM_CONVERSATION)
     override suspend fun conversationRow(id: Uuid): Conversation? = conversations.managedRow(id)
@@ -450,6 +486,25 @@ class AppRoomManagementBackend(
         id: Uuid, expected: ConversationVersion?, operationId: String,
         command: ConversationMutationCommand, hostIds: ConversationHostIds,
     ): ConversationVersion = chatService().applyConversationCommand(id, expected, operationId, command, hostIds)
+
+    override suspend fun characterIds(): List<String> = characters?.summaries()?.map { it.id.toString() }.orEmpty()
+    override suspend fun character(id: Uuid): me.rerere.rikkihub.data.model.CharacterRecord? = characters?.get(id)
+    override suspend fun characterCreate(id: Uuid, card: me.rerere.tavern.card.CharacterCard, extraBookIds: List<Uuid>) {
+        val repository = characters ?: throw UnsupportedOperationException("Characters are not available")
+        repository.create(card, id = id, local = me.rerere.rikkihub.data.model.CharacterLocalSettings(extraBookIds = extraBookIds.distinct()))
+    }
+    override suspend fun characterPatch(
+        id: Uuid, expectedRevision: Long, transform: (me.rerere.rikkihub.data.model.CharacterRecord) -> me.rerere.rikkihub.data.model.CharacterRecord,
+    ) {
+        val repository = characters ?: throw UnsupportedOperationException("Characters are not available")
+        try {
+            repository.update(id, expectedRevision, transform)
+        } catch (e: me.rerere.rikkihub.data.repository.CharacterConflictException) {
+            throw me.rerere.rikkihub.data.mutation.MutationConflictException(e.message ?: "The character was changed elsewhere")
+        } catch (e: NoSuchElementException) {
+            throw me.rerere.rikkihub.data.mutation.MutationConflictException("The character no longer exists")
+        }
+    }
 
     override suspend fun receiptAfter(operationId: String): String? = conversations.operationReceipt(operationId)?.afterToken
     override suspend fun writeReceipt(operationId: String, objectKey: String, after: String) =

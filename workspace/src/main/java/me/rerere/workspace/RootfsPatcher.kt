@@ -17,6 +17,7 @@ class RootfsPatcher {
         ensureLocale(etcDir, options.locale)
         ensureGroupNames(etcDir, options.groupIds.ifEmpty { currentSupplementaryGroupIds() })
         ensureTempDirs(linuxDir)
+        WorkspaceUrlHandoff.install(linuxDir)
     }
 
     private fun ensureRootfsDns(

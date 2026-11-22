@@ -16,6 +16,8 @@ export const EVENT_FOLDERS = "folders";
 export const EVENT_WORKSPACE_UPDATE = "workspace_update";
 export const EVENT_SUBAGENT_PRESETS_UPDATE = "subagent_presets_update";
 export interface SubagentPresetsUpdateEvent { timestamp: number; }
+export const EVENT_CREATOR_PROPOSALS = "creator_proposals";
+export interface CreatorProposalsEvent { conversationId: string; }
 
 type EventListener = (data: unknown) => void;
 

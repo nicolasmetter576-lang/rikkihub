@@ -1,11 +1,14 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import android.content.Intent
 import android.os.Build
 import androidx.core.content.FileProvider
 import java.io.File
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.View
@@ -26,14 +29,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,7 +44,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -77,7 +77,6 @@ fun SettingWebPage() {
     val settingsStore: SettingsStore = koinInject()
     val settings = LocalSettings.current
     val serverState by webServerManager.state.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -146,11 +145,11 @@ fun SettingWebPage() {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.setting_page_web_server)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         floatingActionButton = {
@@ -203,10 +202,10 @@ fun SettingWebPage() {
                 },
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         LazyColumn(
+            state = rememberSettingSearchListState(),
             modifier = Modifier.fillMaxSize(),
             contentPadding = innerPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -246,6 +245,7 @@ fun SettingWebPage() {
                                 )
                             )
                         },
+                        searchKey = R.string.setting_page_web_server_port,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_page_web_server_localhost_only)) },
@@ -264,6 +264,7 @@ fun SettingWebPage() {
                                 enabled = !serverState.isRunning,
                             )
                         },
+                        searchKey = R.string.setting_page_web_server_localhost_only,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_page_web_server_https)) },
@@ -282,6 +283,7 @@ fun SettingWebPage() {
                                 enabled = !serverState.isRunning,
                             )
                         },
+                        searchKey = R.string.setting_page_web_server_https,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_page_web_server_jwt_enable)) },
@@ -299,6 +301,7 @@ fun SettingWebPage() {
                                 enabled = settings.webServerJwtEnabled || accessPasswordText.isNotBlank(),
                             )
                         },
+                        searchKey = R.string.setting_page_web_server_jwt_enable,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_page_web_server_password)) },
@@ -343,6 +346,7 @@ fun SettingWebPage() {
                                 )
                             )
                         },
+                        searchKey = R.string.setting_page_web_server_password,
                     )
                     if (serverState.isRunning) {
                         val port = serverState.port
@@ -353,6 +357,7 @@ fun SettingWebPage() {
                                 onClick = { copyUrl(lanUrl) },
                                 headlineContent = { Text(stringResource(R.string.setting_page_web_server_lan_address)) },
                                 supportingContent = { Text(lanUrl) },
+                                searchKey = R.string.setting_page_web_server_lan_address,
                             )
 
                             if (serverState.hostname != null) {
@@ -361,6 +366,7 @@ fun SettingWebPage() {
                                     onClick = { copyUrl(mdnsUrl) },
                                     headlineContent = { Text(stringResource(R.string.setting_page_web_server_mdns_address)) },
                                     supportingContent = { Text(mdnsUrl) },
+                                    searchKey = R.string.setting_page_web_server_mdns_address,
                                 )
                             }
                         }
@@ -370,6 +376,7 @@ fun SettingWebPage() {
                             onClick = { copyUrl(localUrl) },
                             headlineContent = { Text(stringResource(R.string.setting_page_web_server_local_address)) },
                             supportingContent = { Text(localUrl) },
+                            searchKey = R.string.setting_page_web_server_local_address,
                         )
                     }
                     item(
@@ -393,10 +400,12 @@ fun SettingWebPage() {
                             headlineContent = { Text(stringResource(R.string.web_tls_fingerprint)) },
                             supportingContent = { Text(fingerprint) },
                             onClick = { copyUrl(fingerprint) },
+                            searchKey = R.string.web_tls_fingerprint,
                         )
                         item(
                             headlineContent = { Text(stringResource(R.string.web_tls_trust_title)) },
                             supportingContent = { Text(stringResource(R.string.web_tls_trust_description)) },
+                            searchKey = R.string.web_tls_trust_title,
                         )
                         item(
                             headlineContent = { Text(stringResource(R.string.web_tls_export)) },
@@ -410,10 +419,12 @@ fun SettingWebPage() {
                                 }
                                 context.startActivity(Intent.createChooser(intent, null))
                             },
+                            searchKey = R.string.web_tls_export,
                         )
                         item(
                             headlineContent = { Text(stringResource(R.string.web_tls_rotate)) },
                             onClick = { rotationFingerprint = fingerprint },
+                            searchKey = R.string.web_tls_rotate,
                         )
                     }
                     if (serverState.error != null) {

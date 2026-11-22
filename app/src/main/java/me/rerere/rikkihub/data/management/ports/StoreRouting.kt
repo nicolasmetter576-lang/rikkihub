@@ -9,7 +9,7 @@ object StoreRouting {
         ManagementDomain.QUICK_MESSAGE, ManagementDomain.MODE_INJECTION,
         ManagementDomain.WORLD_BOOK, ManagementDomain.ASSISTANT,
         ManagementDomain.MODEL_AND_PROMPT_DEFAULTS -> StoreKind.SETTINGS_DATASTORE
-        ManagementDomain.SUBAGENT_PRESET, ManagementDomain.CONVERSATION -> StoreKind.MAIN_ROOM
+        ManagementDomain.SUBAGENT_PRESET, ManagementDomain.CONVERSATION, ManagementDomain.CHARACTER -> StoreKind.MAIN_ROOM
         ManagementDomain.USER_SKILL -> StoreKind.USER_FILES
     }
 

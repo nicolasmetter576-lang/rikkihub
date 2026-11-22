@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -20,11 +22,10 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -63,20 +64,19 @@ fun SettingZaizaoPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val config = settings.zaizao
     val navController = LocalNavController.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.zaizao_title)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { contentPadding ->
         LazyColumn(
+            state = rememberSettingSearchListState(),
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -91,7 +91,7 @@ fun SettingZaizaoPage(vm: SettingVM = koinViewModel()) {
             }
             item("model") {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.zaizao_config_section_model)) },
                 ) {
                     item(
@@ -124,6 +124,7 @@ fun SettingZaizaoPage(vm: SettingVM = koinViewModel()) {
                                 onUpdateReasoningLevel = { level -> vm.updateZaizao { it.copy(reasoningLevel = level) } },
                             )
                         },
+                        searchKey = R.string.zaizao_reasoning,
                     )
                     item(
                         headlineContent = {
@@ -165,7 +166,7 @@ fun SettingZaizaoPage(vm: SettingVM = koinViewModel()) {
             }
             item("context") {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.zaizao_config_section_context)) },
                 ) {
                     item(
@@ -178,12 +179,13 @@ fun SettingZaizaoPage(vm: SettingVM = koinViewModel()) {
                                 modifier = Modifier.testTag("zaizao-include-after"),
                             )
                         },
+                        searchKey = R.string.zaizao_include_after,
                     )
                 }
             }
             item("types") {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.zaizao_config_section_types)) },
                 ) {
                     item(
@@ -209,6 +211,7 @@ fun SettingZaizaoPage(vm: SettingVM = koinViewModel()) {
                                 }
                             }
                         },
+                        searchKey = R.string.zaizao_default_type,
                     )
                 }
             }
@@ -228,7 +231,7 @@ fun SettingZaizaoPage(vm: SettingVM = koinViewModel()) {
             }
             item("recent") {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.zaizao_config_section_recent)) },
                 ) {
                     if (config.recentRequirements.isEmpty()) {
@@ -258,13 +261,14 @@ fun SettingZaizaoPage(vm: SettingVM = koinViewModel()) {
             }
             item("files") {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.tuiqiao_config_section_files)) },
                 ) {
                     item(
                         onClick = { navController.navigate(Screen.SettingTuiqiao) },
                         headlineContent = { Text(stringResource(R.string.zaizao_files_shared)) },
                         trailingContent = { Icon(HugeIcons.ArrowRight01, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        searchKey = R.string.zaizao_files_shared,
                     )
                 }
             }

@@ -2,13 +2,17 @@ import * as React from "react";
 
 import {
   ArrowUp,
+  BarChart3,
   Check,
+  Eraser,
   Folder,
   FolderLock,
   FolderOpen,
+  History,
   LoaderCircle,
   MessageSquareText,
   Settings2,
+  Shrink,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -306,14 +310,22 @@ export interface ConversationSettingsMenuProps {
   conversation: ConversationDto;
   assistant: AssistantProfile | null;
   workspaceId: string | null;
-  onUpdated: (conversation: ConversationDto) => void;
+  canClearContext?: boolean;
+  onOpenCompress?: () => void;
+  onOpenContextRecords?: () => void;
+  onOpenContextUsage?: () => void;
+  onClearContext?: () => void;
 }
 
 export function ConversationSettingsMenu({
   conversation,
   assistant,
   workspaceId,
-  onUpdated,
+  canClearContext = false,
+  onOpenCompress,
+  onOpenContextRecords,
+  onOpenContextUsage,
+  onClearContext,
 }: ConversationSettingsMenuProps) {
   const { t } = useTranslation("page");
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -325,11 +337,10 @@ export function ConversationSettingsMenu({
 
   const updateConversation = React.useCallback(
     async (patch: Record<string, unknown>) => {
-      const next = await api.put<ConversationDto>(`conversations/${conversation.id}`, patch);
-      onUpdated(next);
-      return next;
+      // The acknowledgement may contain an older database tree; only SSE updates the view.
+      await api.put(`conversations/${conversation.id}`, patch);
     },
-    [conversation.id, onUpdated],
+    [conversation.id],
   );
 
   const handleSavePrompt = React.useCallback(
@@ -343,7 +354,11 @@ export function ConversationSettingsMenu({
   );
   const [scopedSaving, setScopedSaving] = React.useState(false);
 
-  if (!allowSystemPrompt && !hasWorkspace) {
+  const hasContextMenu =
+    conversation.cliSession == null &&
+    Boolean(onOpenCompress || onOpenContextRecords || onOpenContextUsage || onClearContext);
+
+  if (!allowSystemPrompt && !hasWorkspace && !hasContextMenu) {
     return null;
   }
 
@@ -420,6 +435,57 @@ export function ConversationSettingsMenu({
                 tabIndex={-1}
               />
             </DropdownMenuItem>
+          ) : null}
+
+          {hasContextMenu ? (
+            <>
+              {allowSystemPrompt || hasWorkspace ? <DropdownMenuSeparator /> : null}
+              {onOpenCompress ? (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onOpenCompress();
+                  }}
+                  data-testid="menu-compress-context"
+                >
+                  <Shrink className="size-4" />
+                  <span className="min-w-0 flex-1 truncate">{t("conversations.compress.menu")}</span>
+                </DropdownMenuItem>
+              ) : null}
+              {onOpenContextRecords ? (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onOpenContextRecords();
+                  }}
+                  data-testid="menu-context-records"
+                >
+                  <History className="size-4" />
+                  <span className="min-w-0 flex-1 truncate">{t("conversations.context_records.title")}</span>
+                </DropdownMenuItem>
+              ) : null}
+              {onOpenContextUsage ? (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onOpenContextUsage();
+                  }}
+                  data-testid="menu-context-usage"
+                >
+                  <BarChart3 className="size-4" />
+                  <span className="min-w-0 flex-1 truncate">{t("conversations.context_usage.menu")}</span>
+                </DropdownMenuItem>
+              ) : null}
+              {onClearContext ? (
+                <DropdownMenuItem
+                  disabled={!canClearContext}
+                  onSelect={() => {
+                    onClearContext();
+                  }}
+                  data-testid="menu-clear-context"
+                >
+                  <Eraser className="size-4" />
+                  <span className="min-w-0 flex-1 truncate">{t("conversations.context_records.clear_context")}</span>
+                </DropdownMenuItem>
+              ) : null}
+            </>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>

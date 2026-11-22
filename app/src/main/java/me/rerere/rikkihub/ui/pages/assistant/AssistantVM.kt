@@ -14,7 +14,6 @@ import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.Avatar
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.data.repository.MemoryRepository
-import me.rerere.rikkihub.data.repository.memoryId
 
 class AssistantVM(
     private val settingsStore: SettingsStore,
@@ -75,6 +74,4 @@ class AssistantVM(
                 ) }
         }
     }
-
-    fun getMemories(assistant: Assistant) = memoryRepository.getFilesFlow(assistant.memoryId)
 }

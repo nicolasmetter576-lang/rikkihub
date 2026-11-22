@@ -2,15 +2,14 @@ package me.rerere.ai.provider.providers.openai
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
-import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.stream.DecodeResult
 import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.provider.stream.StreamChunkDecoder
@@ -27,6 +26,7 @@ import me.rerere.ai.util.parseErrorDetail
 import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
+import java.io.IOException
 import kotlin.time.Clock
 
 /**
@@ -64,42 +64,57 @@ internal class ChatCompletionsStreamDecoder(
 
     override fun accept(event: SseEvent): DecodeResult {
         if (finished) return DecodeResult(completed = true)
-        if (event.data == "[DONE]") return DecodeResult(finish(), completed = true)
+        if (event.data.trim() == "[DONE]") return DecodeResult(finish(), completed = true)
 
-        val chunks = buildList {
-            event.data.trim().split("\n").filter(String::isNotBlank).forEach { line ->
-                // 部分 OpenAI 兼容中转会在流里夹带 `data: null` 之类的非对象行，跳过
-                val payload = json.parseToJsonElement(line).jsonObjectOrNull ?: return@forEach
-                payload["error"]?.let { throw it.parseErrorDetail() }
-                responseId = payload["id"]?.jsonPrimitive?.contentOrNull ?: responseId
-                responseModel = payload["model"]?.jsonPrimitive?.contentOrNull ?: responseModel
+        var doneSeen = false
+        val chunks = try {
+            buildList<StreamChunk> {
+                for (rawLine in event.data.trim().split("\n")) {
+                    val line = rawLine.trim()
+                    if (line.isEmpty()) continue
+                    if (line == "[DONE]") {
+                        doneSeen = true
+                        break
+                    }
+                    // 部分 OpenAI 兼容中转会在流里夹带 `data: null` 之类的非对象行，跳过
+                    val payload = json.parseToJsonElement(line).jsonObjectOrNull ?: continue
+                    payload["error"]?.takeUnless { it is JsonNull }?.let { throw it.parseErrorDetail() }
+                    responseId = payload["id"]?.jsonPrimitive?.contentOrNull ?: responseId
+                    responseModel = payload["model"]?.jsonPrimitive?.contentOrNull ?: responseModel
 
-                payload["choices"]?.jsonArrayOrNull?.firstOrNull()?.jsonObjectOrNull?.let { choice ->
-                    (choice["delta"]?.jsonObjectOrNull ?: choice["message"]?.jsonObjectOrNull)?.let { message ->
-                        val messageWithoutTools = JsonObject(message.filterKeys { it != "tool_calls" })
-                        addAll(streamState.append(parseMessage(messageWithoutTools), responseId))
+                    payload["choices"]?.jsonArrayOrNull?.firstOrNull()?.jsonObjectOrNull?.let { choice ->
+                        (choice["delta"]?.jsonObjectOrNull ?: choice["message"]?.jsonObjectOrNull)?.let { message ->
+                            val messageWithoutTools = JsonObject(message.filterKeys { it != "tool_calls" })
+                            addAll(streamState.append(parseMessage(messageWithoutTools), responseId))
 
-                        message["tool_calls"]?.jsonArrayOrNull?.let { toolCalls ->
-                            // 数组内局部位置不构成稳定调用身份：显式 index 才作
-                            // 路由依据；同包内多个无身份块按协议不可判定拒绝
-                            // （账本规则 3），绝不做旧实现的 fallbackIndex 猜测。
-                            val elements = toolCalls.mapNotNull { it.jsonObjectOrNull }
-                            val anonymousCount = elements.count { element ->
-                                element["index"]?.jsonPrimitive?.intOrNull == null &&
-                                    element["id"]?.jsonPrimitive?.contentOrNull
-                                        ?.takeUnless { it.isBlank() } == null
-                            }
-                            elements.forEach { toolCall ->
-                                addAll(routeToolCall(toolCall, anonymousCount))
+                            message["tool_calls"]?.jsonArrayOrNull?.let { toolCalls ->
+                                // 数组内局部位置不构成稳定调用身份：显式 index 才作
+                                // 路由依据；同包内多个无身份块按协议不可判定拒绝
+                                // （账本规则 3），绝不做旧实现的 fallbackIndex 猜测。
+                                val elements = toolCalls.mapNotNull { it.jsonObjectOrNull }
+                                val anonymousCount = elements.count { element ->
+                                    element["index"]?.jsonPrimitive?.intOrNull == null &&
+                                        element["id"]?.jsonPrimitive?.contentOrNull
+                                            ?.takeUnless { it.isBlank() } == null
+                                }
+                                elements.forEach { toolCall ->
+                                    addAll(routeToolCall(toolCall, anonymousCount))
+                                }
                             }
                         }
+                        choice["finish_reason"]?.jsonPrimitiveOrNull?.contentOrNull
+                            ?.takeIf { it.isNotBlank() }?.let { finishReason = it }
                     }
-                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull?.let { finishReason = it }
+                    parseChatCompletionsUsage(payload["usage"] as? JsonObject)?.let { add(StreamChunk.Usage(it)) }
                 }
-                parseUsage(payload["usage"] as? JsonObject)?.let { add(StreamChunk.Usage(it)) }
+                if (doneSeen) addAll(finish())
             }
+        } catch (e: Throwable) {
+            finished = true
+            toolLedger.markClosed()
+            throw e
         }
-        return DecodeResult(chunks)
+        return DecodeResult(chunks, completed = doneSeen)
     }
 
     override fun onClosed(): List<StreamChunk> = finish()
@@ -174,6 +189,9 @@ internal class ChatCompletionsStreamDecoder(
         if (finished) return emptyList()
         finished = true
         toolLedger.markClosed()
+        if (finishReason == null) {
+            throw IOException("ChatCompletions stream ended without a finish reason")
+        }
         return buildList {
             // 工具调用生命周期与显示分段解耦：只在逻辑 Finish 才统一收尾
             // —— 先 flush 名称尾部确认增量再发 End。resolver 的终态多候选歧义/
@@ -290,20 +308,6 @@ internal class ChatCompletionsStreamDecoder(
             }
             else -> error("unknown annotation type: $type")
         }
-    }
-
-    private fun parseUsage(usage: JsonObject?): TokenUsage? {
-        if (usage == null) return null
-        return TokenUsage(
-            promptTokens = usage["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            completionTokens = usage["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            totalTokens = usage["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = usage["prompt_tokens_details"]?.jsonObjectOrNull
-                ?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: usage["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: usage["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
-                ?: 0,
-        )
     }
 
     /**

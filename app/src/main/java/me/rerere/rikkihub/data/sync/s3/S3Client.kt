@@ -21,6 +21,7 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.File
 import java.io.InputStream
 import java.io.StringReader
+import java.net.URLEncoder
 import java.security.MessageDigest
 import java.time.Instant
 import kotlin.time.Duration
@@ -57,7 +58,7 @@ class S3Client(
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
                 Log.e(TAG, "putObject failed: ${response.status} - $errorBody")
-                throw S3Exception("Failed to put object: ${response.status}", errorBody)
+                throw S3Exception("Failed to put object: ${response.status}", errorBody, response.status.value)
             }
 
             Log.d(TAG, "putObject success: $key")
@@ -94,7 +95,7 @@ class S3Client(
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
                 Log.e(TAG, "putObject(file) failed: ${response.status} - $errorBody")
-                throw S3Exception("Failed to put object: ${response.status}", errorBody)
+                throw S3Exception("Failed to put object: ${response.status}", errorBody, response.status.value)
             }
 
             Log.d(TAG, "putObject(file) success: $key (${file.length()} bytes)")
@@ -121,7 +122,7 @@ class S3Client(
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
                 Log.e(TAG, "getObject failed: ${response.status} - $errorBody")
-                throw S3Exception("Failed to get object: ${response.status}", errorBody)
+                throw S3Exception("Failed to get object: ${response.status}", errorBody, response.status.value)
             }
 
             val channel = response.bodyAsChannel()
@@ -148,7 +149,7 @@ class S3Client(
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
                 Log.e(TAG, "getObjectStream failed: ${response.status} - $errorBody")
-                throw S3Exception("Failed to get object stream: ${response.status}", errorBody)
+                throw S3Exception("Failed to get object stream: ${response.status}", errorBody, response.status.value)
             }
 
             response.bodyAsChannel().toInputStream()
@@ -175,7 +176,7 @@ class S3Client(
                 if (!response.status.isSuccess()) {
                     val errorBody = response.bodyAsText()
                     Log.e(TAG, "downloadObjectToFile failed: ${response.status} - $errorBody")
-                    throw S3Exception("Failed to download object: ${response.status}", errorBody)
+                    throw S3Exception("Failed to download object: ${response.status}", errorBody, response.status.value)
                 }
 
                 response.bodyAsChannel().toInputStream().use { input ->
@@ -208,10 +209,51 @@ class S3Client(
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
                 Log.e(TAG, "deleteObject failed: ${response.status} - $errorBody")
-                throw S3Exception("Failed to delete object: ${response.status}", errorBody)
+                throw S3Exception("Failed to delete object: ${response.status}", errorBody, response.status.value)
             }
 
             Log.d(TAG, "deleteObject success: $key")
+            Unit
+        }
+    }
+
+    suspend fun copyObject(sourceKey: String, destinationKey: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedSource = sourceKey.trimStart('/').split("/").joinToString("/") { segment ->
+                URLEncoder.encode(segment, "UTF-8")
+                    .replace("+", "%20")
+                    .replace("*", "%2A")
+                    .replace("%7E", "~")
+            }
+            val copySource = "/${config.bucket}/$encodedSource"
+            val path = "/${destinationKey.trimStart('/')}"
+            val emptyPayload = ByteArray(0)
+            val signed = AwsSignatureV4.sign(
+                config = config,
+                method = "PUT",
+                path = path,
+                headers = mapOf("x-amz-copy-source" to copySource),
+                payload = emptyPayload,
+            )
+
+            val response: HttpResponse = httpClient.request(signed.url) {
+                method = HttpMethod.Put
+                headers {
+                    signed.headers.forEach { (k, v) -> append(k, v) }
+                }
+                setBody(emptyPayload)
+            }
+
+            val body = response.bodyAsText()
+            if (!response.status.isSuccess() ||
+                body.contains("<Error", ignoreCase = true) ||
+                (!body.contains("CopyObjectResult", ignoreCase = true) && !body.contains("ETag>", ignoreCase = true))
+            ) {
+                Log.e(TAG, "copyObject failed: ${response.status} - $body")
+                throw S3Exception("Failed to copy object: ${response.status}", body, response.status.value)
+            }
+
+            Log.d(TAG, "copyObject success: $sourceKey -> $destinationKey")
             Unit
         }
     }
@@ -233,7 +275,7 @@ class S3Client(
             }
 
             if (!response.status.isSuccess()) {
-                throw S3Exception("Object not found: ${response.status}", "")
+                throw S3Exception("Object not found: ${response.status}", "", response.status.value)
             }
 
             S3ObjectMetadata(
@@ -278,7 +320,7 @@ class S3Client(
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
                 Log.e(TAG, "listObjects failed: ${response.status} - $errorBody")
-                throw S3Exception("Failed to list objects: ${response.status}", errorBody)
+                throw S3Exception("Failed to list objects: ${response.status}", errorBody, response.status.value)
             }
 
             val xmlBody = response.bodyAsText()
@@ -462,4 +504,5 @@ data class S3ListResult(
 class S3Exception(
     message: String,
     val responseBody: String,
+    val statusCode: Int? = null,
 ) : Exception(message)

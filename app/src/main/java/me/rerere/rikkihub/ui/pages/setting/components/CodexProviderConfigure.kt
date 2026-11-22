@@ -50,11 +50,13 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun CodexProviderConfigure(
     provider: ProviderSetting.Codex,
     onEdit: (ProviderSetting.Codex) -> Unit,
+    onModelsRefreshed: (List<Model>) -> Unit,
 ) {
     val repository = koinInject<CodexAccountRepository>()
     val oauthManager = koinInject<CodexOAuthManager>()
@@ -72,7 +74,7 @@ fun CodexProviderConfigure(
                 runCatching {
                     providerManager.getProviderByType(provider).listModels(provider)
                 }.onSuccess { models ->
-                    onEdit(provider.copy(models = mergeCodexModels(provider.models, models)))
+                    onModelsRefreshed(models)
                 }
                 toaster.show(
                     context.getString(R.string.codex_oauth_success),
@@ -94,7 +96,7 @@ fun CodexProviderConfigure(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(AppSpacing.sm),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         CustomHeaders(provider.customHeaders) { onEdit(provider.copy(customHeaders = it)) }
@@ -112,6 +114,7 @@ fun CodexProviderConfigure(
         Button(
             onClick = oauthManager::startLogin,
             modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text(stringResource(R.string.codex_sign_in))
         }
@@ -159,6 +162,7 @@ fun CodexProviderConfigure(
                     }
                 },
                 enabled = accounts.isNotEmpty(),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(R.string.codex_check_status))
             }
@@ -173,7 +177,7 @@ fun CodexProviderConfigure(
             ) {
                 Text(
                     text = stringResource(R.string.codex_no_accounts),
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(AppSpacing.sm),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -210,21 +214,6 @@ fun CodexProviderConfigure(
             }
         }
     }
-}
-
-internal fun mergeCodexModels(existing: List<Model>, refreshed: List<Model>): List<Model> {
-    val refreshedByModelId = refreshed.associateBy(Model::modelId)
-    val merged = existing.map { model ->
-        refreshedByModelId[model.modelId]?.let { refreshedModel ->
-            model.copy(
-                inputModalities = refreshedModel.inputModalities,
-                outputModalities = refreshedModel.outputModalities,
-                abilities = refreshedModel.abilities,
-            )
-        } ?: model
-    }
-    val existingModelIds = existing.mapTo(mutableSetOf(), Model::modelId)
-    return merged + refreshed.filterNot { it.modelId in existingModelIds }
 }
 
 @Composable
@@ -270,7 +259,7 @@ private fun CodexAccountCard(
         ),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(

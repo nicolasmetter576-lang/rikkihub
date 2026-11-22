@@ -50,7 +50,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
+import android.net.Uri
+import android.webkit.MimeTypeMap
+import android.webkit.WebResourceResponse
+import kotlinx.coroutines.runBlocking
+import java.io.ByteArrayInputStream
 import java.io.File
+import androidx.compose.ui.platform.testTag
+import me.rerere.hugeicons.stroke.BookOpen01
+import me.rerere.workspace.WorkspaceManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -71,7 +79,14 @@ import me.rerere.rikkihub.ui.context.LocalToaster
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.workspace.WorkspaceFileRevisionConflictException
 import me.rerere.workspace.WorkspaceStorageArea
+import me.rerere.workspace.WorkspaceTextSnapshot
+import me.rerere.workspace.WorkspaceTextWriteResult
 import org.koin.compose.koinInject
+import me.rerere.rikkihub.data.ai.UsageRecorder
+import me.rerere.ai.provider.ProviderManager
+import me.rerere.rikkihub.data.ai.tavern.TavernRuntime
+import me.rerere.rikkihub.data.ai.qubagu.QubaguRefiner
+import me.rerere.rikkihub.data.ai.qubagu.Qubagu
 
 /**
  * The editor page: the file being written, and a reference side the user swipes to (or opens with the
@@ -96,7 +111,7 @@ fun WorkspaceFileEditorPage(id: String, area: WorkspaceStorageArea, path: String
         onShowSecondChange = { showReference = it },
         first = { active ->
             WorkspaceFileEditorPane(
-                id, area, path, WorkspaceEditorPaneRole.MAIN, active,
+                rememberWorkspaceEditorDocument(id, area, path), WorkspaceEditorPaneRole.MAIN, active,
                 onExit = { nav.popBackStack() },
                 onSwitch = { showReference = true },
                 // Unsaved reference edits keep the page open: that side asks first.
@@ -126,7 +141,7 @@ fun WorkspaceFileEditorPage(id: String, area: WorkspaceStorageArea, path: String
                 )
             } else {
                 WorkspaceFileEditorPane(
-                    id, reference.first, reference.second, WorkspaceEditorPaneRole.REFERENCE, active,
+                    rememberWorkspaceEditorDocument(id, reference.first, reference.second), WorkspaceEditorPaneRole.REFERENCE, active,
                     onExit = { referenceTarget = null },
                     onSwitch = { showReference = false },
                     handle = referenceHandle,
@@ -137,6 +152,55 @@ fun WorkspaceFileEditorPage(id: String, area: WorkspaceStorageArea, path: String
 }
 
 internal enum class WorkspaceEditorPaneRole { MAIN, REFERENCE }
+
+/** The text file an editor pane shows: where it is read from and saved to. */
+internal class WorkspaceEditorDocument(
+    /** Unique per file: keys the pane's drafts and view models. */
+    val key: String,
+    val fileName: String,
+    /** Shown in the status bar. */
+    val displayPath: String,
+    val editable: Boolean,
+    val read: suspend () -> WorkspaceTextSnapshot,
+    val write: suspend (text: String, expectedRevision: String) -> WorkspaceTextWriteResult,
+    /** Where an HTML preview reads its relative URLs from; null = the page stands alone. */
+    val webResources: WorkspaceWebResources? = null,
+    /** Opens the paged reading mode on this file (workspace Markdown / text files); null = not offered. */
+    val openReader: (() -> Unit)? = null,
+)
+
+/** Relative URLs (stylesheets, scripts, images) of an HTML/SVG preview, served from local files. */
+internal class WorkspaceWebResources(
+    /** URL path of the previewed file, e.g. `/workspace/site/index.html`; its folder is the base. */
+    val filePath: String,
+    /** File for a requested URL path, or null when it is missing or outside what this preview may read. */
+    val resolve: suspend (urlPath: String) -> File?,
+)
+
+@Composable
+private fun rememberWorkspaceEditorDocument(id: String, area: WorkspaceStorageArea, path: String): WorkspaceEditorDocument {
+    val repository = koinInject<WorkspaceRepository>()
+    val nav = LocalNavController.current
+    return remember(id, area, path) {
+        WorkspaceEditorDocument(
+            key = "$id\u0000$area\u0000$path",
+            fileName = path.substringAfterLast('/').ifBlank { path },
+            displayPath = workspaceGuestPath(area, path),
+            editable = area == WorkspaceStorageArea.FILES,
+            read = { repository.readTextSnapshotForPreview(id, area, path) },
+            write = { text, revision -> repository.writeTextWithRevision(id, path, text, revision) },
+            webResources = workspaceGuestPath(area, path).let { guestPath ->
+                // A FILES page may use anything in the files area; a rootfs page only its own folder tree.
+                val readable = if (area == WorkspaceStorageArea.FILES) "${WorkspaceManager.ROOTFS_WORKSPACE_DIR}/"
+                else guestPath.substringBeforeLast('/') + "/"
+                WorkspaceWebResources(guestPath) { urlPath ->
+                    if (urlPath.startsWith(readable)) repository.resolveRootfsFile(id, urlPath) else null
+                }
+            },
+            openReader = { nav.navigate(Screen.WorkspaceReader(id, area.name, path)) }.takeIf { isReadableName(path) },
+        )
+    }
+}
 
 /** What the page needs from the reference editor before leaving: whether it still holds unsaved text, and its leave flow. */
 internal class WorkspaceEditorPaneHandle {
@@ -151,24 +215,25 @@ internal class WorkspaceEditorPaneHandle {
  *
  * One side of [WorkspaceFileEditorPage]. [active] = the side on screen: it owns the back key, and the
  * side that slides away saves at once. [onExit] runs once the file can be left (saved, or discarded):
- * MAIN leaves the page, REFERENCE goes back to the file list. [onSwitch] slides to the other side.
+ * MAIN leaves the page, REFERENCE goes back to the file list. [onSwitch] slides to the other side
+ * (null: there is no other side, as in the file manager).
  */
 @Composable
 internal fun WorkspaceFileEditorPane(
-    id: String,
-    area: WorkspaceStorageArea,
-    path: String,
+    document: WorkspaceEditorDocument,
     role: WorkspaceEditorPaneRole,
     active: Boolean,
     onExit: () -> Unit,
-    onSwitch: () -> Unit,
+    onSwitch: (() -> Unit)?,
     beforeLeave: () -> Boolean = { true },
     handle: WorkspaceEditorPaneHandle? = null,
 ) {
-    val repository = koinInject<WorkspaceRepository>()
     val tuiqiaoCache = koinInject<WorkspaceTuiqiaoCache>()
     val zaizaoCache = koinInject<WorkspaceZaizaoCache>()
     val settingsStore = koinInject<SettingsStore>()
+    val tavernRuntime = koinInject<TavernRuntime>()
+    val providerManager = koinInject<ProviderManager>()
+    val usageRecorder = koinInject<UsageRecorder>()
     val toaster = LocalToaster.current
     val nav = LocalNavController.current
     val scope = rememberCoroutineScope()
@@ -177,11 +242,12 @@ internal fun WorkspaceFileEditorPane(
         WorkspaceEditorDraftStore(File(context.noBackupFilesDir, "workspace_editor_drafts"),
             onError = { Log.w(DRAFT_LOG_TAG, "workspace editor draft io failure", it) })
     }
-    val editable = area == WorkspaceStorageArea.FILES
-    val fileName = path.substringAfterLast('/').ifBlank { path }
+    val editable = document.editable
+    val fileName = document.fileName
     val previewKind = workspaceFilePreviewKind(fileName)
-    var showPreview by rememberSaveable(id, area, path) { mutableStateOf(false) }
-    val fileKey = "$id\u0000$area\u0000$path"
+    val fileKey = document.key
+    // HTML/SVG open as the rendered page; the source is one tap away.
+    var showPreview by rememberSaveable(fileKey) { mutableStateOf(previewKind == WorkspaceFilePreviewKind.WEB) }
     val draftVm: WorkspaceEditorDraftViewModel = viewModel(key = "workspace-editor:$fileKey") {
         WorkspaceEditorDraftViewModel()
     }.also { it.draftStore = draftStore }
@@ -267,6 +333,55 @@ internal fun WorkspaceFileEditorPane(
             else -> toaster.show(tuiqiaoEmptyMessage, type = ToastType.Info)
         }
     }
+    // 八股 marks need what autosave needs too: applying a suggestion edits the file.
+    val canQubagu = editable && workspaceFormatKind(fileName) != null && !loading && !loadError && validBaseline && draftVm.autoSavePause == null
+    val qubaguVm: WorkspaceQubaguViewModel = viewModel(key = "workspace-qubagu:$fileKey") {
+        val engine = Qubagu(tavernRuntime.regexFactory)
+        WorkspaceQubaguViewModel(engine, QubaguRefiner(engine, providerManager, usageRecorder), settingsStore)
+    }
+    LaunchedEffect(canQubagu, showPreview) {
+        if ((!canQubagu || showPreview) && qubaguVm.active) qubaguVm.stop()
+    }
+    val qubaguMessages = mapOf(
+        WorkspaceQubaguScan.NO_RULES to stringResource(R.string.qubagu_scan_no_rules),
+        WorkspaceQubaguScan.NOTHING_FOUND to stringResource(R.string.qubagu_test_none),
+        WorkspaceQubaguScan.TOO_LARGE to stringResource(R.string.qubagu_scan_too_large, WorkspaceQubaguViewModel.MAX_CHARS),
+    )
+    val qubaguChangedMessage = stringResource(R.string.qubagu_scan_changed)
+    val qubagu = if (!canQubagu) null else WorkspaceEditorQubagu(
+        active = qubaguVm.active,
+        scanning = qubaguVm.scanning,
+        marks = qubaguVm.marks?.marks.orEmpty(),
+        onToggle = {
+            if (qubaguVm.active) qubaguVm.stop()
+            else qubaguVm.start(textState.text.toString()) { result -> qubaguMessages[result]?.let { toaster.show(it, type = ToastType.Info) } }
+        },
+        onOpen = qubaguVm::open,
+    )
+    // Anything else that changes the text under the marks (Revert, a restored draft) closes them.
+    LaunchedEffect(qubaguVm) {
+        snapshotFlow { textState.text to qubaguVm.marks }.collect { (text, marks) ->
+            if (marks != null && !marks.matches(text)) {
+                qubaguVm.stop()
+                toaster.show(qubaguChangedMessage, type = ToastType.Info)
+            }
+        }
+    }
+    /** Applies one mark's replacement to the text (one undoable, autosaved edit) if the marks still match the text. */
+    fun applyQubagu(change: Pair<WorkspaceQubaguEdit, WorkspaceQubaguMarks>) {
+        val marks = qubaguVm.marks ?: return
+        if (!marks.matches(textState.text)) {
+            qubaguVm.stop()
+            toaster.show(qubaguChangedMessage, type = ToastType.Error)
+            return
+        }
+        val (edit, next) = change
+        textState.edit {
+            replace(edit.start, edit.end, edit.text)
+            selection = TextRange(edit.start + edit.text.length)
+        }
+        qubaguVm.update(next)
+    }
     val clipboard = LocalClipboard.current
     fun copyTuiqiao(candidate: TuiqiaoCandidate) {
         scope.launch {
@@ -328,7 +443,7 @@ internal fun WorkspaceFileEditorPane(
         saving = true
         scope.launch {
             try {
-                val result = repository.writeTextWithRevision(id, path, frozenText, expectedRevision)
+                val result = document.write(frozenText, expectedRevision)
                 // Update ONLY the submitted snapshot baseline. Later keystrokes remain dirty.
                 draftVm.originalText = frozenText
                 draftVm.baselineRevision = result.revision
@@ -371,7 +486,7 @@ internal fun WorkspaceFileEditorPane(
         }
     }
     // The reference side's back key slides home; leaving it (for the file list) is its folder button.
-    BackHandler(enabled = active) { if (role == WorkspaceEditorPaneRole.MAIN) requestLeave() else onSwitch() }
+    BackHandler(enabled = active) { if (role == WorkspaceEditorPaneRole.MAIN) requestLeave() else onSwitch?.invoke() }
     // The side that slides away writes its text at once instead of after the usual pause.
     LaunchedEffect(active) { if (!active) latestSave(false, true) }
     if (handle != null) {
@@ -395,7 +510,7 @@ internal fun WorkspaceFileEditorPane(
         loading = true
         loadError = false
         try {
-            val snapshot = repository.readTextSnapshotForPreview(id, area, path)
+            val snapshot = document.read()
             textState.setTextAndPlaceCursorAtEnd(snapshot.content)
             textState.undoState.clearHistory() // disk load is not an undoable source command
             draftVm.originalText = snapshot.content
@@ -467,24 +582,64 @@ internal fun WorkspaceFileEditorPane(
             onDismiss = zaizaoVm::close,
         )
     }
+    val qubaguOpened = qubaguVm.opened
+    val qubaguMark = qubaguOpened?.let { qubaguVm.marks?.marks?.getOrNull(it) }
+    if (qubaguOpened != null && qubaguMark != null) {
+        WorkspaceQubaguSheet(
+            mark = qubaguMark,
+            config = LocalSettings.current.qubagu,
+            ai = qubaguVm.ai[qubaguMark.annotation],
+            onIgnore = { qubaguVm.ignore(qubaguOpened) },
+            onUndo = { qubaguVm.marks?.let { applyQubagu(it.undo(qubaguOpened)) } },
+            onApply = { text ->
+                qubaguVm.marks?.let { applyQubagu(it.apply(qubaguOpened, text)) }
+                qubaguVm.dismiss()
+            },
+            onRequestAi = { qubaguVm.requestAi(qubaguOpened, textState.text.toString()) },
+            onDismiss = qubaguVm::dismiss,
+        )
+    }
     var typographyOpen by remember { mutableStateOf(false) }
     if (typographyOpen) WorkspaceEditorTypographySheet(onDismiss = { typographyOpen = false })
+    // The reader reads the file from disk: unsaved edits are saved first, then it opens.
+    var readerAfterSave by remember { mutableStateOf(false) }
+    LaunchedEffect(readerAfterSave, saving) {
+        if (readerAfterSave && !saving) {
+            readerAfterSave = false
+            if (!(editable && isDirty())) document.openReader?.invoke()
+        }
+    }
     Scaffold(
         topBar = {
             WorkspaceEditorTopBar(
                 navigation = {
                     if (role == WorkspaceEditorPaneRole.MAIN) TextButton(onClick = ::requestLeave) { Text(stringResource(R.string.back)) }
-                    else IconButton(onClick = onSwitch) {
+                    else IconButton(onClick = { onSwitch?.invoke() }) {
                         Icon(HugeIcons.ArrowLeft01, contentDescription = stringResource(R.string.workspace_reference_back))
                     }
                 },
                 actions = {
-                    if (role == WorkspaceEditorPaneRole.MAIN) IconButton(onClick = onSwitch) {
-                        Icon(HugeIcons.Layout2Column, contentDescription = stringResource(R.string.workspace_reference_open))
+                    if (role == WorkspaceEditorPaneRole.MAIN) {
+                        if (onSwitch != null) IconButton(onClick = onSwitch) {
+                            Icon(HugeIcons.Layout2Column, contentDescription = stringResource(R.string.workspace_reference_open))
+                        }
                     } else IconButton(onClick = ::requestLeave) {
                         Icon(HugeIcons.FolderOpen, contentDescription = stringResource(R.string.workspace_reference_files))
                     }
                     if (!loading && !loadError) {
+                        document.openReader?.let { openReader ->
+                            IconButton(
+                                onClick = {
+                                    if (editable && isDirty()) {
+                                        save()
+                                        readerAfterSave = true
+                                    } else openReader()
+                                },
+                                modifier = Modifier.testTag("workspace_editor_reader"),
+                            ) {
+                                Icon(HugeIcons.BookOpen01, contentDescription = stringResource(R.string.workspace_reader_open))
+                            }
+                        }
                         IconButton(onClick = { typographyOpen = true }) {
                             Icon(HugeIcons.TextFont, contentDescription = stringResource(R.string.editor_typography_title))
                         }
@@ -551,17 +706,18 @@ internal fun WorkspaceFileEditorPane(
                         WorkspaceMarkdownPreview(textState.text.toString(), Modifier.weight(1f), onTuiqiao = onTuiqiao, onZaizao = onZaizao)
                         if (display.workspaceEditorToolbarAtBottom) undoRedo()
                     } else if (webPreview) {
-                        WorkspaceWebPreview(textState.text.toString(), fileName.substringAfterLast('.', "").lowercase() == "svg", Modifier.weight(1f))
+                        WorkspaceWebPreview(textState.text.toString(), fileName.substringAfterLast('.', "").lowercase() == "svg",
+                            document.webResources, Modifier.weight(1f))
                     } else {
                         WorkspaceMarkdownEditor(textState, previewKind == WorkspaceFilePreviewKind.MARKDOWN,
                             Modifier.weight(1f), readOnly = !editable || !validBaseline, formatKind = workspaceFormatKind(fileName),
-                            onTuiqiao = onTuiqiao, onZaizao = onZaizao, active = active)
+                            onTuiqiao = onTuiqiao, onZaizao = onZaizao, active = active, qubagu = qubagu)
                     }
                 }
             }
             WorkspaceEditorStatusBar(
                 fileName = fileName,
-                path = workspaceGuestPath(area, path),
+                path = document.displayPath,
                 state = textState.takeIf { !loading && !loadError && !webPreview },
                 withSelection = !showPreview,
             )
@@ -627,10 +783,15 @@ internal class WorkspaceEditorDraftViewModel : ViewModel() {
 
 private const val DRAFT_LOG_TAG = "WorkspaceFileEditor"
 
+private const val WEB_PREVIEW_HOST = "workspace-preview.invalid"
+
 @Composable
-private fun WorkspaceWebPreview(content: String, isSvg: Boolean, modifier: Modifier = Modifier) {
-    val state = rememberWebViewState(data = content, baseUrl = "https://workspace-preview.invalid/",
-        mimeType = if (isSvg) "image/svg+xml" else "text/html", settings = {
+private fun WorkspaceWebPreview(content: String, isSvg: Boolean, resources: WorkspaceWebResources?, modifier: Modifier = Modifier) {
+    val basePath = resources?.filePath?.split('/')?.joinToString("/") { Uri.encode(it) } ?: "/"
+    val state = rememberWebViewState(data = content, baseUrl = "https://$WEB_PREVIEW_HOST$basePath",
+        mimeType = if (isSvg) "image/svg+xml" else "text/html",
+        interceptRequest = resources?.let { { uri -> serveWorkspaceWebResource(uri, it) } },
+        settings = {
             allowFileAccess = false
             allowContentAccess = false
             builtInZoomControls = true
@@ -639,4 +800,16 @@ private fun WorkspaceWebPreview(content: String, isSvg: Boolean, modifier: Modif
             loadWithOverviewMode = true
         })
     WebView(state = state, modifier = modifier)
+}
+
+/** Runs on a WebView IO thread. Requests to the preview host never reach the network: a miss is a 404. */
+private fun serveWorkspaceWebResource(uri: Uri, resources: WorkspaceWebResources): WebResourceResponse? {
+    if (!uri.host.equals(WEB_PREVIEW_HOST, ignoreCase = true)) return null
+    val file = uri.path?.let { path -> runCatching { runBlocking { resources.resolve(path) } }.getOrNull() }
+        ?: return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+    val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase())
+        ?: if (file.extension.equals("js", ignoreCase = true) || file.extension.equals("mjs", ignoreCase = true)) "text/javascript"
+        else "application/octet-stream"
+    val textual = mimeType.startsWith("text/") || mimeType.endsWith("json") || mimeType.endsWith("xml") || mimeType.endsWith("javascript")
+    return WebResourceResponse(mimeType, if (textual) "utf-8" else null, file.inputStream())
 }

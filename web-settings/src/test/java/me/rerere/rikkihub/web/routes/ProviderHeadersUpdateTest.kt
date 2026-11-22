@@ -113,7 +113,7 @@ class ProviderHeadersUpdateTest {
         val failure = runCatching {
             mergeProvider(
                 ProviderSetting.OpenAI(),
-                ProviderUpdateDraft(ProviderSetting.Google(), null, null, null, null),
+                ProviderUpdateDraft(ProviderSetting.Google(), null, null, null, null, null),
             )
         }.exceptionOrNull()
         assertTrue(failure is BadRequestException)

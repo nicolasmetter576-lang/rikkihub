@@ -1,0 +1,1632 @@
+{
+  "type": "rikkihub.qubagu.rules",
+  "version": 1,
+  "packs": [
+    {
+      "id": "sentence",
+      "name": "句式套路",
+      "description": "绕弯否定（不是……而是……）、结尾套话（夜还很长、一切才刚刚开始）",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "finale_sentence",
+          "name": "结尾套话（独立成句：删掉）",
+          "sample": "……他转身离开。夜还很长。",
+          "find": "/(?<=\\S[\\s\\S]*)(?<=[。.！？!?…”」』\"\\n])\\s*(?:(?:而|但|毕竟|只是|不过|然而|或许|也许)[，,]?\\s*|(?:because|for|as|and|but|after all),?\\s+)?(?:(?:(?:这|属于[^，。\\n]{1,8}的|他们的|她们的|今晚的|真正的)?(?:一切|故事|好戏|游戏|夜晚|旅程|冒险|较量|日子|生活)[，,]?(?:都)?才(?:刚刚|刚)(?:开始|开场|开幕|拉开序幕|拉开帷幕)(?:而已)?)|(?:(?:夜|夜色|长夜|今夜|这一夜|今晚)[，,]?还(?:很|太)?(?:长|漫长)(?:着呢)?)|(?:(?:未来|前路|以后的路|往后的日子|日子)[，,]?还(?:很)?长(?:着呢)?)|(?:(?:现在|接下来|而现在)?[，,]?(?:决定权|选择权|主动权)[，,]?(?:就|已经|已|全)?(?:在|交到了?|交给了?|握在|落在|回到了?)你(?:的)?(?:手里|手中|手上|这边)?了?)|(?:(?:球|皮球)[，,]?(?:已经|现在)?(?:在|踢到了?|传到了?|回到了?)你(?:的)?(?:脚下|这边|这里)了?)|(?:(?:至于)?(?:这|那)[，,]?(?:就|便|又|已经)?是(?:另一个|另外一个|后来的|以后的)故事了)|(?:(?:答案|结局|这一切)?[，,]?(?:只有|唯有|或许只有)时间(?:才)?(?:能|会|可以)(?:给出|告诉|证明|揭晓)(?:答案|一切|你)?了?)|(?:(?:那么|接下来|现在)[，,]\\s*(?:你|该你了[，,]\\s*你)(?:会|要|想|打算|准备)?(?:怎么|如何)(?:做|选|选择|回应|回答|应对)呢?)|(?:the ball (?:is|was) (?:now )?in (?:your|his|her|their) court)|(?:the (?:choice|decision) (?:is|was) (?:entirely |all )?(?:yours|his|hers|theirs))|(?:the night (?:is|was) still young)|(?:(?:it|this|everything) (?:is|was) (?:only )?just (?:the )?beginning)|(?:only time (?:will|would|could) tell))[。.！？!?…~～]*$/i",
+          "regex": true,
+          "replacements": [],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": true,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "finale_clause_mark",
+          "name": "结尾套话（逗号后：删到句末）",
+          "sample": "……他关上门，这一切才刚刚开始。",
+          "find": "/[，,]\\s*(?:(?:而|但|毕竟|只是|不过|然而|或许|也许)[，,]?\\s*|(?:because|for|as|and|but|after all),?\\s+)?(?:(?:(?:这|属于[^，。\\n]{1,8}的|他们的|她们的|今晚的|真正的)?(?:一切|故事|好戏|游戏|夜晚|旅程|冒险|较量|日子|生活)[，,]?(?:都)?才(?:刚刚|刚)(?:开始|开场|开幕|拉开序幕|拉开帷幕)(?:而已)?)|(?:(?:夜|夜色|长夜|今夜|这一夜|今晚)[，,]?还(?:很|太)?(?:长|漫长)(?:着呢)?)|(?:(?:未来|前路|以后的路|往后的日子|日子)[，,]?还(?:很)?长(?:着呢)?)|(?:(?:现在|接下来|而现在)?[，,]?(?:决定权|选择权|主动权)[，,]?(?:就|已经|已|全)?(?:在|交到了?|交给了?|握在|落在|回到了?)你(?:的)?(?:手里|手中|手上|这边)?了?)|(?:(?:球|皮球)[，,]?(?:已经|现在)?(?:在|踢到了?|传到了?|回到了?)你(?:的)?(?:脚下|这边|这里)了?)|(?:(?:至于)?(?:这|那)[，,]?(?:就|便|又|已经)?是(?:另一个|另外一个|后来的|以后的)故事了)|(?:(?:答案|结局|这一切)?[，,]?(?:只有|唯有|或许只有)时间(?:才)?(?:能|会|可以)(?:给出|告诉|证明|揭晓)(?:答案|一切|你)?了?)|(?:(?:那么|接下来|现在)[，,]\\s*(?:你|该你了[，,]\\s*你)(?:会|要|想|打算|准备)?(?:怎么|如何)(?:做|选|选择|回应|回答|应对)呢?)|(?:the ball (?:is|was) (?:now )?in (?:your|his|her|their) court)|(?:the (?:choice|decision) (?:is|was) (?:entirely |all )?(?:yours|his|hers|theirs))|(?:the night (?:is|was) still young)|(?:(?:it|this|everything) (?:is|was) (?:only )?just (?:the )?beginning)|(?:only time (?:will|would|could) tell))([。.！!…][。.！？!?…~～]*)$/i",
+          "regex": true,
+          "replacements": [
+            "$1"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": true,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "finale_clause_zh",
+          "name": "结尾套话（逗号后，补句号）",
+          "sample": "……他转身离开，夜还很长",
+          "find": "/[，,]\\s*(?:(?:而|但|毕竟|只是|不过|然而|或许|也许)[，,]?\\s*)?(?:(?:(?:这|属于[^，。\\n]{1,8}的|他们的|她们的|今晚的|真正的)?(?:一切|故事|好戏|游戏|夜晚|旅程|冒险|较量|日子|生活)[，,]?(?:都)?才(?:刚刚|刚)(?:开始|开场|开幕|拉开序幕|拉开帷幕)(?:而已)?)|(?:(?:夜|夜色|长夜|今夜|这一夜|今晚)[，,]?还(?:很|太)?(?:长|漫长)(?:着呢)?)|(?:(?:未来|前路|以后的路|往后的日子|日子)[，,]?还(?:很)?长(?:着呢)?)|(?:(?:现在|接下来|而现在)?[，,]?(?:决定权|选择权|主动权)[，,]?(?:就|已经|已|全)?(?:在|交到了?|交给了?|握在|落在|回到了?)你(?:的)?(?:手里|手中|手上|这边)?了?)|(?:(?:球|皮球)[，,]?(?:已经|现在)?(?:在|踢到了?|传到了?|回到了?)你(?:的)?(?:脚下|这边|这里)了?)|(?:(?:至于)?(?:这|那)[，,]?(?:就|便|又|已经)?是(?:另一个|另外一个|后来的|以后的)故事了)|(?:(?:答案|结局|这一切)?[，,]?(?:只有|唯有|或许只有)时间(?:才)?(?:能|会|可以)(?:给出|告诉|证明|揭晓)(?:答案|一切|你)?了?)|(?:(?:那么|接下来|现在)[，,]\\s*(?:你|该你了[，,]\\s*你)(?:会|要|想|打算|准备)?(?:怎么|如何)(?:做|选|选择|回应|回答|应对)呢?))(?:[？?~～][。.！？!?…~～]*)?$/i",
+          "regex": true,
+          "replacements": [
+            "。"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": true,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "finale_clause_en",
+          "name": "结尾套话（英文，逗号后，补句号）",
+          "sample": "She left the room, the night was still young",
+          "find": "/[，,]\\s*(?:(?:而|但|毕竟|只是|不过|然而|或许|也许)[，,]?\\s*|(?:because|for|as|and|but|after all),?\\s+)?(?:(?:(?:这|属于[^，。\\n]{1,8}的|他们的|她们的|今晚的|真正的)?(?:一切|故事|好戏|游戏|夜晚|旅程|冒险|较量|日子|生活)[，,]?(?:都)?才(?:刚刚|刚)(?:开始|开场|开幕|拉开序幕|拉开帷幕)(?:而已)?)|(?:(?:夜|夜色|长夜|今夜|这一夜|今晚)[，,]?还(?:很|太)?(?:长|漫长)(?:着呢)?)|(?:(?:未来|前路|以后的路|往后的日子|日子)[，,]?还(?:很)?长(?:着呢)?)|(?:(?:现在|接下来|而现在)?[，,]?(?:决定权|选择权|主动权)[，,]?(?:就|已经|已|全)?(?:在|交到了?|交给了?|握在|落在|回到了?)你(?:的)?(?:手里|手中|手上|这边)?了?)|(?:(?:球|皮球)[，,]?(?:已经|现在)?(?:在|踢到了?|传到了?|回到了?)你(?:的)?(?:脚下|这边|这里)了?)|(?:(?:至于)?(?:这|那)[，,]?(?:就|便|又|已经)?是(?:另一个|另外一个|后来的|以后的)故事了)|(?:(?:答案|结局|这一切)?[，,]?(?:只有|唯有|或许只有)时间(?:才)?(?:能|会|可以)(?:给出|告诉|证明|揭晓)(?:答案|一切|你)?了?)|(?:(?:那么|接下来|现在)[，,]\\s*(?:你|该你了[，,]\\s*你)(?:会|要|想|打算|准备)?(?:怎么|如何)(?:做|选|选择|回应|回答|应对)呢?)|(?:the ball (?:is|was) (?:now )?in (?:your|his|her|their) court)|(?:the (?:choice|decision) (?:is|was) (?:entirely |all )?(?:yours|his|hers|theirs))|(?:the night (?:is|was) still young)|(?:(?:it|this|everything) (?:is|was) (?:only )?just (?:the )?beginning)|(?:only time (?:will|would|could) tell))(?:[？?~～][。.！？!?…~～]*)?$/i",
+          "regex": true,
+          "replacements": [
+            "."
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": true,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_not_but",
+          "name": "不是……而是……",
+          "sample": "那不是愤怒，而是一种执念。",
+          "find": "(?<![是要岂莫还可无就都而却倒才又该能会算])(?:并|绝|也)?不是[^，。；！？!?,;\\n“”\"「」『』]{1,30}[，,]\\s*(?:(?:也|更|甚至|亦)不是[^，。；！？!?,;\\n“”\"「」『』]{1,30}[，,]\\s*)*(?:而是|是)(?=[^，。；！？!?,;\\s])(?!什么|谁|哪|怎|不是|否|吗|的)",
+          "regex": true,
+          "replacements": [
+            "是"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_not_period",
+          "name": "不是……。是……",
+          "sample": "这不是请求。是命令。",
+          "find": "(?<![是要岂莫还可无就都而却倒才又该能会算])(?:并|绝|也)?不是[^，。；！？!?,;\\n“”\"「」『』]{1,24}。[ \\t]*(?:而是|是)(?=[^，。；！？!?,;\\s])(?!什么|谁|哪|怎|不是|否|吗|的)",
+          "regex": true,
+          "replacements": [
+            "是"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_rather",
+          "name": "并非……而是……",
+          "sample": "这并非安慰，而是试探。",
+          "find": "并非[^，。；！？!?,;\\n“”\"「」『』]{1,30}[，,]\\s*而是(?=[^，。；！？!?,;\\s])(?!什么|谁|哪|怎|不是|否|吗|的)",
+          "regex": true,
+          "replacements": [
+            "是"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_rather_say",
+          "name": "与其说……不如说……",
+          "sample": "与其说是安慰，不如说是试探。",
+          "find": "与其说是?[^，。；！？!?,;\\n“”\"「」『』]{1,30}[，,]\\s*(?:倒|还|更|毋宁)?不如说是?(?=[^，。；！？!?,;\\s])(?!什么|谁|哪|怎|不是|否|吗|的)",
+          "regex": true,
+          "replacements": [
+            "更像是"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_less_more",
+          "name": "少了几分……多了几分……",
+          "sample": "她的眼神少了几分凌厉，却多了几分温柔。",
+          "find": "少了(?:几分|几许|些许|一些|一点|一丝|些|点)[^，。；！？!?,;\\n“”\"「」『』]{1,20}[，,]\\s*(?:却|反而|反倒|倒|而)?(?=多了)",
+          "regex": true,
+          "replacements": [],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_en_was",
+          "name": "It wasn't A, it was B",
+          "sample": "It wasn't anger, it was grief.",
+          "find": "(?:^|(?<=[.!?\\n]\\s?|[”\"]\\s))(?:It wasn't|It was not) (?:just |merely |only )?[^,.;!?\\n]{1,45}[,;—–-]\\s*it was (?=\\S)",
+          "regex": true,
+          "replacements": [
+            "It was "
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "negation_en_is",
+          "name": "It's not A — it's B",
+          "sample": "It's not fear — it's resolve.",
+          "find": "(?:^|(?<=[.!?\\n]\\s?|[”\"]\\s))(?:It isn't|It is not|It's not) (?:just |merely |only )?[^,.;!?\\n]{1,45}[,;—–-]\\s*it(?: is|'s) (?=\\S)",
+          "regex": true,
+          "replacements": [
+            "It is "
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    },
+    {
+      "id": "expression",
+      "name": "老套神态与生理反应",
+      "description": "眼神地震/骤缩、攥拳泛白、吞咽口水、后背电流、倒吸凉气、心脏漏拍、下颌线绷紧、血液倒流、眼底闪过复杂情绪",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "phys_pupil_quake",
+          "name": "眼神地震/骤缩",
+          "sample": "瞳孔猛地一缩 / 瞳孔地震",
+          "find": "瞳孔(?:骤然|猛地|剧烈|瞬间|微微)?(?:一缩|收缩|骤缩|地震|放大|紧缩)",
+          "regex": true,
+          "replacements": [
+            "神色微怔",
+            "目光微动",
+            "怔了怔",
+            "眼神微敛",
+            "眼底掠过一丝异色",
+            "视线顿了顿",
+            "愣了一瞬",
+            "神情微变",
+            "眸光微闪"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_knuckles_white",
+          "name": "攥拳泛白/掐掌心",
+          "sample": "攥得指节泛白 / 指甲深深嵌进掌心",
+          "find": "(?:攥得|握得)?指节(?:有些|微微|寸寸|泛白|发白|发青)|指甲(?:深深|死死)?(?:嵌进|掐入|刺入)(?:了)?(?:掌心|肉里)",
+          "regex": true,
+          "replacements": [
+            "手指紧攥",
+            "指尖收紧",
+            "暗暗握拳",
+            "手背绷紧",
+            "五指悄然收拢",
+            "用力握了握拳",
+            "指腹用力抵着掌心",
+            "手指微微发紧"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_throat_roll",
+          "name": "吞咽与滚动套话",
+          "sample": "上下艰难地滚动了一下",
+          "find": "喉结(?:上下|艰难地|不自觉地|微微|轻轻)?滚动(?:了一下|着)?|(?:艰难地|暗暗)?咽了(?:一口|口)(?:唾沫|口水)",
+          "regex": true,
+          "replacements": [
+            "沉默片刻",
+            "顿了顿",
+            "欲言又止",
+            "一时无言",
+            "把话咽了回去",
+            "抿了抿唇没有出声",
+            "气息微沉",
+            "停顿了片刻"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_spine_chill",
+          "name": "后背发凉/电流窜过",
+          "sample": "一股电流顺着脊背窜上天灵盖",
+          "find": "一股(?:寒意|电流|战栗|酥麻|凉意)(?:顺着|从)?(?:脊背|脊椎|尾椎骨)(?:一路)?(?:窜上|爬上|蔓延|直冲)(?:天灵盖|头皮|全身|四肢百骸|后脑勺)",
+          "regex": true,
+          "replacements": [
+            "心头一凛",
+            "背后发凉",
+            "浑身一震",
+            "心弦骤紧",
+            "后背隐隐发麻",
+            "猛地打了个激灵",
+            "身体微僵",
+            "头皮有些发麻"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_breath_hitch",
+          "name": "呼吸一滞/倒吸凉气",
+          "sample": "呼吸猛地一滞 / 倒吸一口凉气",
+          "find": "呼吸(?:猛地|骤然|瞬间|微微)?一滞|倒吸(?:了)?一口(?:凉气|冷气)",
+          "regex": true,
+          "replacements": [
+            "神情微顿",
+            "动作微顿",
+            "屏住呼吸",
+            "微微一怔",
+            "气息乱了一瞬",
+            "胸口微闷",
+            "呼吸顿了顿",
+            "怔在原地"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_stomach_weightless",
+          "name": "胃部失重/心脏漏拍",
+          "sample": "胃袋一阵失重 / 心脏漏跳了一拍",
+          "find": "胃(?:袋|部|里)一阵(?:失重|翻江倒海|痉挛|抽搐)|心脏(?:猛地|仿佛|骤然)?(?:漏跳了一拍|停跳了一拍|狠狠一缩|被一只无形的手攥紧)",
+          "regex": true,
+          "replacements": [
+            "心绪微乱",
+            "心头一跳",
+            "心里咯噔一下",
+            "心神微晃",
+            "胸口发紧",
+            "心跳快了几分",
+            "心下微沉",
+            "心头莫名发慌"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_eyes_complex_emotion",
+          "name": "眼底闪过一抹复杂情绪",
+          "sample": "眼底划过一抹复杂神色",
+          "find": "(?:眼底|眸底|眼中|眼眸深处)(?:快速|悄然|瞬间)?(?:闪过|划过|掠过)(?:一抹|一丝)?(?:不易察觉的|转瞬即逝的|难以言喻的)?(?:复杂|异样|暗芒|情绪|神色|痛色)",
+          "regex": true,
+          "replacements": [
+            "神色有些微妙",
+            "目光闪了闪",
+            "垂眸掩去情绪",
+            "眼神暗了几分",
+            "脸色微变",
+            "神情有些难辨",
+            "目光沉了沉",
+            "视线微微偏移"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_jawline_tense",
+          "name": "下颌线紧绷/后槽牙咬碎",
+          "sample": "下颌线绷得笔直 / 咬肌微微鼓起",
+          "find": "下颌线(?:瞬间|骤然|微微)?(?:绷紧|绷得笔直|紧绷如刀削)|咬肌(?:微微)?(?:鼓起|紧绷)|后槽牙(?:几乎)?咬得(?:咯咯作响|发酸)",
+          "regex": true,
+          "replacements": [
+            "神情冷硬",
+            "抿紧了嘴角",
+            "脸色沉了下来",
+            "侧脸线条有些冷硬",
+            "闭紧嘴没有吭声",
+            "忍着没有发作",
+            "神色愈发克制"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_blood_freeze",
+          "name": "全身血液倒流/僵在原地",
+          "sample": "全身的血液在这一刻倒流",
+          "find": "(?:全身的|浑身的|体内的)?血液(?:仿佛|瞬间|在这一刻)?(?:倒流|凝固|冻结|冲上头顶)|四肢百骸(?:都)?(?:泛起寒意|僵硬如铁)",
+          "regex": true,
+          "replacements": [
+            "浑身发冷",
+            "手脚有些冰凉",
+            "整个人僵在原地",
+            "脑子里嗡了一声",
+            "半晌没回过神",
+            "指尖一阵发凉",
+            "脸色霎时白了几分"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_eyelash_butterfly",
+          "name": "睫毛如蝶翼轻颤",
+          "sample": "纤长的睫毛像受惊的蝶翼般微微颤抖",
+          "find": "(?:纤长的|浓密的|长长的)?(?:睫毛|眼睫)(?:像|如同|宛如|好似)?(?:受惊的|脆弱的)?(?:蝶翼|蝴蝶翅膀)般?(?:微微|轻轻|剧烈)?(?:颤抖|颤动|轻颤|扇动)",
+          "regex": true,
+          "replacements": [
+            "眼睫轻轻颤了颤",
+            "垂下眼帘",
+            "眨了眨眼",
+            "眼皮微跳",
+            "视线微微低垂",
+            "不自然地移开目光",
+            "轻眨了一下眼"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_ears_bleed_red",
+          "name": "耳根红得滴血",
+          "sample": "耳根瞬间红得像要滴出血来",
+          "find": "(?:耳根|耳尖|耳垂)(?:瞬间|以肉眼可见的速度|腾地)?红得?(?:仿佛|像是|快要)?(?:能滴出血来|要滴血|烧起来|熟透的虾子)",
+          "regex": true,
+          "replacements": [
+            "耳根微微发烫",
+            "耳尖泛起一抹薄红",
+            "脸颊有些发热",
+            "耳朵悄悄红了",
+            "不好意思地偏过头",
+            "脸上有些挂不住"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "phys_en_shiver_spine",
+          "name": "英文生理套话 (Shivers down spine)",
+          "sample": "shivers down her spine / breath hitches",
+          "find": "/\\b(?:sent |sending )?shivers? (?:running )?(?:down|up) (?:his|her|their|your|my) spine\\b|\\b(?:his|her|their|your) breath hitch(?:es|ed)\\b|\\bknuckles turning white\\b/i",
+          "regex": true,
+          "replacements": [
+            "steadied",
+            "tensed",
+            "paused",
+            "froze briefly",
+            "held still"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    },
+    {
+      "id": "simile",
+      "name": "网文套话与廉价香精味",
+      "description": "三分凉薄七分漫不经心、雪松薄荷味、石子投湖、似笑非笑弧度、砂纸大提琴嗓音、寒潭旋涡眼神、羽毛搔心尖",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "sens_pie_chart",
+          "name": "扇形图眼神（三分…七分…）",
+          "sample": "带着三分凉薄、七分漫不经心",
+          "find": "带着(?:三分|几分)([^，。；！？\\n]{1,6})[，、]?\\s*(?:三分|几分|七分)([^，。；！？\\n]{1,8})(?:和|以及|与)?(?:三分|四分|几分)?([^，。；！？\\n]{0,8})",
+          "regex": true,
+          "replacements": [
+            "带着几分$1与$2",
+            "透着些许$1和$2",
+            "既有$1又有些$2",
+            "隐约透出$1与$2",
+            "神色间带着$1和$2"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_stone_lake",
+          "name": "石子投入湖心泛起涟漪",
+          "sample": "像一颗石子投入平静的湖心泛起涟漪",
+          "find": "(?:就像|好似|犹如|宛如|仿佛)?一颗石子(?:投入|砸入|落入)(?:了)?(?:平静的|死水般的)?(?:湖心|湖面|水面|心湖)[，,]?泛起(?:层层|圈圈|一圈圈)?涟漪",
+          "regex": true,
+          "replacements": [
+            "在心底留下一丝波澜",
+            "让心绪泛起微澜",
+            "在心里轻轻触动了一下",
+            "打破了原有的平静",
+            "让人心头微动",
+            "在心间留下浅浅的痕迹",
+            "让原本平静的心思乱了几分"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_air_solid",
+          "name": "空气粘稠得能拧出水/落针可闻",
+          "sample": "空气瞬间粘稠得能拧出水来",
+          "find": "空气(?:仿佛|在这一刻|瞬间)?(?:凝固|停滞|粘稠得能拧出水来|安静得落针可闻|死一般寂静)",
+          "regex": true,
+          "replacements": [
+            "四周一时安静下来",
+            "场间一时寂然",
+            "气氛一时有些沉闷",
+            "屋内静得出奇",
+            "谁都没有先开口",
+            "周围安静得只剩呼吸声",
+            "气氛莫名有些紧绷",
+            "一时间无人说话"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_scent_cliche",
+          "name": "工业男主香精（雪松/薄荷/苦橙/臭氧）",
+          "sample": "一股凛冽的雪松混合着烟草的气息",
+          "find": "一股(?:淡淡的|清冽的|凛冽的|好闻的)?(?:雪松|苦橙|薄荷|臭氧|铁锈|冷杉|乌木|琥珀|佛手柑)(?:混合着|夹杂着|与)?(?:烟草|硝烟|血腥|皂角|阳光)?的(?:气息|味道|冷香|香气|清香)",
+          "regex": true,
+          "replacements": [
+            "一股熟悉的气息",
+            "一缕淡淡的气息",
+            "他身上独有的气息",
+            "一阵清爽的气息",
+            "浅浅的温热气息",
+            "带着体温的气息",
+            "令人安心的气息",
+            "淡淡的衣料清香"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_lip_arc",
+          "name": "似笑非笑/玩味的弧度",
+          "sample": "唇角扬起一抹似笑非笑的弧度",
+          "find": "(?:嘴角|唇角)(?:微微|缓缓|不自觉地)?(?:勾起|扬起|扯出|挑起)(?:一抹|一个)?(?:似笑非笑|意味深长|嘲弄|玩味|若有似无|危险|凉薄|自嘲)的弧度",
+          "regex": true,
+          "replacements": [
+            "唇边露出一丝笑意",
+            "似笑非笑地弯了弯唇",
+            "轻笑了一声",
+            "唇角微扬",
+            "露出一抹意味不明的笑",
+            "嘴角轻轻撇了一下",
+            "不置可否地笑了笑",
+            "眼底带上一丝笑意"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_voice_husky",
+          "name": "砂纸打磨/大提琴嗓音",
+          "sample": "声音低沉得像被砂纸打磨过",
+          "find": "(?:声音|嗓音)(?:低沉|暗哑|沙哑)得?(?:像是|如同|仿佛|好似)?(?:被(?:粗)?砂纸打磨过|大提琴般低吟|带着磁性的颗粒感|陈年威士忌般醇厚|生锈的齿轮摩擦)",
+          "regex": true,
+          "replacements": [
+            "声音低沉",
+            "嗓音微哑",
+            "声音有些发干",
+            "语调低缓",
+            "声音压得很低",
+            "嗓音带着些许倦意",
+            "语气平静而低沉",
+            "声音略有些低哑"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_abyss_eyes",
+          "name": "不见底的寒潭/漩涡眼神",
+          "sample": "那双不见底的眸子像幽暗的寒潭",
+          "find": "(?:那双|一双)?(?:深不见底的|深邃的|幽深的|漆黑的)?(?:眸子|眼眸|黑眸|眼睛)(?:像|如同|宛如|好似)(?:古井无波的|幽暗的|要把人吸进去的)?(?:寒潭|深潭|旋涡|漩涡|黑洞|深渊)",
+          "regex": true,
+          "replacements": [
+            "目光沉静如水",
+            "眼神幽邃难测",
+            "静静地注视着前方",
+            "目光平静得看不出喜怒",
+            "视线沉沉地落过来",
+            "眼神幽静而专注",
+            "目光微沉"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_feather_scratch",
+          "name": "羽毛轻轻搔过心尖",
+          "sample": "像一根羽毛轻轻搔过心尖",
+          "find": "(?:就像|好似|犹如|宛如|仿佛)?(?:一根|一片)?(?:轻柔的)?羽毛(?:轻轻)?(?:搔过|拂过|撩过|挠着)(?:心尖|心房|心头|耳廓)",
+          "regex": true,
+          "replacements": [
+            "让人心里有些发痒",
+            "撩得人心头微痒",
+            "让人心神微漾",
+            "带着几分说不出的勾人",
+            "听得人耳根微热",
+            "让人有些心猿意马",
+            "轻轻触动了心弦"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_slender_knuckles",
+          "name": "修长分明的手指套话",
+          "sample": "那双修长分明的大手",
+          "find": "(?:那双|一双|那只)?(?:修长(?:且|而)?骨节分明|骨节分明(?:且|而)?修长)的(?:手指|手|大手|手掌)",
+          "regex": true,
+          "replacements": [
+            "修长的手指",
+            "干净利落的手指",
+            "温热的手掌",
+            "他的手指",
+            "指腹微凉的手",
+            "匀称的手",
+            "宽大的手掌"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_frightened_deer",
+          "name": "受惊的小鹿/做错事的孩子",
+          "sample": "像一只受惊的小鹿般四处乱撞",
+          "find": "(?:像|如同|宛如|好似)(?:一只|一个)?(?:受惊的|迷途的|无助的)?(?:小鹿|小兽|小兔子|做错了?事的孩子)",
+          "regex": true,
+          "replacements": [
+            "显得有些局促不安",
+            "神情有些慌乱",
+            "一副不知所措的模样",
+            "带着几分紧张和无助",
+            "拘谨地缩了缩肩膀",
+            "看起来有些心虚",
+            "眼神里透着几分慌张"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_undeniable_majesty",
+          "name": "不容置疑的霸道/上位者威压",
+          "sample": "带着一股不容置疑的上位者威压",
+          "find": "带着(?:一股|一种|几分)?(?:与生俱来的|久居高位的)?(?:不容置疑|不容拒绝|不容抗拒|令人窒息)的(?:上位者)?(?:威压|压迫感|霸道|气场|命令口吻)",
+          "regex": true,
+          "replacements": [
+            "语气笃定而强势",
+            "带着几分让人难以拒绝的气势",
+            "态度颇为强硬",
+            "口吻里没留什么商量的余地",
+            "神情严肃而笃定",
+            "气势沉稳迫人",
+            "话里透着一股执拗"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_en_whisper_sparkle",
+          "name": "英文气音与眼神闪光",
+          "sample": "barely above a whisper / eyes sparkling with mischief",
+          "find": "/\\bbarely above a whisper\\b|\\beyes (?:sparkling|gleaming|glinting) with (?:mischief|amusement)\\b/i",
+          "regex": true,
+          "replacements": [
+            "softly",
+            "quietly",
+            "in a low voice",
+            "with a faint smile"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    },
+    {
+      "id": "jargon",
+      "name": "出戏的说明书与心理学术语",
+      "description": "捕食者打量猎物、完美面具剥落、多巴胺飙升、无形张力蔓延、宣示主权、理智的弦崩断、条件反射",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "jarg_predator_prey",
+          "name": "动物世界（捕食者与猎物）",
+          "sample": "像一只耐心的捕食者审视着落入陷阱的猎物",
+          "find": "(?:像|如同|宛如|好似)(?:一只|一头)?(?:耐心的|优雅的|顶级的|经验丰富的)?(?:捕食者|猎食者|猎人|野兽)(?:在)?(?:审视|打量|注视|锁定|欣赏)(?:着)?(?:自己的|落入陷阱的|无处可逃的|到手的)?猎物",
+          "regex": true,
+          "replacements": [
+            "目光紧盯着对方",
+            "不动声色地打量着对方",
+            "视线牢牢锁在对方身上",
+            "眼神里带着几分审视",
+            "好整以暇地看着对方",
+            "目光专注而富有侵略性",
+            "饶有兴致地端详着对方",
+            "视线一刻也没有移开"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_mask_peel",
+          "name": "完美面具碎裂/剥落",
+          "sample": "脸上那层完美的温和面具出现了一丝裂痕",
+          "find": "(?:脸上|平日里)?(?:那层|完美的|温和的|冰冷的|社交)?(?:名为[^的]{1,6}的)?(?:面具|假面|伪装|保护色)(?:出现了一丝裂痕|寸寸碎裂|被轻易撕下|剥落|荡然无存)",
+          "regex": true,
+          "replacements": [
+            "一向克制的神情终于动摇",
+            "平日的从容有些维持不住",
+            "神色间露出一丝破绽",
+            "没能再掩饰住真实情绪",
+            "脸上的笑意淡了下去",
+            "罕见地失了态",
+            "露出了几分真实的心绪",
+            "表情一时有些绷不住"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_hormone_science",
+          "name": "多巴胺/肾上腺素/防卫机制",
+          "sample": "肾上腺素在血管里疯狂飙升 / 心理防卫机制",
+          "find": "(?:多巴胺|肾上腺素|荷尔蒙|费洛蒙|内啡肽|催产素)(?:在血管里|在体内|在空气中)?(?:疯狂分泌|飙升|作祟|冲撞|发酵|爆棚)|(?:心理)?防卫机制",
+          "regex": true,
+          "replacements": [
+            "本能的冲动",
+            "心跳骤然加快",
+            "心底的戒备",
+            "满腔的躁动",
+            "难以抑制的心悸",
+            "下意识的防备",
+            "情绪一阵高涨",
+            "血液有些发烫"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_tension_pull",
+          "name": "无形的磁场在空气中蔓延",
+          "sample": "某种微妙的磁场在两人之间蔓延",
+          "find": "某种(?:无形的|微妙的|紧绷的|暧昧的|危险的)(?:拉扯感?|张力|磁场)在(?:两人之间|空气中|彼此之间)(?:蔓延|流淌|发酵|噼啪作响)",
+          "regex": true,
+          "replacements": [
+            "两人之间的气氛微妙起来",
+            "彼此间多了一丝紧绷感",
+            "空气里多了几分暧昧",
+            "谁都不肯先退让一步",
+            "气氛一时有些僵持",
+            "对视间多了几分暗涌",
+            "屋里的氛围渐渐变得有些微妙",
+            "两人之间隔着一层说不清的试探"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_claim_sovereignty",
+          "name": "宣示主权/领地意识",
+          "sample": "像是在无声地宣示主权 / 强烈的领地意识",
+          "find": "(?:像是|仿佛|好似)?(?:在)?(?:无声地|霸道地|向全世界)?宣示(?:着)?(?:自己的)?主权|(?:强烈的|雄性的)?领地意识",
+          "regex": true,
+          "replacements": [
+            "带着几分独占欲",
+            "显出几分护短的意味",
+            "刻意拉近了两人的距离",
+            "不动声色地将人护在身边",
+            "透着一点不容旁人插手的强势",
+            "动作间带着明显的偏爱",
+            "姿态亲昵而笃定"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_sanity_string_snap",
+          "name": "名为理智的弦彻底崩断",
+          "sample": "脑海中那根名为理智的弦啪地一声断了",
+          "find": "(?:脑海中|脑子里|心底)?(?:那根)?(?:名为[“\"「]?理智[”\"」]?的|紧绷的理智之)弦(?:啪地一声|彻底|瞬间|骤然)?(?:崩断|断裂|断了)",
+          "regex": true,
+          "replacements": [
+            "再也克制不住情绪",
+            "彻底失去了耐性",
+            "把原本的顾忌抛到了脑后",
+            "终于不再压抑自己",
+            "一时冲动占了上风",
+            "再也顾不上什么分寸",
+            "积攒的情绪彻底决堤"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_pavlov_defense",
+          "name": "条件反射/防御姿态/应激反应",
+          "sample": "身体本能地摆出防御姿态 / 巴甫洛夫式的条件反射",
+          "find": "身体(?:本能地|下意识地)?(?:摆出|进入|竖起)(?:了)?(?:防御姿态|戒备状态|全身的刺)|(?:巴甫洛夫式的)?(?:条件反射|应激反应|生理性厌恶)",
+          "regex": true,
+          "replacements": [
+            "下意识地后退了半步",
+            "本能地生出几分抗拒",
+            "全身紧绷地防备着",
+            "打心底里感到排斥",
+            "动作僵硬地避开",
+            "眼中多了一丝警惕",
+            "不由自主地绷紧了神经"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_en_testament_tapestry",
+          "name": "英文公文腔 (Testament to / Tapestry)",
+          "sample": "a testament to / a dance as old as time",
+          "find": "/\\ba testament to\\b|\\brich tapestry of\\b|\\ba dance as old as time\\b|\\bunspoken agreement\\b/i",
+          "regex": true,
+          "replacements": [
+            "a sign of",
+            "proof of",
+            "a reflection of",
+            "a quiet sign of"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    },
+    {
+      "id": "punctuation",
+      "name": "标点整理",
+      "description": "…………、——————、！！！！！",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "punct_dash_run",
+          "name": "过长的破折号",
+          "sample": "——————",
+          "find": "[—―]{3,}|-{4,}",
+          "regex": true,
+          "replacements": [
+            "——"
+          ],
+          "dialogue": true,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "punct_ellipsis_run",
+          "name": "过长的省略号",
+          "sample": "…………",
+          "find": "…{3,}|\\.{7,}|。{3,}",
+          "regex": true,
+          "replacements": [
+            "……"
+          ],
+          "dialogue": true,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "punct_mark_run",
+          "name": "一长串感叹号或问号",
+          "sample": "！！！！！",
+          "find": "([！？!?])\\1{3,}",
+          "regex": true,
+          "replacements": [
+            "$1$1$1"
+          ],
+          "dialogue": true,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    },
+    {
+      "id": "explicit_plain",
+      "name": "隐喻直白化 · 生理白描",
+      "description": "把肉刃/龙根、花瓣/花唇、蜜穴/幽谷、花蕊/小珍珠、琼浆/蜜露、玉兔/雪峰、龙精/精华等换成直白词（智能防误伤日常词）",
+      "enabled": false,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "nsfw_penis_metaphor",
+          "name": "男性器官代称（肉刃/龙根/凶器/巨物）",
+          "sample": "肉刃 / 龙根 / 欲根 / 胯下灼热的凶器",
+          "find": "(?:那根?|粗壮的|硕大的|滚烫的|狰狞的|昂扬的|灼热的)?(?:肉刃|龙根|欲根|玉茎|阳物|男根)|((?:胯下|双腿间|腿间|挺起|抵住|塞满|贯穿|抽插|吞吐|含住|握住)(?:[^，。；！？\\n]{0,6}?))(?:灼热的|滚烫的|硕大的|狰狞的)?(?:巨物|凶器|火热|分身|巨龙|铁棒)",
+          "regex": true,
+          "replacements": [
+            "$1阴茎",
+            "$1性器",
+            "$1阳具"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_glans_metaphor",
+          "name": "前端代称（伞冠/龙头，防误伤水龙头）",
+          "sample": "紫红的伞冠 / 硕大的龙头",
+          "find": "((?:硕大的|紫红的|圆润的|前端的|顶端的|充血的|滚烫的|涨大的|柱身|阴茎|肉棒|阳物|性器|抵住|含住|舔舐|吞吐)(?:[^，。；！？\\n水铜铁金木石船舞行企]{0,4}?))(?:伞冠|龙头)",
+          "regex": true,
+          "replacements": [
+            "$1龟头",
+            "$1前端",
+            "$1冠部"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_labia_metaphor",
+          "name": "花瓣/花唇（智能识别涩涩语境）",
+          "sample": "拨开湿润的花瓣 / 两片粉嫩花唇",
+          "find": "((?:分开|拨开|捏住|舔舐|含住|摩挲|摩擦|揉捻|湿润|充血|粉嫩|娇嫩|私密|腿间|身下|那里|两片|一对)(?:[^，。；！？\\n]{0,5}?))(?:花瓣|花唇|肉瓣)|(?:花唇|肉瓣)",
+          "regex": true,
+          "replacements": [
+            "$1阴唇",
+            "$1软肉",
+            "$1唇瓣"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_vagina_metaphor",
+          "name": "女性器官代称（蜜穴/花穴/幽谷/秘处）",
+          "sample": "泥泞的蜜穴 / 花穴 / 探入湿润的秘处",
+          "find": "(?:泥泞的|湿润的|紧致的|温热的)?(?:蜜穴|花穴|蜜洞|肉穴|淫穴)|((?:探入|插入|滑入|没入|填满|撑开|搅动|抽插|分开|拨开|湿透的|泥泞的|紧致的|温热的|腿间的|双腿间|身下的|私密的)(?:[^，。；！？\\n]{0,5}?))(?:秘处|秘境|小嘴|花心|花芯|花径|幽谷|桃花源|秘洞|玉门|芳草地)",
+          "regex": true,
+          "replacements": [
+            "$1阴道",
+            "$1穴口",
+            "$1甬道",
+            "$1肉壁"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_clit_metaphor",
+          "name": "敏感点代称（花蕊/花珠/小珍珠/红豆）",
+          "sample": "捻弄充血的花珠 / 按压顶端的小珍珠",
+          "find": "(?:充血的|挺立的|敏感的|颤抖的)?(?:花珠|阴珠)|((?:按压|拨弄|捻弄|吮吸|舔舐|摩擦|揉搓|顶端的|充血的|敏感的|那颗|小小的)(?:[^，。；！？\\n]{0,5}?))(?:花蕊|小珍珠|珍珠|红豆|肉珠)",
+          "regex": true,
+          "replacements": [
+            "$1阴蒂",
+            "$1敏感点"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_fluid_metaphor",
+          "name": "体液代称（琼浆/蜜汁/蜜露，防误伤美食与花露水）",
+          "sample": "涌出粘腻的蜜汁 / 腿间流出的琼浆",
+          "find": "(?:粘腻的|滑腻的)?(?:淫液|淫水)|((?:涌出|泌出|流出|溢出|滴下|淌出|挂着|湿透|泥泞|腿间|双腿间|穴口|阴唇|阴道|小穴|肉穴|舔舐|吮吸|粘腻的|滑腻的)(?:[^，。；！？\\n]{0,6}?))(?:蜜汁|蜜露|花露(?!水)|花蜜|春水|琼浆|甘露|瑶池水)",
+          "regex": true,
+          "replacements": [
+            "$1爱液",
+            "$1水液",
+            "$1津液",
+            "$1湿意"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_breast_metaphor",
+          "name": "胸部代称（椒乳/酥胸/雪峰，防误伤真雪山与兔子）",
+          "sample": "饱满的酥胸 / 椒乳 / 胸前高耸的雪峰",
+          "find": "(?:饱满的|高耸的|圆润的|白皙的|晃动的|一对|两团)?(?:椒乳|酥胸|乳肉|雪乳|玉乳)|((?:胸前|胸口|衣襟|内衣|文胸|抹胸|饱满的|圆润的|白皙的|高耸的|挺立的|晃动的|绵软的|揉捏|握住|托起|埋入|一对|两团)(?:[^，。；！？\\n]{0,5}?))(?:玉兔|雪峰|双峰)",
+          "regex": true,
+          "replacements": [
+            "$1乳房",
+            "$1胸乳",
+            "$1软肉"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_nipple_metaphor",
+          "name": "胸前顶端代称（红梅/樱桃/茱萸/蓓蕾）",
+          "sample": "胸前挺立的红梅 / 含住粉嫩的樱桃",
+          "find": "((?:胸前|乳晕|乳房|胸乳|顶端|挺立的|充血的|硬起的|粉嫩的|含住|吮吸|捻弄|拉扯)(?:[^，。；！？\\n]{0,5}?))(?:红梅|樱桃|茱萸|相思豆|蓓蕾|红果)",
+          "regex": true,
+          "replacements": [
+            "$1乳头",
+            "$1乳尖",
+            "$1乳首"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_semen_metaphor",
+          "name": "精液代称（龙精/阳精/灼热精华/白浊）",
+          "sample": "射出滚烫的龙精 / 尽数喷洒出灼热的精华",
+          "find": "(?:滚烫的|浓稠的|炽热的|乳白的)?(?:龙精|阳精|子孙浆)|((?:射出|喷出|射入|灌满|喷洒|迸发|一股股|浓稠的|滚烫的|炽热的|内射)(?:[^，。；！？\\n]{0,6}?))(?:白浊|精华|生命之源|热流)",
+          "regex": true,
+          "replacements": [
+            "$1精液",
+            "$1浓精",
+            "$1白浊液"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_anus_metaphor",
+          "name": "后方部位代称（后庭/菊穴/秘谷）",
+          "sample": "探入紧窄的后庭 / 扩张羞耻的菊穴",
+          "find": "(?:紧窄的|羞耻的|未经人事的)?(?:菊穴|菊蕾)|((?:臀瓣|臀缝|后面|探入|插入|扩张|按压|揉弄|紧窄的|羞耻的)(?:[^，。；！？\\n]{0,5}?))(?:后庭|秘谷|小菊花)",
+          "regex": true,
+          "replacements": [
+            "$1后穴",
+            "$1肛口",
+            "$1紧致穴口"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_inner_wall_metaphor",
+          "name": "内部包裹代称（媚肉/千层软肉/花肠）",
+          "sample": "层层叠叠的媚肉死死绞紧",
+          "find": "(?:层层叠叠的|湿热的|贪婪的|蠕动的)?(?:媚肉|淫肉|花肠|肉壶)",
+          "regex": true,
+          "replacements": [
+            "$1内壁",
+            "$1软肉",
+            "$1穴肉",
+            "$1褶皱"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    },
+    {
+      "id": "explicit_erotic",
+      "name": "隐喻直白化 · 常用色文风",
+      "description": "把肉刃/龙根、花瓣/花唇、蜜穴/幽谷、花蕊/小珍珠、琼浆/蜜露、玉兔/雪峰、龙精/精华等换成直白词（智能防误伤日常词）",
+      "enabled": false,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "nsfw_penis_metaphor",
+          "name": "男性器官代称（肉刃/龙根/凶器/巨物）",
+          "sample": "肉刃 / 龙根 / 欲根 / 胯下灼热的凶器",
+          "find": "(?:那根?|粗壮的|硕大的|滚烫的|狰狞的|昂扬的|灼热的)?(?:肉刃|龙根|欲根|玉茎|阳物|男根)|((?:胯下|双腿间|腿间|挺起|抵住|塞满|贯穿|抽插|吞吐|含住|握住)(?:[^，。；！？\\n]{0,6}?))(?:灼热的|滚烫的|硕大的|狰狞的)?(?:巨物|凶器|火热|分身|巨龙|铁棒)",
+          "regex": true,
+          "replacements": [
+            "$1肉棒",
+            "$1性器",
+            "$1粗长肉柱",
+            "$1阳具"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_glans_metaphor",
+          "name": "前端代称（伞冠/龙头，防误伤水龙头）",
+          "sample": "紫红的伞冠 / 硕大的龙头",
+          "find": "((?:硕大的|紫红的|圆润的|前端的|顶端的|充血的|滚烫的|涨大的|柱身|阴茎|肉棒|阳物|性器|抵住|含住|舔舐|吞吐)(?:[^，。；！？\\n水铜铁金木石船舞行企]{0,4}?))(?:伞冠|龙头)",
+          "regex": true,
+          "replacements": [
+            "$1龟头",
+            "$1饱满顶端",
+            "$1柱头"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_labia_metaphor",
+          "name": "花瓣/花唇（智能识别涩涩语境）",
+          "sample": "拨开湿润的花瓣 / 两片粉嫩花唇",
+          "find": "((?:分开|拨开|捏住|舔舐|含住|摩挲|摩擦|揉捻|湿润|充血|粉嫩|娇嫩|私密|腿间|身下|那里|两片|一对)(?:[^，。；！？\\n]{0,5}?))(?:花瓣|花唇|肉瓣)|(?:花唇|肉瓣)",
+          "regex": true,
+          "replacements": [
+            "$1阴唇",
+            "$1娇嫩软肉",
+            "$1肉唇"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_vagina_metaphor",
+          "name": "女性器官代称（蜜穴/花穴/幽谷/秘处）",
+          "sample": "泥泞的蜜穴 / 花穴 / 探入湿润的秘处",
+          "find": "(?:泥泞的|湿润的|紧致的|温热的)?(?:蜜穴|花穴|蜜洞|肉穴|淫穴)|((?:探入|插入|滑入|没入|填满|撑开|搅动|抽插|分开|拨开|湿透的|泥泞的|紧致的|温热的|腿间的|双腿间|身下的|私密的)(?:[^，。；！？\\n]{0,5}?))(?:秘处|秘境|小嘴|花心|花芯|花径|幽谷|桃花源|秘洞|玉门|芳草地)",
+          "regex": true,
+          "replacements": [
+            "$1小穴",
+            "$1肉穴",
+            "$1嫩穴",
+            "$1紧致甬道"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_clit_metaphor",
+          "name": "敏感点代称（花蕊/花珠/小珍珠/红豆）",
+          "sample": "捻弄充血的花珠 / 按压顶端的小珍珠",
+          "find": "(?:充血的|挺立的|敏感的|颤抖的)?(?:花珠|阴珠)|((?:按压|拨弄|捻弄|吮吸|舔舐|摩擦|揉搓|顶端的|充血的|敏感的|那颗|小小的)(?:[^，。；！？\\n]{0,5}?))(?:花蕊|小珍珠|珍珠|红豆|肉珠)",
+          "regex": true,
+          "replacements": [
+            "$1阴蒂",
+            "$1敏感肉粒",
+            "$1小肉珠"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_fluid_metaphor",
+          "name": "体液代称（琼浆/蜜汁/蜜露，防误伤美食与花露水）",
+          "sample": "涌出粘腻的蜜汁 / 腿间流出的琼浆",
+          "find": "(?:粘腻的|滑腻的)?(?:淫液|淫水)|((?:涌出|泌出|流出|溢出|滴下|淌出|挂着|湿透|泥泞|腿间|双腿间|穴口|阴唇|阴道|小穴|肉穴|舔舐|吮吸|粘腻的|滑腻的)(?:[^，。；！？\\n]{0,6}?))(?:蜜汁|蜜露|花露(?!水)|花蜜|春水|琼浆|甘露|瑶池水)",
+          "regex": true,
+          "replacements": [
+            "$1淫水",
+            "$1爱液",
+            "$1粘腻水液",
+            "$1湿滑津液"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_breast_metaphor",
+          "name": "胸部代称（椒乳/酥胸/雪峰，防误伤真雪山与兔子）",
+          "sample": "饱满的酥胸 / 椒乳 / 胸前高耸的雪峰",
+          "find": "(?:饱满的|高耸的|圆润的|白皙的|晃动的|一对|两团)?(?:椒乳|酥胸|乳肉|雪乳|玉乳)|((?:胸前|胸口|衣襟|内衣|文胸|抹胸|饱满的|圆润的|白皙的|高耸的|挺立的|晃动的|绵软的|揉捏|握住|托起|埋入|一对|两团)(?:[^，。；！？\\n]{0,5}?))(?:玉兔|雪峰|双峰)",
+          "regex": true,
+          "replacements": [
+            "$1奶子",
+            "$1软乳",
+            "$1饱满胸乳",
+            "$1乳肉"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_nipple_metaphor",
+          "name": "胸前顶端代称（红梅/樱桃/茱萸/蓓蕾）",
+          "sample": "胸前挺立的红梅 / 含住粉嫩的樱桃",
+          "find": "((?:胸前|乳晕|乳房|胸乳|顶端|挺立的|充血的|硬起的|粉嫩的|含住|吮吸|捻弄|拉扯)(?:[^，。；！？\\n]{0,5}?))(?:红梅|樱桃|茱萸|相思豆|蓓蕾|红果)",
+          "regex": true,
+          "replacements": [
+            "$1乳尖",
+            "$1乳头",
+            "$1乳首",
+            "$1奶尖"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_semen_metaphor",
+          "name": "精液代称（龙精/阳精/灼热精华/白浊）",
+          "sample": "射出滚烫的龙精 / 尽数喷洒出灼热的精华",
+          "find": "(?:滚烫的|浓稠的|炽热的|乳白的)?(?:龙精|阳精|子孙浆)|((?:射出|喷出|射入|灌满|喷洒|迸发|一股股|浓稠的|滚烫的|炽热的|内射)(?:[^，。；！？\\n]{0,6}?))(?:白浊|精华|生命之源|热流)",
+          "regex": true,
+          "replacements": [
+            "$1精液",
+            "$1滚烫浓精",
+            "$1浓稠白浆"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_anus_metaphor",
+          "name": "后方部位代称（后庭/菊穴/秘谷）",
+          "sample": "探入紧窄的后庭 / 扩张羞耻的菊穴",
+          "find": "(?:紧窄的|羞耻的|未经人事的)?(?:菊穴|菊蕾)|((?:臀瓣|臀缝|后面|探入|插入|扩张|按压|揉弄|紧窄的|羞耻的)(?:[^，。；！？\\n]{0,5}?))(?:后庭|秘谷|小菊花)",
+          "regex": true,
+          "replacements": [
+            "$1后穴",
+            "$1紧窄小穴",
+            "$1臀穴"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_inner_wall_metaphor",
+          "name": "内部包裹代称（媚肉/千层软肉/花肠）",
+          "sample": "层层叠叠的媚肉死死绞紧",
+          "find": "(?:层层叠叠的|湿热的|贪婪的|蠕动的)?(?:媚肉|淫肉|花肠|肉壶)",
+          "regex": true,
+          "replacements": [
+            "$1穴肉",
+            "$1湿热软肉",
+            "$1敏感内壁",
+            "$1肉壁"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    },
+    {
+      "id": "explicit_vulgar",
+      "name": "隐喻直白化 · 直白粗口",
+      "description": "把肉刃/龙根、花瓣/花唇、蜜穴/幽谷、花蕊/小珍珠、琼浆/蜜露、玉兔/雪峰、龙精/精华等换成直白词（智能防误伤日常词）",
+      "enabled": false,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "nsfw_penis_metaphor",
+          "name": "男性器官代称（肉刃/龙根/凶器/巨物）",
+          "sample": "肉刃 / 龙根 / 欲根 / 胯下灼热的凶器",
+          "find": "(?:那根?|粗壮的|硕大的|滚烫的|狰狞的|昂扬的|灼热的)?(?:肉刃|龙根|欲根|玉茎|阳物|男根)|((?:胯下|双腿间|腿间|挺起|抵住|塞满|贯穿|抽插|吞吐|含住|握住)(?:[^，。；！？\\n]{0,6}?))(?:灼热的|滚烫的|硕大的|狰狞的)?(?:巨物|凶器|火热|分身|巨龙|铁棒)",
+          "regex": true,
+          "replacements": [
+            "$1鸡巴",
+            "$1大屌",
+            "$1粗肉棒"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_glans_metaphor",
+          "name": "前端代称（伞冠/龙头，防误伤水龙头）",
+          "sample": "紫红的伞冠 / 硕大的龙头",
+          "find": "((?:硕大的|紫红的|圆润的|前端的|顶端的|充血的|滚烫的|涨大的|柱身|阴茎|肉棒|阳物|性器|抵住|含住|舔舐|吞吐)(?:[^，。；！？\\n水铜铁金木石船舞行企]{0,4}?))(?:伞冠|龙头)",
+          "regex": true,
+          "replacements": [
+            "$1龟头",
+            "$1大龟头"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_labia_metaphor",
+          "name": "花瓣/花唇（智能识别涩涩语境）",
+          "sample": "拨开湿润的花瓣 / 两片粉嫩花唇",
+          "find": "((?:分开|拨开|捏住|舔舐|含住|摩挲|摩擦|揉捻|湿润|充血|粉嫩|娇嫩|私密|腿间|身下|那里|两片|一对)(?:[^，。；！？\\n]{0,5}?))(?:花瓣|花唇|肉瓣)|(?:花唇|肉瓣)",
+          "regex": true,
+          "replacements": [
+            "$1阴唇",
+            "$1屄唇",
+            "$1嫩肉"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_vagina_metaphor",
+          "name": "女性器官代称（蜜穴/花穴/幽谷/秘处）",
+          "sample": "泥泞的蜜穴 / 花穴 / 探入湿润的秘处",
+          "find": "(?:泥泞的|湿润的|紧致的|温热的)?(?:蜜穴|花穴|蜜洞|肉穴|淫穴)|((?:探入|插入|滑入|没入|填满|撑开|搅动|抽插|分开|拨开|湿透的|泥泞的|紧致的|温热的|腿间的|双腿间|身下的|私密的)(?:[^，。；！？\\n]{0,5}?))(?:秘处|秘境|小嘴|花心|花芯|花径|幽谷|桃花源|秘洞|玉门|芳草地)",
+          "regex": true,
+          "replacements": [
+            "$1骚穴",
+            "$1小屄",
+            "$1嫩屄",
+            "$1肉穴"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_clit_metaphor",
+          "name": "敏感点代称（花蕊/花珠/小珍珠/红豆）",
+          "sample": "捻弄充血的花珠 / 按压顶端的小珍珠",
+          "find": "(?:充血的|挺立的|敏感的|颤抖的)?(?:花珠|阴珠)|((?:按压|拨弄|捻弄|吮吸|舔舐|摩擦|揉搓|顶端的|充血的|敏感的|那颗|小小的)(?:[^，。；！？\\n]{0,5}?))(?:花蕊|小珍珠|珍珠|红豆|肉珠)",
+          "regex": true,
+          "replacements": [
+            "$1阴蒂",
+            "$1骚豆",
+            "$1屄豆"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_fluid_metaphor",
+          "name": "体液代称（琼浆/蜜汁/蜜露，防误伤美食与花露水）",
+          "sample": "涌出粘腻的蜜汁 / 腿间流出的琼浆",
+          "find": "(?:粘腻的|滑腻的)?(?:淫液|淫水)|((?:涌出|泌出|流出|溢出|滴下|淌出|挂着|湿透|泥泞|腿间|双腿间|穴口|阴唇|阴道|小穴|肉穴|舔舐|吮吸|粘腻的|滑腻的)(?:[^，。；！？\\n]{0,6}?))(?:蜜汁|蜜露|花露(?!水)|花蜜|春水|琼浆|甘露|瑶池水)",
+          "regex": true,
+          "replacements": [
+            "$1骚水",
+            "$1淫水",
+            "$1水儿"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_breast_metaphor",
+          "name": "胸部代称（椒乳/酥胸/雪峰，防误伤真雪山与兔子）",
+          "sample": "饱满的酥胸 / 椒乳 / 胸前高耸的雪峰",
+          "find": "(?:饱满的|高耸的|圆润的|白皙的|晃动的|一对|两团)?(?:椒乳|酥胸|乳肉|雪乳|玉乳)|((?:胸前|胸口|衣襟|内衣|文胸|抹胸|饱满的|圆润的|白皙的|高耸的|挺立的|晃动的|绵软的|揉捏|握住|托起|埋入|一对|两团)(?:[^，。；！？\\n]{0,5}?))(?:玉兔|雪峰|双峰)",
+          "regex": true,
+          "replacements": [
+            "$1奶子",
+            "$1大奶",
+            "$1软奶"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_nipple_metaphor",
+          "name": "胸前顶端代称（红梅/樱桃/茱萸/蓓蕾）",
+          "sample": "胸前挺立的红梅 / 含住粉嫩的樱桃",
+          "find": "((?:胸前|乳晕|乳房|胸乳|顶端|挺立的|充血的|硬起的|粉嫩的|含住|吮吸|捻弄|拉扯)(?:[^，。；！？\\n]{0,5}?))(?:红梅|樱桃|茱萸|相思豆|蓓蕾|红果)",
+          "regex": true,
+          "replacements": [
+            "$1奶头",
+            "$1奶尖儿",
+            "$1乳头"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_semen_metaphor",
+          "name": "精液代称（龙精/阳精/灼热精华/白浊）",
+          "sample": "射出滚烫的龙精 / 尽数喷洒出灼热的精华",
+          "find": "(?:滚烫的|浓稠的|炽热的|乳白的)?(?:龙精|阳精|子孙浆)|((?:射出|喷出|射入|灌满|喷洒|迸发|一股股|浓稠的|滚烫的|炽热的|内射)(?:[^，。；！？\\n]{0,6}?))(?:白浊|精华|生命之源|热流)",
+          "regex": true,
+          "replacements": [
+            "$1精液",
+            "$1浓精",
+            "$1白浆"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_anus_metaphor",
+          "name": "后方部位代称（后庭/菊穴/秘谷）",
+          "sample": "探入紧窄的后庭 / 扩张羞耻的菊穴",
+          "find": "(?:紧窄的|羞耻的|未经人事的)?(?:菊穴|菊蕾)|((?:臀瓣|臀缝|后面|探入|插入|扩张|按压|揉弄|紧窄的|羞耻的)(?:[^，。；！？\\n]{0,5}?))(?:后庭|秘谷|小菊花)",
+          "regex": true,
+          "replacements": [
+            "$1屁眼",
+            "$1后穴",
+            "$1菊穴"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "nsfw_inner_wall_metaphor",
+          "name": "内部包裹代称（媚肉/千层软肉/花肠）",
+          "sample": "层层叠叠的媚肉死死绞紧",
+          "find": "(?:层层叠叠的|湿热的|贪婪的|蠕动的)?(?:媚肉|淫肉|花肠|肉壶)",
+          "regex": true,
+          "replacements": [
+            "$1屄肉",
+            "$1骚肉",
+            "$1湿软肉壁"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    },
+    {
+      "id": "quota",
+      "name": "水词限量",
+      "description": "每个水词一段里只留前几次：微微、缓缓、不自觉地……",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "quota",
+          "id": "adverb_quota",
+          "name": "水词限量",
+          "words": [
+            "微微",
+            "缓缓",
+            "轻轻",
+            "淡淡",
+            "悄悄",
+            "默默",
+            "静静",
+            "不自觉地",
+            "下意识地",
+            "不由自主地",
+            "几不可察地",
+            "不动声色地",
+            "若有所思地"
+          ],
+          "max": 2,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    }
+  ]
+}

@@ -16,17 +16,26 @@ fun navigateToChatPage(
     initText: String? = null,
     initFiles: List<Uri> = emptyList(),
     nodeId: Uuid? = null,
+    characterId: Uuid? = null,
 ) {
     Log.i(TAG, "navigateToChatPage: navigate to $chatId")
-    navigator.clearAndNavigate(
-        Screen.Chat(
-            id = chatId.toString(),
-            text = initText,
-            files = initFiles.map { it.toString() },
-            nodeId = nodeId?.toString(),
-        )
-    )
+    navigator.clearAndNavigate(chatScreen(chatId, initText, initFiles, nodeId, characterId))
 }
+
+/** 聊天页的路由；[characterId] 只在会话还不存在时生效（新建一个和这个角色的会话）。 */
+internal fun chatScreen(
+    chatId: Uuid,
+    initText: String? = null,
+    initFiles: List<Uri> = emptyList(),
+    nodeId: Uuid? = null,
+    characterId: Uuid? = null,
+) = Screen.Chat(
+    id = chatId.toString(),
+    text = initText,
+    files = initFiles.map { it.toString() },
+    nodeId = nodeId?.toString(),
+    characterId = characterId?.toString(),
+)
 
 fun Context.copyMessageToClipboard(message: UIMessage) {
     this.writeClipboardText(message.toText())

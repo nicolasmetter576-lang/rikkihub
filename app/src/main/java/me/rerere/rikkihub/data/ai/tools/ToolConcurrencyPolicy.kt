@@ -46,6 +46,7 @@ object ToolConcurrencyDefaults {
         BuiltinToolIds.CALENDAR_QUERY,
         BuiltinToolIds.CHART_DISPLAY,
         BuiltinToolIds.USE_SKILL,
+        BuiltinToolIds.QUBAGU_RULES_READ,
         BuiltinToolIds.CREATOR_LIST_OBJECTS,
         BuiltinToolIds.CREATOR_READ_OBJECT,
         BuiltinToolIds.CREATOR_DESCRIBE,

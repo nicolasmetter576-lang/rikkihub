@@ -1,3 +1,6 @@
+import type { LorebookSummary, PromptEntry, PromptPreset, TavernSettings } from "./tavern";
+import type { ModelPricing } from "../lib/model-pricing";
+
 /**
  * Display settings
  * @see app/src/main/java/me/rerere/rikkihub/data/datastore/PreferencesStore.kt - DisplaySetting
@@ -82,68 +85,12 @@ export type LocalToolType =
   | "ask_user"
   | "screen_time"
   | "calendar"
-  | "chart_display";
+  | "chart_display"
+  | "pseudo_io";
 
 export interface LocalToolOption {
   type: string;
   [key: string]: unknown;
-}
-
-export type InjectionPosition =
-  | "before_system_prompt"
-  | "after_system_prompt"
-  | "top_of_chat"
-  | "bottom_of_chat"
-  | "at_depth";
-
-export type InjectionRole = "system" | "user" | "assistant" | "tool";
-
-export interface ModeInjectionProfile {
-  type?: "mode";
-  id: string;
-  name: string;
-  enabled?: boolean;
-  priority?: number;
-  position?: InjectionPosition;
-  content?: string;
-  injectDepth?: number;
-  role?: InjectionRole;
-}
-
-export interface LorebookEntry {
-  type?: "regex";
-  id: string;
-  name: string;
-  enabled?: boolean;
-  priority?: number;
-  position?: InjectionPosition;
-  content?: string;
-  injectDepth?: number;
-  role?: InjectionRole;
-  keywords?: string[];
-  useRegex?: boolean;
-  caseSensitive?: boolean;
-  scanDepth?: number;
-  constantActive?: boolean;
-}
-
-export interface LorebookProfile {
-  id: string;
-  name: string;
-  description?: string;
-  enabled?: boolean;
-  entries?: LorebookEntry[];
-}
-
-/** Which editor view the assistant's system prompt opens in; does not change what is sent. */
-export type SystemPromptMode = "whole" | "sections";
-
-/** One system prompt section; `title` is only a label and is never sent to the model. */
-export interface PromptSection {
-  id: string;
-  title: string;
-  content: string;
-  enabled: boolean;
 }
 
 export interface AssistantProfile {
@@ -152,23 +99,36 @@ export interface AssistantProfile {
   reasoningLevel?: ReasoningLevel | string | null;
   enableWebSearch?: boolean;
   mcpServers?: string[];
-  modeInjectionIds?: string[];
+  /** Prompt library entries (identifiers) the assistant uses. */
+  libraryEntryIds?: string[];
   lorebookIds?: string[];
   allowConversationPromptInjection?: boolean;
+  /** SillyTavern mode: the full prompt layout applies; off sends only the main prompt and the user's own entries. */
+  tavernMode?: boolean;
   allowConversationSystemPrompt?: boolean;
   name: string;
+  /** false hides the assistant wherever one is picked (the current one stays usable); missing means enabled. */
+  enabled?: boolean;
   avatar?: AssistantAvatar;
   useAssistantAvatar?: boolean;
   tags: string[];
   quickMessageIds?: string[];
   temperature?: number | null;
   topP?: number | null;
+  /** Extra sampling parameters (SillyTavern presets bring them); null or missing means "not sent". */
+  topK?: number | null;
+  frequencyPenalty?: number | null;
+  presencePenalty?: number | null;
+  repetitionPenalty?: number | null;
+  minP?: number | null;
+  topA?: number | null;
+  seed?: number | null;
   contextMessageLimit?: number;
   streamOutput?: boolean;
+  enableMessageTitle?: boolean;
   maxTokens?: number | null;
-  systemPrompt?: string;
-  systemPromptMode?: SystemPromptMode;
-  promptSections?: PromptSection[];
+  /** The assistant's prompt: entries, order, assembly options and assistant-scoped regex scripts (SillyTavern preset JSON). */
+  promptPreset?: PromptPreset;
   messageTemplate?: string;
   workspaceId?: string | null;
   enableMemory?: boolean;
@@ -259,11 +219,54 @@ export interface ProviderModel {
   ccDisguise?: boolean;
   /** 上下文窗口大小（token），缺省 1,000,000 */
   contextLength?: number;
+  pricing?: ModelPricing | null;
   [key: string]: unknown;
 }
 
 export type ProviderType = "openai" | "google" | "claude" | "codex" | "devin" | "antigravity";
 export type ClaudePromptCacheTtl = "5m" | "1h";
+export type CredentialRotationStrategy = "round_robin" | "failover";
+
+export interface ApiKeyEntry {
+  id: string;
+  label?: string;
+  enabled?: boolean;
+  key?: string;
+  keyConfigured?: boolean;
+  keyPreview?: string;
+}
+
+export interface VertexServiceAccount {
+  id: string;
+  label?: string;
+  projectId?: string;
+  serviceAccountEmail?: string;
+  location?: string;
+  enabled?: boolean;
+  privateKey?: string;
+  privateKeyConfigured?: boolean;
+}
+
+export interface CredentialRuntimeStatus {
+  credentialId: string;
+  status: "healthy" | "cooling_down" | "auth_error";
+  cooldownUntil: number;
+  remainingMillis: number;
+  consecutiveRateLimits: number;
+  lastStatusCode?: number | null;
+  lastErrorSummary?: string | null;
+  modelCooldowns?: Record<string, number>;
+}
+
+export interface CredentialStatusResponse {
+  statuses: Record<string, CredentialRuntimeStatus>;
+}
+
+export interface TestCredentialResponse {
+  ok: boolean;
+  modelCount?: number | null;
+  error?: string | null;
+}
 
 interface ProviderProfileBase {
   customHeaders?: Array<{ name: string; value: string | null; valueConfigured?: boolean }>;
@@ -278,6 +281,8 @@ interface ProviderProfileBase {
 export interface OpenAIProviderProfile extends ProviderProfileBase {
   type: "openai";
   apiKeyConfigured?: boolean;
+  apiKeys?: ApiKeyEntry[];
+  rotationStrategy?: CredentialRotationStrategy;
   chatCompletionsPath?: string;
   responsesPath?: string;
   useResponseApi?: boolean;
@@ -287,9 +292,14 @@ export interface OpenAIProviderProfile extends ProviderProfileBase {
 export interface GoogleProviderProfile extends ProviderProfileBase {
   type: "google";
   apiKeyConfigured?: boolean;
+  apiKeys?: ApiKeyEntry[];
   privateKeyConfigured?: boolean;
+  serviceAccounts?: VertexServiceAccount[];
+  rotationStrategy?: CredentialRotationStrategy;
   /** Defaults off for old settings; retained but ineffective with Vertex AI. */
   useInteractionsApi?: boolean;
+  /** Vertex only; missing (older settings) means on. */
+  streamFunctionCallArguments?: boolean;
   vertexAI?: boolean;
   useServiceAccount?: boolean;
   privateKey?: string;
@@ -301,6 +311,8 @@ export interface GoogleProviderProfile extends ProviderProfileBase {
 export interface ClaudeProviderProfile extends ProviderProfileBase {
   type: "claude";
   apiKeyConfigured?: boolean;
+  apiKeys?: ApiKeyEntry[];
+  rotationStrategy?: CredentialRotationStrategy;
   promptCaching?: boolean;
   promptCacheTtl?: ClaudePromptCacheTtl;
 }
@@ -341,6 +353,7 @@ export interface ModelCapabilities {
   outputModalities: ModelModality[];
   abilities: ModelAbility[];
   contextLength: number | null;
+  referencePrice?: ModelPricing | null;
 }
 
 export interface RemoteModelsResponse {
@@ -423,13 +436,18 @@ export interface Settings {
   providers: ProviderProfile[];
   assistants: AssistantProfile[];
   assistantTags: AssistantTag[];
-  modeInjections?: ModeInjectionProfile[];
-  lorebooks?: LorebookProfile[];
+  /** The prompt library (SillyTavern prompt entries). */
+  promptLibrary?: PromptEntry[];
+  /** Summaries only; a book's entries come from `GET /api/lorebooks/{id}`. */
+  lorebooks?: LorebookSummary[];
+  tavern?: TavernSettings;
   mcpServers: McpServerConfig[];
   searchServices: SearchServiceOption[];
   quickMessages?: QuickMessage[];
   searchServiceSelected: number;
   cacheKeepAliveConfig?: CacheKeepAliveConfig;
+  /** 去八股 settings without the rule packs (those come from /api/qubagu/config). */
+  qubagu?: { enabled?: boolean; [key: string]: unknown };
   toolExecution?: ToolExecutionConfig;
   /** 推敲 settings as stored (null extensions = defaults); edited through /api/tuiqiao/config. */
   tuiqiao?: { extensions?: string[] | null; [key: string]: unknown };

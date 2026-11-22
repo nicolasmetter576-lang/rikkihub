@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import android.content.Context
 import android.graphics.Typeface
 import android.net.Uri
@@ -15,13 +18,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +32,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -108,32 +109,31 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
         }
     }
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.setting_page_preferences_ui))
                 },
                 navigationIcon = {
                     BackButton()
                 },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors
+                colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor
     ) { contentPadding ->
         LazyColumn(
+            state = rememberSettingSearchListState(),
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.setting_page_message_display_settings)) },
                 ) {
                     item(
@@ -147,6 +147,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_show_user_avatar_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_assistant_bubble_title)) },
@@ -159,6 +160,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_show_assistant_bubble_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_bubble_opacity_title)) },
@@ -179,7 +181,8 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 )
                                 Text(text = "${(displaySetting.bubbleOpacity * 100).roundToInt()}%")
                             }
-                        }
+                        },
+                        searchKey = R.string.setting_display_page_bubble_opacity_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_chat_list_model_icon_title)) },
@@ -192,6 +195,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_chat_list_model_icon_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_model_name_title)) },
@@ -204,6 +208,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_show_model_name_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_datetime_in_message_title)) },
@@ -216,6 +221,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_show_datetime_in_message_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_token_usage_title)) },
@@ -228,6 +234,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_show_token_usage_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_thinking_content_title)) },
@@ -240,6 +247,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_show_thinking_content_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_auto_collapse_thinking_title)) },
@@ -252,7 +260,44 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_auto_collapse_thinking_title,
                     )
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_collapse_long_user_message_title)) },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_collapse_long_user_message_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.collapseLongUserMessages,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(collapseLongUserMessages = it))
+                                }
+                            )
+                        },
+                        searchKey = R.string.setting_display_page_collapse_long_user_message_title,
+                    )
+                    if (displaySetting.collapseLongUserMessages) {
+                        item(
+                            headlineContent = { Text(stringResource(R.string.setting_display_page_collapse_long_user_message_chars_title)) },
+                            supportingContent = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Slider(
+                                        value = displaySetting.collapseLongUserMessageChars.toFloat(),
+                                        onValueChange = {
+                                            updateDisplaySetting(displaySetting.copy(collapseLongUserMessageChars = it.toInt()))
+                                        },
+                                        valueRange = 50f..5000f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(text = "${displaySetting.collapseLongUserMessageChars}")
+                                }
+                            },
+                            searchKey = R.string.setting_display_page_collapse_long_user_message_chars_title,
+                        )
+                    }
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_enable_latex_rendering_title)) },
                         supportingContent = { Text(stringResource(R.string.setting_display_page_enable_latex_rendering_desc)) },
@@ -264,6 +309,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_enable_latex_rendering_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_enable_quote_highlight_title)) },
@@ -276,6 +322,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_enable_quote_highlight_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_workspace_markdown_sizes_title)) },
@@ -288,6 +335,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 },
                             )
                         },
+                        searchKey = R.string.setting_display_page_workspace_markdown_sizes_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_chat_font_family_title)) },
@@ -325,7 +373,8 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                     DownloadableFontStatus(font, Modifier.padding(top = 4.dp))
                                 }
                             }
-                        }
+                        },
+                        searchKey = R.string.setting_display_page_chat_font_family_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_custom_font_title)) },
@@ -372,7 +421,8 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                     }
                                 }
                             }
-                        }
+                        },
+                        searchKey = R.string.setting_display_page_custom_font_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_font_size_title)) },
@@ -409,14 +459,15 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                     )
                                 )
                             }
-                        }
+                        },
+                        searchKey = R.string.setting_display_page_font_size_title,
                     )
                 }
             }
 
             item {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.setting_page_code_display_settings)) },
                 ) {
                     item(
@@ -430,6 +481,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_code_block_auto_wrap_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_code_block_auto_collapse_title)) },
@@ -442,6 +494,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_code_block_auto_collapse_title,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_display_page_show_line_numbers_title)) },
@@ -454,6 +507,7 @@ fun SettingPreferencesUIPage(vm: SettingVM = koinViewModel()) {
                                 }
                             )
                         },
+                        searchKey = R.string.setting_display_page_show_line_numbers_title,
                     )
                 }
             }

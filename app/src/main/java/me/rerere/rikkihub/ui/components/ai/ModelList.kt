@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.ui.components.ai
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
 import android.content.Context
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
@@ -72,6 +76,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.filterByKeywords
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowRight01
@@ -233,6 +238,8 @@ internal fun ModelSelectorButton(
     onlyIcon: Boolean = false,
     allowClear: Boolean = false,
     onClear: () -> Unit = {},
+    /** 仅图标样式下的长按动作（聊天工具栏：打开提供商页）。 */
+    onLongClick: (() -> Unit)? = null,
 ) {
     val model = state.currentModel
 
@@ -273,10 +280,18 @@ internal fun ModelSelectorButton(
             }
         }
     } else {
-        IconButton(
-            onClick = {
-                state.open()
-            },
+        // IconButton 没有长按：同样大小的圆形点按区，点按开模型列表
+        Box(
+            modifier = Modifier
+                .minimumInteractiveComponentSize()
+                .size(40.dp)
+                .clip(CircleShape)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = { state.open() },
+                    onLongClick = onLongClick,
+                ),
+            contentAlignment = Alignment.Center,
         ) {
             if (model != null) {
                 AutoAIIcon(
@@ -410,9 +425,7 @@ private fun ColumnScope.ModelList(
 
     val searchFilteredModelsByProvider = remember(providers, modelType, searchKeywords) {
         providers.associate { provider ->
-            provider.id to provider.models.fastFilter {
-                it.type == modelType && it.displayName.contains(searchKeywords, true)
-            }
+            provider.id to provider.models.fastFilter { it.type == modelType }.filterByKeywords(searchKeywords)
         }
     }
 

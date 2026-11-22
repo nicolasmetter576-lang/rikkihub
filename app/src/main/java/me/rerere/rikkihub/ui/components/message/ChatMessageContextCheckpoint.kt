@@ -33,6 +33,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
+import me.rerere.hugeicons.stroke.Clean
 import me.rerere.hugeicons.stroke.Package01
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.ui.components.richtext.MarkdownBlock
@@ -49,6 +50,7 @@ fun ChatMessageContextCheckpoint(
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
+    val isClear = message.isClearContextCheckpoint
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -66,13 +68,16 @@ fun ChatMessageContextCheckpoint(
         ) {
             HorizontalDivider(modifier = Modifier.weight(1f))
             Icon(
-                imageVector = HugeIcons.Package01,
+                imageVector = if (isClear) HugeIcons.Clean else HugeIcons.Package01,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = stringResource(R.string.chat_page_compress_checkpoint_title),
+                text = stringResource(
+                    if (isClear) R.string.chat_page_context_cleared_title
+                    else R.string.chat_page_compress_checkpoint_title
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -100,17 +105,24 @@ fun ChatMessageContextCheckpoint(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.chat_page_compress_checkpoint_hint),
+                        text = stringResource(
+                            if (isClear) R.string.chat_page_context_cleared_hint
+                            else R.string.chat_page_compress_checkpoint_hint
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    MarkdownBlock(content = message.toText())
+                    if (!isClear) {
+                        MarkdownBlock(content = message.toText())
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End,
                     ) {
-                        TextButton(onClick = onEdit) {
-                            Text(stringResource(R.string.edit))
+                        if (!isClear) {
+                            TextButton(onClick = onEdit) {
+                                Text(stringResource(R.string.edit))
+                            }
                         }
                         TextButton(onClick = onDelete) {
                             Text(

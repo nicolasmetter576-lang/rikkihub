@@ -110,7 +110,7 @@ export default function SettingsTuiqiaoPage() {
     <div className="space-y-6">
       <SettingsPageHeader title={t("tuiqiao.title")} description={t("tuiqiao.description")} />
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("tuiqiao.candidates")}</h2>
         <div className="flex flex-wrap items-center gap-2">
           <span className="w-24 text-sm text-muted-foreground">{t("tuiqiao.count")}</span>
@@ -131,33 +131,37 @@ export default function SettingsTuiqiaoPage() {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-xl border p-4" data-testid="tuiqiao-roles">
+      <section className="space-y-3 rounded-xl border p-3" data-testid="tuiqiao-roles">
         <h2 className="text-base font-semibold">{t("tuiqiao.roles")}</h2>
         <p className="text-xs text-muted-foreground">{t("tuiqiao.roles_hint")}</p>
         {config.roles.length === 0 ? <p className="text-sm text-muted-foreground">{t("tuiqiao.roles_empty")}</p> : null}
-        {config.roles.map((role, index) => (
-          <div key={role.id} className="flex items-center gap-2 rounded-md border px-3 py-2" data-testid={`tuiqiao-role-${index}`}>
-            <div className="flex flex-col">
-              <Button variant="ghost" size="icon" className="size-6" disabled={index === 0} aria-label={t("tuiqiao.move_up")}
-                onClick={() => move(index, -1)}><ArrowUp className="size-3.5" /></Button>
-              <Button variant="ghost" size="icon" className="size-6" disabled={index === config.roles.length - 1}
-                aria-label={t("tuiqiao.move_down")} onClick={() => move(index, 1)}><ArrowDown className="size-3.5" /></Button>
-            </div>
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <p className="truncate text-sm font-medium">{role.name}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {[...TUIQIAO_MODES.filter(mode => role.modes.includes(mode)).map(mode => t(`tuiqiao.modes.${mode}`)), modelLabel(role)].join(" · ")}
-              </p>
-              {role.modelMissing ? <p className="text-xs text-destructive">{t("tuiqiao.model_missing")}</p> : null}
-            </div>
-            <Switch checked={role.enabled} aria-label={t("tuiqiao.enabled")}
-              onCheckedChange={enabled => void saveRoles(config.roles.map((r, i) => (i === index ? { ...r, enabled } : r)))} />
-            <Button variant="ghost" size="icon" aria-label={t("tuiqiao.edit_role")}
-              onClick={() => setEditing({ index, draft: { ...role } })}><Pencil className="size-4" /></Button>
-            <Button variant="ghost" size="icon" aria-label={t("tuiqiao.delete_role")}
-              onClick={() => void saveRoles(config.roles.filter((_, i) => i !== index))}><Trash2 className="size-4" /></Button>
+        {config.roles.length > 0 ? (
+          <div className="divide-y overflow-hidden rounded-xl border">
+            {config.roles.map((role, index) => (
+              <div key={role.id} className="flex items-center gap-2 px-3 py-2" data-testid={`tuiqiao-role-${index}`}>
+                <div className="flex flex-col">
+                  <Button variant="ghost" size="icon" className="size-6" disabled={index === 0} aria-label={t("tuiqiao.move_up")}
+                    onClick={() => move(index, -1)}><ArrowUp className="size-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="size-6" disabled={index === config.roles.length - 1}
+                    aria-label={t("tuiqiao.move_down")} onClick={() => move(index, 1)}><ArrowDown className="size-3.5" /></Button>
+                </div>
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="truncate text-sm font-medium">{role.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {[...TUIQIAO_MODES.filter(mode => role.modes.includes(mode)).map(mode => t(`tuiqiao.modes.${mode}`)), modelLabel(role)].join(" · ")}
+                  </p>
+                  {role.modelMissing ? <p className="text-xs text-destructive">{t("tuiqiao.model_missing")}</p> : null}
+                </div>
+                <Switch checked={role.enabled} aria-label={t("tuiqiao.enabled")}
+                  onCheckedChange={enabled => void saveRoles(config.roles.map((r, i) => (i === index ? { ...r, enabled } : r)))} />
+                <Button variant="ghost" size="icon" aria-label={t("tuiqiao.edit_role")}
+                  onClick={() => setEditing({ index, draft: { ...role } })}><Pencil className="size-4" /></Button>
+                <Button variant="ghost" size="icon" aria-label={t("tuiqiao.delete_role")}
+                  onClick={() => void saveRoles(config.roles.filter((_, i) => i !== index))}><Trash2 className="size-4" /></Button>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : null}
         {TUIQIAO_MODES.map(mode => {
           const matching = config.roles.filter(role => role.enabled && role.modes.includes(mode)).length;
           if (matching < count) return null;
@@ -231,7 +235,7 @@ export default function SettingsTuiqiaoPage() {
         ) : null}
       </section>
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("tuiqiao.files")}</h2>
         <p className="text-xs text-muted-foreground">{t("tuiqiao.files_hint")}</p>
         <div className="flex flex-wrap gap-1.5">
@@ -258,7 +262,7 @@ export default function SettingsTuiqiaoPage() {
         {extInvalid ? <p className="text-xs text-destructive">{t("tuiqiao.extension_invalid", { ext: extInvalid })}</p> : null}
       </section>
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("tuiqiao.prompts")}</h2>
         <p className="text-xs text-muted-foreground">{t("tuiqiao.prompts_hint")}</p>
         {TUIQIAO_MODES.map(mode => {

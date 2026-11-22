@@ -3,6 +3,7 @@ package me.rerere.rikkihub.data.repository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import me.rerere.rikkihub.data.db.dao.AssistantMemoryCount
 import me.rerere.rikkihub.data.db.dao.MemoryDAO
 import me.rerere.rikkihub.data.db.entity.MemoryFileEntity
 
@@ -11,6 +12,14 @@ internal class FakeMemoryDAO : MemoryDAO {
 
     override fun getFilesOfAssistantFlow(assistantId: String): Flow<List<MemoryFileEntity>> =
         files.map { all -> all.filter { it.assistantId == assistantId }.sortedBy { it.path } }
+
+    override fun getFileCountFlow(assistantId: String): Flow<Int> =
+        files.map { all -> all.count { it.assistantId == assistantId } }
+
+    override fun getFileCountsByAssistantFlow(): Flow<List<AssistantMemoryCount>> =
+        files.map { all ->
+            all.groupBy { it.assistantId }.map { (id, list) -> AssistantMemoryCount(id, list.size) }
+        }
 
     override suspend fun getFilesOfAssistant(assistantId: String): List<MemoryFileEntity> =
         files.value.filter { it.assistantId == assistantId }.sortedBy { it.path }

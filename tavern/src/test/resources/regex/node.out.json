@@ -1,0 +1,222 @@
+{
+ "any-char-caret-class": {
+  "ok": true,
+  "res": "X"
+ },
+ "empty-class": {
+  "ok": true,
+  "res": "aXc"
+ },
+ "lone-brace-user-macro": {
+  "ok": true,
+  "res": "hi U and U"
+ },
+ "lone-brace-open": {
+  "ok": true,
+  "res": "Xb"
+ },
+ "brace-comma-only": {
+  "ok": true,
+  "res": "X"
+ },
+ "named-group-underscore": {
+  "ok": true,
+  "res": "a[1]b[22]"
+ },
+ "named-group-dollar-rep": {
+  "ok": true,
+  "res": "a<1>b<22>"
+ },
+ "named-backref": {
+  "ok": true,
+  "res": "say Q and Q"
+ },
+ "hyphen-after-class": {
+  "ok": true,
+  "res": "X X"
+ },
+ "dollar-before-final-newline": {
+  "ok": true,
+  "res": "a\n"
+ },
+ "dollar-multiline": {
+  "ok": true,
+  "res": "X\nb"
+ },
+ "dot-excludes-cr": {
+  "ok": true,
+  "res": "a\rb"
+ },
+ "dot-nel": {
+  "ok": true,
+  "res": "X"
+ },
+ "dot-dotall": {
+  "ok": true,
+  "res": "X"
+ },
+ "s-ideographic-space": {
+  "ok": true,
+  "res": "hello"
+ },
+ "s-nbsp": {
+  "ok": true,
+  "res": "a_b_c"
+ },
+ "w-non-ascii": {
+  "ok": true,
+  "res": "Wé 你好 W"
+ },
+ "word-boundary-cjk": {
+  "ok": true,
+  "res": "éX X"
+ },
+ "digit-fullwidth": {
+  "ok": true,
+  "res": "１２３ D"
+ },
+ "case-insens-unicode": {
+  "ok": true,
+  "res": "X"
+ },
+ "case-insens-cyrillic": {
+  "ok": true,
+  "res": "X"
+ },
+ "unicode-braces-escape": {
+  "ok": true,
+  "res": "xEy"
+ },
+ "prop-script-han": {
+  "ok": true,
+  "res": "abcHdef"
+ },
+ "prop-letter": {
+  "ok": true,
+  "res": "L L 12"
+ },
+ "prop-emoji-pres": {
+  "ok": true,
+  "res": "aEb"
+ },
+ "prop-ext-pict": {
+  "ok": true,
+  "res": "aEb"
+ },
+ "lookbehind-fixed": {
+  "ok": true,
+  "res": "aX cb"
+ },
+ "lookbehind-unbounded": {
+  "ok": true,
+  "res": "12X ax"
+ },
+ "lookbehind-neg": {
+  "ok": true,
+  "res": "ab cX"
+ },
+ "lookahead-neg": {
+  "ok": true,
+  "res": "<div>TT"
+ },
+ "backref-fwd": {
+  "ok": true,
+  "res": "X"
+ },
+ "octal-nul": {
+  "ok": true,
+  "res": "X"
+ },
+ "escaped-slash": {
+  "ok": true,
+  "res": "<b>xE"
+ },
+ "class-with-dash-end": {
+  "ok": true,
+  "res": "X"
+ },
+ "class-escaped-bracket": {
+  "ok": true,
+  "res": "xXy"
+ },
+ "class-literal-bracket": {
+  "ok": true,
+  "res": "aXb"
+ },
+ "class-ampersands": {
+  "ok": true,
+  "res": "XXX"
+ },
+ "class-nested-union": {
+  "ok": true,
+  "res": "aX"
+ },
+ "possessive": {
+  "ok": false,
+  "err": "SyntaxError: Invalid regular expression: /a*+b/: Nothing to repeat"
+ },
+ "rep-dollar-amp": {
+  "ok": true,
+  "res": "a[bb]c"
+ },
+ "rep-dollar-dollar": {
+  "ok": true,
+  "res": "a$c"
+ },
+ "rep-prefix-suffix": {
+  "ok": true,
+  "res": "a[a|c]c"
+ },
+ "rep-group10-ambig": {
+  "ok": true,
+  "res": "a0"
+ },
+ "rep-missing-group": {
+  "ok": true,
+  "res": "$2"
+ },
+ "rep-backslash": {
+  "ok": true,
+  "res": "\\\\n$"
+ },
+ "empty-match-global": {
+  "ok": true,
+  "res": "-a-b-c-"
+ },
+ "sticky": {
+  "ok": true,
+  "res": "ba"
+ },
+ "surrogate-no-u": {
+  "ok": true,
+  "res": "😀"
+ },
+ "surrogate-u": {
+  "ok": true,
+  "res": "X"
+ },
+ "multiline-caret": {
+  "ok": true,
+  "res": "+a\n+b"
+ },
+ "lazy-block": {
+  "ok": true,
+  "res": "x[a\nb]y[c]"
+ },
+ "think-strip": {
+  "ok": true,
+  "res": "b"
+ },
+ "star-emph": {
+  "ok": true,
+  "res": "<i>a</i> and <i>b</i>"
+ },
+ "alt-star-long": {
+  "ok": true,
+  "res": "X"
+ },
+ "lazy-long": {
+  "ok": true,
+  "res": "X"
+ }
+}

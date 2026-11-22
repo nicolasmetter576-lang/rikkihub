@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.imggen
 
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -157,7 +159,8 @@ fun ImageGenPage(
                             contentDescription = "New session"
                         )
                     }
-                }
+                },
+                expandedHeight = AppTopBarHeight,
             )
         },
         bottomBar = {
@@ -287,7 +290,7 @@ private fun ImageGenScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(AppSpacing.sm)
             .imePadding()
     ) {
         Box(
@@ -664,7 +667,7 @@ private fun ImageGalleryScreen(
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(AppSpacing.sm),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize(),

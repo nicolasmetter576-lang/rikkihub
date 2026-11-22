@@ -1,7 +1,8 @@
 package me.rerere.ai.provider.providers.google
 
+import me.rerere.ai.util.HttpException
 import me.rerere.ai.util.httpFailure
-import android.content.Context
+import me.rerere.ai.util.parseRetryAfterMillis
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -24,7 +25,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -32,7 +32,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
-import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.provider.accumulateUsage
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
@@ -42,10 +42,16 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.VertexServiceAccount
+import me.rerere.ai.provider.providers.LEADING_USER_PLACEHOLDER
+import me.rerere.ai.provider.providers.splitSystemPrompt
 import me.rerere.ai.provider.providers.PartGroup
 import me.rerere.ai.provider.providers.google.vertex.ServiceAccountTokenProvider
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
+import me.rerere.ai.provider.resolvedLocation
+import me.rerere.ai.provider.rotationStrategyOrDefault
 import me.rerere.ai.provider.stream.SseEvent
+import me.rerere.ai.provider.stream.ToolStreamProtocolException
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.GoogleThoughtMetadata
 import me.rerere.ai.ui.ServerToolMetadata
@@ -57,17 +63,21 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
-import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.CredentialLogTag
+import me.rerere.ai.util.CredentialPool
+import me.rerere.ai.util.PooledCredential
+import me.rerere.ai.util.apiKeyCandidates
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.removeElements
-import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.mergeCustomHeaders
+import me.rerere.ai.util.vertexServiceAccountCandidates
 import me.rerere.common.http.await
-import me.rerere.common.http.jsonPrimitiveOrNull
+import java.util.concurrent.ConcurrentHashMap
+import java.io.IOException
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -84,6 +94,7 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "GoogleProvider"
 private val GEMINI_PRO_REGEX = Regex("2\\.5.*pro", RegexOption.IGNORE_CASE)
+private val SWITCHABLE_LIST_MODEL_CODES = setOf(401, 403, 429, 503)
 
 // Gemini/Vertex 工具 schema 兼容。`propertyNames` 是 JSON Schema 2020-12
 // 的校验 keyword，generateContent 拒绝该字段会返回 400。但它只在「schema 节点」
@@ -134,87 +145,176 @@ private fun JsonElement.withoutPropertyNamesKeyword(): JsonElement = when (this)
     else -> this
 }
 
-class GoogleProvider(private val client: OkHttpClient, context: Context? = null) : Provider<ProviderSetting.Google> {
-    private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
-    private val interactionsApi by lazy { InteractionsAPI(client, keyRoulette) }
+class GoogleProvider(
+    private val client: OkHttpClient,
+    private val credentialPool: CredentialPool = CredentialPool(),
+) : Provider<ProviderSetting.Google> {
+    private val interactionsApi by lazy { InteractionsAPI(client, credentialPool) }
     private val serviceAccountTokenProvider by lazy {
         ServiceAccountTokenProvider(client)
     }
 
-    private fun buildUrl(providerSetting: ProviderSetting.Google, path: String): HttpUrl {
+    // "<provider id>/<model id>" -> true: rejected with HTTP 400, skip streamed arguments for the
+    // rest of the process; false: one failed streamed-arguments attempt, skip only the retry.
+    private val streamedArgumentsSkips = ConcurrentHashMap<String, Boolean>()
+
+    private fun streamedArgumentsAllowed(key: String): Boolean {
+        val sticky = streamedArgumentsSkips[key] ?: return true
+        if (!sticky) streamedArgumentsSkips.remove(key, false)
+        return false
+    }
+
+    private fun buildUrl(
+        providerSetting: ProviderSetting.Google,
+        path: String,
+        projectId: String = providerSetting.projectId,
+        location: String = providerSetting.location,
+    ): HttpUrl {
         return if (!providerSetting.vertexAI) {
             "${providerSetting.baseUrl}/$path".toHttpUrl()
         } else if (providerSetting.useServiceAccount) {
-            "https://aiplatform.googleapis.com/v1/projects/${providerSetting.projectId}/locations/${providerSetting.location}/$path".toHttpUrl()
+            "https://aiplatform.googleapis.com/v1/projects/$projectId/locations/$location/$path".toHttpUrl()
         } else {
             "https://aiplatform.googleapis.com/v1/$path".toHttpUrl()
         }
     }
 
-    private suspend fun transformRequest(
-        providerSetting: ProviderSetting.Google,
-        request: Request
-    ): Request {
-        return if (providerSetting.vertexAI && providerSetting.useServiceAccount) {
-            val accessToken = serviceAccountTokenProvider.fetchAccessToken(
-                serviceAccountEmail = providerSetting.serviceAccountEmail.trim(),
-                privateKeyPem = StringEscapeUtils.unescapeJson(providerSetting.privateKey.trim()),
-            )
-            request.newBuilder()
-                .addHeader("Authorization", "Bearer $accessToken")
-                .build()
+    private sealed interface GoogleCredential {
+        val label: String
+
+        data class ServiceAccount(
+            override val label: String,
+            val account: VertexServiceAccount,
+        ) : GoogleCredential
+
+        data class ApiKey(
+            override val label: String,
+            val key: String,
+        ) : GoogleCredential
+    }
+
+    private fun credentialCandidates(providerSetting: ProviderSetting.Google): List<PooledCredential<GoogleCredential>> =
+        if (providerSetting.vertexAI && providerSetting.useServiceAccount) {
+            providerSetting.vertexServiceAccountCandidates().map { cred ->
+                PooledCredential(
+                    id = cred.id,
+                    displayLabel = cred.displayLabel,
+                    value = GoogleCredential.ServiceAccount(cred.displayLabel, cred.value),
+                )
+            }
         } else {
-            val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
-            if (providerSetting.vertexAI) {
-                request.newBuilder()
-                    .url(request.url.newBuilder().addQueryParameter("key", key).build())
+            providerSetting.apiKeyCandidates().map { cred ->
+                PooledCredential(
+                    id = cred.id,
+                    displayLabel = cred.displayLabel,
+                    value = GoogleCredential.ApiKey(cred.displayLabel, cred.value),
+                )
+            }
+        }
+
+    private suspend fun buildSignedRequest(
+        providerSetting: ProviderSetting.Google,
+        credential: GoogleCredential,
+        path: String,
+        configureUrl: (HttpUrl.Builder) -> Unit = {},
+        builderBlock: Request.Builder.(HttpUrl) -> Unit,
+    ): Request {
+        val baseUrl = when (credential) {
+            is GoogleCredential.ServiceAccount -> buildUrl(
+                providerSetting = providerSetting,
+                path = path,
+                projectId = credential.account.projectId.trim(),
+                location = credential.account.resolvedLocation(providerSetting.location),
+            )
+            is GoogleCredential.ApiKey -> buildUrl(providerSetting = providerSetting, path = path)
+        }
+        val finalUrl = baseUrl.newBuilder().apply(configureUrl).build()
+        val requestBuilder = Request.Builder().url(finalUrl)
+        requestBuilder.builderBlock(finalUrl)
+        if (credential.label.isNotBlank()) {
+            requestBuilder.tag(CredentialLogTag::class.java, CredentialLogTag(credential.label))
+        }
+        return when (credential) {
+            is GoogleCredential.ServiceAccount -> {
+                val accessToken = serviceAccountTokenProvider.fetchAccessToken(
+                    serviceAccountEmail = credential.account.serviceAccountEmail.trim(),
+                    privateKeyPem = StringEscapeUtils.unescapeJson(credential.account.privateKey.trim()),
+                )
+                requestBuilder
+                    .addHeader("Authorization", "Bearer $accessToken")
                     .build()
-            } else {
-                request.newBuilder()
-                    .addHeader("x-goog-api-key", key)
-                    .build()
+            }
+
+            is GoogleCredential.ApiKey -> {
+                if (providerSetting.vertexAI) {
+                    requestBuilder
+                        .url(finalUrl.newBuilder().addQueryParameter("key", credential.key).build())
+                        .build()
+                } else {
+                    requestBuilder
+                        .addHeader("x-goog-api-key", credential.key)
+                        .build()
+                }
             }
         }
     }
 
+    suspend fun verifyServiceAccountToken(account: VertexServiceAccount): String =
+        serviceAccountTokenProvider.fetchAccessToken(
+            serviceAccountEmail = account.serviceAccountEmail.trim(),
+            privateKeyPem = StringEscapeUtils.unescapeJson(account.privateKey.trim()),
+        )
+
     override suspend fun listModels(providerSetting: ProviderSetting.Google): List<Model> =
         withContext(Dispatchers.IO) {
-            val url = buildUrl(providerSetting = providerSetting, path = "models?pageSize=100")
-            val request = transformRequest(
-                providerSetting = providerSetting,
-                request = Request.Builder()
-                    .url(url)
-                    .headers(providerSetting.mergeCustomHeaders())
-                    .get()
-                    .build()
-            )
-            val response = client.newCall(request).await()
-            if (!response.isSuccessful) {
-                response.close()
-                return@withContext emptyList()
-            }
-            response.use {
-                val body = it.body?.string() ?: error("empty body")
-                Log.d(TAG, "listModels: $body")
-                val bodyObject = json.parseToJsonElement(body).jsonObject
-                val models = bodyObject["models"]?.jsonArray ?: return@withContext emptyList()
-
-                models.mapNotNull {
-                    val modelObject = it.jsonObject
-
-                    // 忽略非chat/embedding模型
-                    val supportedGenerationMethods =
-                        modelObject["supportedGenerationMethods"]!!.jsonArray
-                            .map { method -> method.jsonPrimitive.content }
-                    if ("generateContent" !in supportedGenerationMethods && "embedContent" !in supportedGenerationMethods) {
-                        return@mapNotNull null
+            val candidates = credentialCandidates(providerSetting)
+            credentialPool.executeWithFailover(
+                providerId = providerSetting.id.toString(),
+                modelId = null,
+                candidates = candidates,
+                strategy = providerSetting.rotationStrategyOrDefault(),
+            ) { cred ->
+                val request = buildSignedRequest(
+                    providerSetting = providerSetting,
+                    credential = cred.value,
+                    path = "models?pageSize=100",
+                ) {
+                    headers(providerSetting.mergeCustomHeaders())
+                    get()
+                }
+                client.newCall(request).await().use { response ->
+                    if (!response.isSuccessful) {
+                        if (response.code in SWITCHABLE_LIST_MODEL_CODES) {
+                            throw HttpException(
+                                "Google listModels HTTP ${response.code}",
+                                statusCode = response.code,
+                                retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                            )
+                        }
+                        return@use emptyList()
                     }
+                    val body = response.body?.string() ?: error("empty body")
+                    Log.d(TAG, "listModels: $body")
+                    val bodyObject = json.parseToJsonElement(body).jsonObject
+                    val models = bodyObject["models"]?.jsonArray ?: return@use emptyList()
 
-                    Model(
-                        modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/"),
-                        displayName = modelObject["displayName"]!!.jsonPrimitive.content,
-                        type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
-                    )
+                    models.mapNotNull {
+                        val modelObject = it.jsonObject
+
+                        // 忽略非chat/embedding模型
+                        val supportedGenerationMethods =
+                            modelObject["supportedGenerationMethods"]!!.jsonArray
+                                .map { method -> method.jsonPrimitive.content }
+                        if ("generateContent" !in supportedGenerationMethods && "embedContent" !in supportedGenerationMethods) {
+                            return@mapNotNull null
+                        }
+
+                        Model(
+                            modelId = modelObject["name"]!!.jsonPrimitive.content.substringAfter("/"),
+                            displayName = modelObject["displayName"]!!.jsonPrimitive.content,
+                            type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
+                        )
+                    }
                 }
             }
         }
@@ -229,46 +329,55 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         }
         val requestBody = buildCompletionRequestBody(messages, params)
         val encodedBody = json.encodeToString(requestBody)
+        val path = if (providerSetting.vertexAI) {
+            "publishers/google/models/${params.model.modelId}:generateContent"
+        } else {
+            "models/${params.model.modelId}:generateContent"
+        }
 
-        val url = buildUrl(
-            providerSetting = providerSetting,
-            path = if (providerSetting.vertexAI) {
-                "publishers/google/models/${params.model.modelId}:generateContent"
-            } else {
-                "models/${params.model.modelId}:generateContent"
+        val candidates = credentialCandidates(providerSetting)
+        credentialPool.executeWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = candidates,
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            val request = buildSignedRequest(
+                providerSetting = providerSetting,
+                credential = cred.value,
+                path = path,
+            ) { url ->
+                headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                configureSessionHeaders(url.toString(), params.resolvedSessionId(providerSetting))
+                post(encodedBody.toRequestBody("application/json".toMediaType()))
+                configureReferHeaders(providerSetting.baseUrl)
             }
-        )
 
-        val request = transformRequest(
-            providerSetting = providerSetting,
-            request = Request.Builder()
-                .url(url)
-                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-                .configureSessionHeaders(url.toString(), params.resolvedSessionId(providerSetting))
-                .post(
-                    encodedBody.toRequestBody("application/json".toMediaType())
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) {
+                    // Do not read error bodies: upstream errors may echo credentials.
+                    throw HttpException(
+                        "Google generateContent HTTP ${response.code}",
+                        statusCode = response.code,
+                        retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                    )
+                }
+
+                val bodyStr = response.body?.string() ?: ""
+                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+
+                val candidate = bodyJson["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
+                    ?: error("No candidates in response")
+                val usage = GoogleUsageNormalizer().update(bodyJson["usageMetadata"] as? JsonObject).accumulateUsage()
+                TextGenerationResult(
+                    id = Uuid.random().toString(),
+                    model = params.model.modelId,
+                    message = parseMessage(candidate),
+                    finishReason = candidate["finishReason"]?.jsonPrimitive?.contentOrNull,
+                    usage = usage.snapshot,
+                    hasCompleteUsage = usage.hasCompleteUsage,
                 )
-                .configureReferHeaders(providerSetting.baseUrl)
-                .build()
-        )
-
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
             }
-
-            val bodyStr = response.body?.string() ?: ""
-            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-
-            val candidate = bodyJson["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
-                ?: error("No candidates in response")
-            TextGenerationResult(
-                id = Uuid.random().toString(),
-                model = params.model.modelId,
-                message = parseMessage(candidate),
-                finishReason = candidate["finishReason"]?.jsonPrimitive?.contentOrNull,
-                usage = parseUsageMeta(bodyJson["usageMetadata"] as? JsonObject),
-            )
         }
     }
 
@@ -276,38 +385,61 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         providerSetting: ProviderSetting.Google,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-    ): Flow<StreamChunk> = if (providerSetting.useInteractionsApi && !providerSetting.vertexAI) {
-        interactionsApi.streamText(providerSetting, messages, params)
-    } else callbackFlow {
-        val requestBody = buildCompletionRequestBody(messages, params)
+    ): Flow<StreamChunk> {
+        if (providerSetting.useInteractionsApi && !providerSetting.vertexAI) {
+            return interactionsApi.streamText(providerSetting, messages, params)
+        }
+        val streamedArgumentsKey = "${providerSetting.id}/${params.model.modelId}"
+        val streamArguments = providerSetting.vertexAI && providerSetting.streamFunctionCallArguments &&
+            supportsStreamedFunctionCallArguments(params) && streamedArgumentsAllowed(streamedArgumentsKey)
+        val requestBody = buildCompletionRequestBody(messages, params, streamFunctionCallArguments = streamArguments)
         val encodedBody = json.encodeToString(requestBody)
-
-        val url = buildUrl(
-            providerSetting = providerSetting,
-            path = if (providerSetting.vertexAI) {
-                "publishers/google/models/${params.model.modelId}:streamGenerateContent"
-            } else {
-                "models/${params.model.modelId}:streamGenerateContent"
-            }
-        ).newBuilder().addQueryParameter("alt", "sse").build()
-
-        val request = transformRequest(
-            providerSetting = providerSetting,
-            request = Request.Builder()
-                .url(url)
-                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-                .configureSessionHeaders(url.toString(), params.resolvedSessionId(providerSetting))
-                .post(
-                    encodedBody.toRequestBody("application/json".toMediaType())
-                )
-                .configureReferHeaders(providerSetting.baseUrl)
-                .build()
-        )
-
+        val path = if (providerSetting.vertexAI) {
+            "publishers/google/models/${params.model.modelId}:streamGenerateContent"
+        } else {
+            "models/${params.model.modelId}:streamGenerateContent"
+        }
         Log.i(TAG, "streamText: $encodedBody")
 
+        val candidates = credentialCandidates(providerSetting)
+        return credentialPool.streamWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = candidates,
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            val request = buildSignedRequest(
+                providerSetting = providerSetting,
+                credential = cred.value,
+                path = path,
+                configureUrl = { it.addQueryParameter("alt", "sse") },
+            ) { url ->
+                headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                configureSessionHeaders(url.toString(), params.resolvedSessionId(providerSetting))
+                post(encodedBody.toRequestBody("application/json".toMediaType()))
+                configureReferHeaders(providerSetting.baseUrl)
+            }
+
+            streamSingleRequest(
+                providerSetting = providerSetting,
+                params = params,
+                request = request,
+                streamedArgumentsKey = streamedArgumentsKey,
+                streamArguments = streamArguments,
+            )
+        }
+    }
+
+    private fun streamSingleRequest(
+        providerSetting: ProviderSetting.Google,
+        params: TextGenerationParams,
+        request: Request,
+        streamedArgumentsKey: String,
+        streamArguments: Boolean,
+    ): Flow<StreamChunk> = callbackFlow {
+        var receivedEvents = false
         val responseId = Uuid.random().toString()
-        val decoder = GoogleStreamDecoder(responseId, params.model.modelId)
+        val decoder = GoogleStreamDecoder(responseId, params.model.modelId, vertexAI = providerSetting.vertexAI)
 
         fun sendChunks(chunks: Iterable<StreamChunk>) {
             // trySendBlocking 阻塞等待通道可收, 不会在缓冲满时丢弃 delta (#1295)
@@ -325,15 +457,25 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 type: String?,
                 data: String
             ) {
-                Log.i(TAG, "onEvent: $data")
-
+                receivedEvents = true
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
                     if (result.completed) close()
                 } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to parse stream event: $data", e)
-                    close(e)
+                    Log.e(
+                        TAG,
+                        "Stream event failed: " + ((e as? ToolStreamProtocolException)?.code ?: "decode_error"),
+                    )
+                    val code = (e as? ToolStreamProtocolException)?.code
+                    if (streamArguments && (decoder.toolCallRejected || code in STREAMED_ARGUMENTS_SHAPE_CODES)) {
+                        // Retry once the classic way: the generation loop restarts the attempt on IOException.
+                        streamedArgumentsSkips[streamedArgumentsKey] = false
+                        close(StreamedArgumentsFallbackException("${e.message} ($code)", code = code))
+                    } else {
+                        close(e)
+                    }
+                    eventSource.cancel()
                 }
             }
 
@@ -342,38 +484,36 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 t: Throwable?,
                 response: Response?
             ) {
-                var exception = t
-
-                Log.e(TAG, "[onFailure] 发生错误: ${t?.message}", t)
-
-                try {
-                    if (t == null && response != null) {
-                        val bodyStr = response.body.stringSafe()
-                        if (!bodyStr.isNullOrEmpty()) {
-                            val bodyElement = json.parseToJsonElement(bodyStr)
-                            Log.i(TAG, "onFailure: $bodyElement")
-                            if (bodyElement is JsonObject) {
-                                exception = Exception(
-                                    bodyElement["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
-                                        ?: "unknown"
-                                )
-                            }
-                        } else {
-                            exception = Exception("Unknown error: ${response.code}")
-                        }
-                    }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse error body", e)
-                    exception = e
-                } finally {
-                    close(httpFailure(exception, response) ?: Exception("Stream failed"))
+                if (isClosedForSend) return
+                if (streamArguments && !receivedEvents && response?.code == 400) {
+                    // Blind fallback (error bodies stay unread): a real 400 fails again without the field.
+                    streamedArgumentsSkips[streamedArgumentsKey] = true
+                    close(StreamedArgumentsFallbackException("Vertex rejected streamed tool arguments (HTTP 400)"))
+                    return
                 }
+                // Do not read error bodies: upstream errors may echo credentials.
+                val exception = if (t == null && response != null) {
+                    httpFailure(null, response) ?: Exception("Google stream failed: HTTP ${response.code}")
+                } else {
+                    httpFailure(t, response) ?: Exception("Google stream failed")
+                }
+                close(exception)
             }
 
             override fun onClosed(eventSource: EventSource) {
                 Log.d(TAG, "[onClosed] 连接已关闭")
-                sendChunks(decoder.onClosed())
-                close()
+                try {
+                    sendChunks(decoder.onClosed())
+                    close()
+                } catch (e: Throwable) {
+                    val code = (e as? ToolStreamProtocolException)?.code
+                    if (streamArguments && code in STREAMED_ARGUMENTS_SHAPE_CODES) {
+                        streamedArgumentsSkips[streamedArgumentsKey] = false
+                        close(StreamedArgumentsFallbackException("${e.message} ($code)", code = code))
+                    } else {
+                        close(e)
+                    }
+                }
             }
         }
 
@@ -391,21 +531,25 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
     internal fun buildGenerateContentBody(messages: List<UIMessage>, params: TextGenerationParams): JsonObject =
         buildCompletionRequestBody(messages, params)
 
+    @JvmOverloads
     private fun buildCompletionRequestBody(
         messages: List<UIMessage>,
-        params: TextGenerationParams
+        params: TextGenerationParams,
+        streamFunctionCallArguments: Boolean = false,
     ): JsonObject = buildJsonObject {
         // System message if available
-        val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
-        if (systemMessage != null && !params.model.outputModalities.contains(Modality.IMAGE)) {
+        val systemMessages = messages.splitSystemPrompt().system
+        if (systemMessages.isNotEmpty() && !params.model.outputModalities.contains(Modality.IMAGE)) {
             put("systemInstruction", buildJsonObject {
                 putJsonArray("parts") {
-                    add(buildJsonObject {
-                        put(
-                            "text",
-                            systemMessage.parts.filterIsInstance<UIMessagePart.Text>()
-                                .joinToString { it.text })
-                    })
+                    systemMessages.forEach { systemMessage ->
+                        add(buildJsonObject {
+                            put(
+                                "text",
+                                systemMessage.parts.filterIsInstance<UIMessagePart.Text>()
+                                    .joinToString { it.text })
+                        })
+                    }
                 }
             })
         }
@@ -414,6 +558,10 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         put("generationConfig", buildJsonObject {
             if (params.temperature != null) put("temperature", params.temperature)
             if (params.topP != null) put("topP", params.topP)
+            if (params.topK != null) put("topK", params.topK)
+            if (params.frequencyPenalty != null) put("frequencyPenalty", params.frequencyPenalty)
+            if (params.presencePenalty != null) put("presencePenalty", params.presencePenalty)
+            if (params.seed != null) put("seed", params.seed)
             if (params.maxTokens != null) put("maxOutputTokens", params.maxTokens)
             if (params.model.outputModalities.contains(Modality.IMAGE)) {
                 put("responseModalities", buildJsonArray {
@@ -519,9 +667,13 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 }
             }
         }
-        if (useFunctionTools && useBuiltInTools) {
+        val streamArguments = streamFunctionCallArguments && useFunctionTools
+        if ((useFunctionTools && useBuiltInTools) || streamArguments) {
             put("toolConfig", buildJsonObject {
-                put("includeServerSideToolInvocations", true)
+                if (useFunctionTools && useBuiltInTools) put("includeServerSideToolInvocations", true)
+                if (streamArguments) {
+                    put("functionCallingConfig", buildJsonObject { put("streamFunctionCallArguments", true) })
+                }
             })
         }
 
@@ -651,6 +803,14 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 )
             }
 
+            // Signature-only part (Gemini 4 built-in search state), see GoogleStreamDecoder.parsePart.
+            jsonObject.keys == setOf("thoughtSignature") -> UIMessagePart.Reasoning(
+                reasoning = "",
+                createdAt = Clock.System.now(),
+                finishedAt = null,
+                metadata = jsonObject.toGoogleThoughtMetadata(),
+            )
+
             jsonObject.containsKey("functionCall") -> {
                 val functionCall = jsonObject["functionCall"]!!.jsonObject
                 val toolCallId = functionCall["id"]?.jsonPrimitive?.contentOrNull
@@ -729,8 +889,9 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
 
     private fun buildContents(messages: List<UIMessage>): JsonArray {
         return buildJsonArray {
-            messages
-                .filter { it.role != MessageRole.SYSTEM && it.isValidToUpload() }
+            val sendable = messages.splitSystemPrompt().conversation.filter { it.isValidToUpload() }
+            if (sendable.firstOrNull()?.role == MessageRole.ASSISTANT) addUserMessage(UIMessage.user(LEADING_USER_PLACEHOLDER))
+            sendable
                 .forEach { message ->
                     if (message.role == MessageRole.ASSISTANT) {
                         addModelMessage(message)
@@ -951,21 +1112,35 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         second == null -> first
         else -> JsonObject(first + second)
     }
-
-    private fun parseUsageMeta(jsonObject: JsonObject?): TokenUsage? {
-        if (jsonObject == null) {
-            return null
-        }
-        val promptTokens = jsonObject["promptTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val thoughtTokens = jsonObject["thoughtsTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val cachedTokens = jsonObject["cachedContentTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val candidatesTokens = jsonObject["candidatesTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val totalTokens = jsonObject["totalTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        return TokenUsage(
-            promptTokens = promptTokens,
-            completionTokens = candidatesTokens + thoughtTokens,
-            totalTokens = totalTokens,
-            cachedTokens = cachedTokens
-        )
-    }
 }
+
+/** Vertex streams function-call arguments for Gemini 3 and later, except the Flash-Lite models. */
+// Vertex rejects the field next to built-in tools: "Streaming function call arguments is not
+// supported with Built-in tools." (HTTP 400, gemini-4-argon, 2026-11-12).
+private fun supportsStreamedFunctionCallArguments(params: TextGenerationParams): Boolean {
+    val modelId = params.model.modelId
+    return params.tools.isNotEmpty() && params.model.abilities.contains(ModelAbility.TOOL) &&
+        (ModelRegistry.GEMINI_3_SERIES.match(modelId) || ModelRegistry.GEMINI_4.match(modelId)) &&
+        !modelId.contains("lite", ignoreCase = true) &&
+        params.model.tools.none { it == BuiltInTools.Search || it == BuiltInTools.UrlContext }
+}
+
+/**
+ * Streamed-argument shape anomalies, plus a server-rejected tool call (decoder.toolCallRejected), are
+ * retried without streamed arguments. Output-limit stops (MAX_TOKENS) and disconnects are not: a classic
+ * retry would hit the same limit.
+ */
+private val STREAMED_ARGUMENTS_SHAPE_CODES = setOf(
+    "google_unsupported_partial_args",
+    "google_orphan_partial_args",
+    "google_interleaved_tool_call",
+    "google_duplicate_partial_args",
+    // STOP arrived without the closing functionCall:{} (seen in the field, not reproduced)
+    UNTERMINATED_STREAMED_ARGS_CODE,
+)
+
+/** An IOException so the generation loop's network retry restarts the attempt without streamed arguments. */
+class StreamedArgumentsFallbackException(
+    message: String,
+    val code: String? = null,
+) : IOException("Vertex streamed tool arguments failed, retrying without them: $message")

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageUpdate
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.TextGenerationResult
@@ -256,15 +257,15 @@ class GenerationLoopRealChainTest {
     fun `usage shards merge and missing mid stream stay null`() = runBlocking {
         val harness = StreamHarness(
             listOf(
-                // step1: prompt/completion/total 分在三个 chunk, 0 段不重设已得值
+                // step1: prompt/completion/total 分在三个 chunk, 未报告的字段不重设已得值
                 ScriptedAttempt(
                     listOf(
                         StreamChunk.ToolCallStart(id = "u-1", toolName = "echo_tool"),
                         StreamChunk.ToolCallDelta(id = "u-1", toolNameDelta = "", inputDelta = "{}"),
                         StreamChunk.ToolCallEnd(id = "u-1"),
-                        StreamChunk.Usage(TokenUsage(40, 0, totalTokens = 0)),
-                        StreamChunk.Usage(TokenUsage(0, 15, totalTokens = 0)),
-                        StreamChunk.Usage(TokenUsage(0, 0, totalTokens = 55)),
+                        StreamChunk.Usage(UsageUpdate(promptTokens = 40)),
+                        StreamChunk.Usage(UsageUpdate(completionTokens = 15)),
+                        StreamChunk.Usage(UsageUpdate(totalTokens = 55)),
                         StreamChunk.Finish(finishReason = "tool_calls"),
                     )
                 ),
@@ -279,7 +280,7 @@ class GenerationLoopRealChainTest {
         )
         val steps = chunks.steps()
         assertEquals(3, steps.size)
-        // merge 语义: 正值覆盖, 0 保留; total=prompt+completion (40+15=55)
+        // 明确报告的字段覆盖，缺失保留；total保留上游报告55。
         assertEquals(40, steps[0].usage?.promptTokens)
         assertEquals(15, steps[0].usage?.completionTokens)
         assertEquals(55, steps[0].usage?.totalTokens)

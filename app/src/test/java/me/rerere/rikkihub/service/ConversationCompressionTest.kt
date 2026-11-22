@@ -53,6 +53,27 @@ class ConversationCompressionTest {
     }
 
     @Test
+    fun `fromOriginal skips earlier checkpoints while keeping cut after the last checkpoint`() {
+        val cp1 = checkpoint("s1")
+        val cp2 = checkpoint("s2")
+        val history = nodes.take(2) + cp1 + nodes.subList(2, 4) + cp2 + listOf(nodes[4])
+        assertTrue(hasContextCheckpoint(history))
+        assertTrue(!hasContextCheckpoint(nodes))
+
+        // fromOriginal = true takes non-checkpoint originals up to cut, skipping cp1 & cp2
+        assertEquals(nodes, compressionRange(history, keepRecent = 0, fromOriginal = true))
+        // Keeping only the tail node after cp2 puts cut right after cp2 -> valid
+        assertEquals(nodes.take(4), compressionRange(history, keepRecent = 1, fromOriginal = true))
+        // Keeping >= 2 nodes would put cut at or before cp2 -> rejected (new checkpoint would be shadowed)
+        assertNull(compressionRange(history, keepRecent = 2, fromOriginal = true))
+        assertNull(compressionRange(history, keepRecent = 3, fromOriginal = true))
+        // Checkpoint at the very end can still be re-summarized from originals when keepRecent = 0
+        val trailingCp = nodes + checkpoint("end")
+        assertEquals(nodes, compressionRange(trailingCp, keepRecent = 0, fromOriginal = true))
+        assertNull(compressionRange(trailingCp, keepRecent = 1, fromOriginal = true))
+    }
+
+    @Test
     fun `the checkpoint goes between the summarized part and the kept recent nodes`() {
         val keep = 2
         val cut = nodes.take(nodes.size - keep)
@@ -172,6 +193,18 @@ class ConversationCompressionTest {
         assertThrows(IllegalArgumentException::class.java) { CompressRequest(keepRecent = -1) }
         assertThrows(IllegalArgumentException::class.java) {
             CompressRequest(keepRecent = CompressRequest.MAX_KEEP_RECENT + 1)
+        }
+        assertEquals(50, CompressRequest(carryCount = 50).carryCount)
+        assertThrows(IllegalArgumentException::class.java) { CompressRequest(carryCount = 0) }
+        assertThrows(IllegalArgumentException::class.java) { CompressRequest(carryCount = 51) }
+        assertThrows(IllegalArgumentException::class.java) {
+            CompressRequest(carryExcludedNodeIds = (0..CompressRequest.MAX_CARRY_EXCLUDED).map { Uuid.random() }.toSet())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CompressRequest(carryEdits = (0..CompressRequest.MAX_CARRY_EDITS).associate { Uuid.random() to CarriedOriginalEdit("ok") })
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CarriedOriginalEdit(userText = "a".repeat(CarriedOriginalEdit.MAX_EDIT_LENGTH + 1))
         }
     }
 }

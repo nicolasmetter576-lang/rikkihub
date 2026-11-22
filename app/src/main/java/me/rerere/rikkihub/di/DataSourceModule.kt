@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.di
 
+import me.rerere.rikkihub.data.ai.QuotaTracker
+import me.rerere.rikkihub.data.ai.UsageRecorder
 import android.content.Context
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -12,6 +14,8 @@ import me.rerere.rikkihub.AppScope
 import me.rerere.rikkihub.BuildConfig
 import me.rerere.rikkihub.data.ai.AIRequestInterceptor
 import me.rerere.rikkihub.data.ai.RequestLoggingInterceptor
+import me.rerere.rikkihub.data.ai.SENSITIVE_HEADER_NAMES
+import me.rerere.rikkihub.data.ai.SENSITIVE_QUERY_PARAMS
 import me.rerere.rikkihub.data.ai.transformers.AssistantTemplateLoader
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -42,7 +46,13 @@ import me.rerere.rikkihub.data.devin.DevinCredentialStore
 import me.rerere.rikkihub.data.devin.DevinOAuthManager
 import me.rerere.rikkihub.data.devin.DevinProvider
 import me.rerere.rikkihub.data.datastore.SettingsStore
+import me.rerere.rikkihub.data.sync.BackupDeviceStateStore
 import me.rerere.rikkihub.data.sync.BackupManager
+import me.rerere.rikkihub.data.sync.BackupPasswordStore
+import me.rerere.rikkihub.data.sync.LocalSnapshotScheduler
+import me.rerere.rikkihub.data.sync.LocalSnapshotService
+import me.rerere.rikkihub.data.sync.LocalSnapshotSkipReason
+import me.rerere.rikkihub.data.sync.LocalSnapshotStore
 import me.rerere.rikkihub.data.db.AppDatabaseFactory
 import me.rerere.rikkihub.data.db.AppDatabase
 import me.rerere.rikkihub.data.db.fts.MessageFtsManager
@@ -142,6 +152,31 @@ val dataSourceModule = module {
     }
 
     single {
+        get<AppDatabase>().characterDao()
+    }
+
+    single {
+        get<AppDatabase>().usageRecordDao()
+    }
+
+    single { UsageRecorder(dao = get(), scope = get<AppScope>()) }
+
+    single {
+        val tracker = get<QuotaTracker>()
+        me.rerere.rikkihub.data.ai.UsageStatsService(dao = get(), currentSnapshots = tracker::currentSnapshots)
+    }
+
+    single {
+        QuotaTracker(
+            dao = get(),
+            scope = get<AppScope>(),
+            devin = get(),
+            antigravity = get(),
+            codex = get(),
+        )
+    }
+
+    single {
         RemoteFileStore(
             settingsStore = get(),
             httpClient = get(),
@@ -168,6 +203,7 @@ val dataSourceModule = module {
             context = get(),
             providerManager = get(),
             json = get(),
+            usageRecorder = get(),
         )
     }
 
@@ -193,15 +229,15 @@ val dataSourceModule = module {
     }
 
     single {
-        TranslationHandler(providerManager = get())
+        TranslationHandler(providerManager = get(), usageRecorder = get())
     }
 
     single {
-        TuiqiaoHandler(providerManager = get())
+        TuiqiaoHandler(providerManager = get(), usageRecorder = get())
     }
 
     single {
-        PromptPolishHandler(providerManager = get())
+        PromptPolishHandler(providerManager = get(), usageRecorder = get())
     }
 
     single {
@@ -211,7 +247,7 @@ val dataSourceModule = module {
     }
 
     single {
-        ZaizaoHandler(providerManager = get())
+        ZaizaoHandler(providerManager = get(), usageRecorder = get())
     }
 
     single {
@@ -295,7 +331,8 @@ val dataSourceModule = module {
             .addNetworkInterceptor(RequestLoggingInterceptor())
             .addInterceptor(AIRequestInterceptor())
             .addInterceptor(HttpLoggingInterceptor().apply {
-                redactHeader("Proxy-Authorization")
+                SENSITIVE_HEADER_NAMES.forEach(::redactHeader)
+                redactQueryParams(*SENSITIVE_QUERY_PARAMS.toTypedArray())
                 level = HttpLoggingInterceptor.Level.HEADERS
             })
             .build()
@@ -416,13 +453,48 @@ val dataSourceModule = module {
         }
     }
 
+    single { BackupDeviceStateStore(BackupDeviceStateStore.stateDir(get()), get()) }
+
+    single { BackupPasswordStore(context = get()) }
+
+    single { LocalSnapshotStore(LocalSnapshotStore.directory(get()), get()) }
+
     single { BackupManager(context = get(), database = get(), settingsStore = get(), json = get()) }
+
+    single {
+        val koin = this
+        LocalSnapshotService(
+            context = get(),
+            backupManager = get(),
+            store = get(),
+            stateStore = get(),
+            isBusy = {
+                when {
+                    get<BackupManager>().isBusy -> LocalSnapshotSkipReason.BUSY
+                    koin.get<me.rerere.rikkihub.service.ChatService>().hasActiveGenerationOrCompression() ->
+                        LocalSnapshotSkipReason.GENERATING
+                    else -> null
+                }
+            },
+        )
+    }
+
+    single {
+        LocalSnapshotScheduler(
+            appScope = get(),
+            service = get(),
+            stateStore = get(),
+            eventBus = get(),
+            context = get(),
+        )
+    }
 
     single {
         WebDavSync(
             backupManager = get(),
             context = get(),
-            httpClient = get()
+            httpClient = get(),
+            deviceStateStore = get(),
         )
     }
 
@@ -438,7 +510,8 @@ val dataSourceModule = module {
         S3Sync(
             backupManager = get(),
             context = get(),
-            httpClient = get()
+            httpClient = get(),
+            deviceStateStore = get(),
         )
     }
 }

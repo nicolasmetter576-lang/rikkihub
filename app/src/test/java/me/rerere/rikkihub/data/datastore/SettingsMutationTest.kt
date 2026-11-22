@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.datastore
 
+import me.rerere.rikkihub.data.model.mainPromptText
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -210,7 +211,7 @@ class SettingsMutationTest {
             val initial = store.settingsSnapshot()
             val creator = initial.assistants.first()
             assertEquals(creatorId, creator.id)
-            assertEquals(me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition.SYSTEM_PROMPT, creator.systemPrompt)
+            assertEquals(me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition.SYSTEM_PROMPT, creator.mainPromptText)
             assertTrue(creator.localTools.isEmpty())
 
             // Selectable like any other assistant.
@@ -272,14 +273,14 @@ class SettingsMutationTest {
         }
     }
 
-    @Test fun freshInstallKeepsBuiltInModeInjectionsAndAnEmptiedListStaysEmpty() = runBlocking<Unit> {
+    @Test fun freshInstallKeepsBuiltInPromptLibraryAndAnEmptiedListStaysEmpty() = runBlocking<Unit> {
         fixture { store ->
-            // No MODE_INJECTIONS key yet: the built-in Learning Mode must not be decoded away.
-            assertEquals(DEFAULT_MODE_INJECTIONS, store.settingsSnapshot().modeInjections)
+            // No PROMPT_LIBRARY key yet: the built-in Learning Mode must not be decoded away.
+            assertEquals(DEFAULT_PROMPT_LIBRARY.map { it.toJson() }, store.settingsSnapshot().promptLibrary.map { it.toJson() })
             store.update { it.copy(titlePrompt = "first write") }
-            assertEquals(DEFAULT_MODE_INJECTIONS, store.settingsSnapshot().modeInjections)
-            store.update { it.copy(modeInjections = emptyList()) }
-            assertEquals(emptyList<Any>(), store.settingsSnapshot().modeInjections)
+            assertEquals(DEFAULT_PROMPT_LIBRARY.map { it.toJson() }, store.settingsSnapshot().promptLibrary.map { it.toJson() })
+            store.update { it.copy(promptLibrary = emptyList()) }
+            assertEquals(emptyList<Any>(), store.settingsSnapshot().promptLibrary)
         }
     }
 

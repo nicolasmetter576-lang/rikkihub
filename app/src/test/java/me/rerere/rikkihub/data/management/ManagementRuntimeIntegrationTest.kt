@@ -208,4 +208,21 @@ class ManagementRuntimeIntegrationTest {
             params = JsonObject(mapOf("slot" to JsonPrimitive("TITLE"))))))
         assertNull(null)
     }
+
+    @Test(timeout = 60_000) fun aDefinitionChangeLapsesPendingProposalsAndWithdrawsUndoOfAppliedOnes() = fixture { f ->
+        fun create(title: String) = me.rerere.rikkihub.data.management.adapters.SettingsDomainCommand("settings.quickMessages",
+            me.rerere.rikkihub.data.management.adapters.SettingsAction.Create(mapOf(
+                "title" to kotlinx.serialization.json.JsonPrimitive(title), "content" to kotlinx.serialization.json.JsonPrimitive("x"))))
+        val applied = f.runtime.preview(create("applied"), f.source).also { f.approve(it.proposalId) }
+        val pending = f.runtime.preview(create("pending"), f.source)
+        assertTrue("undo works while the definition is the same", f.runtime.previewUndo(f.runtime.proposals.get(applied.proposalId), f.source) != null)
+
+        f.definitionVersion = 2
+        f.runtime = f.newRuntime()
+        f.runtime.ensureStarted()
+        val lapsed = f.runtime.proposals.get(pending.proposalId)
+        assertEquals(ProposalStatus.EXPIRED, lapsed.status)
+        assertEquals("DEFINITION_CHANGED", lapsed.statusReason)
+        assertEquals(null, f.runtime.previewUndo(f.runtime.proposals.get(applied.proposalId), f.source))
+    }
 }

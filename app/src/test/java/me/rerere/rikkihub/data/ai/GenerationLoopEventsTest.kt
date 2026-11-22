@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageUpdate
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
@@ -88,15 +89,15 @@ class GenerationLoopEventsTest {
     fun `step usage merges split Usage chunks and totals accumulate across steps`() = runBlocking {
         val chunks = Harness(
             listOf(
-                // 一步内两段 Usage: 0 值保留旧值, 正值覆盖 —— 与消息 usage 同一 merge 语义。
+                // 一步内两段 Usage: 缺失保留旧值；没有上游total时由合并后的p+c派生。
                 // 本步必须带 tool call, 否则循环在第一步就自然结束 (三步脚本变一步)。
                 ScriptedAttempt(
                     listOf(
                         StreamChunk.ToolCallStart(id = "call-0", toolName = "echo_tool"),
                         StreamChunk.ToolCallDelta(id = "call-0", toolNameDelta = "", inputDelta = "{}"),
                         StreamChunk.ToolCallEnd(id = "call-0"),
-                        StreamChunk.Usage(TokenUsage(100, 50, totalTokens = 150)),
-                        StreamChunk.Usage(TokenUsage(0, 60, totalTokens = 0)),
+                        StreamChunk.Usage(UsageUpdate(promptTokens = 100, completionTokens = 50)),
+                        StreamChunk.Usage(UsageUpdate(completionTokens = 60)),
                         StreamChunk.Finish(finishReason = "tool_calls"),
                     )
                 ),

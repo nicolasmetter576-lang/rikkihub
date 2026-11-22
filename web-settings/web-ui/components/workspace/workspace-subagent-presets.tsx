@@ -203,7 +203,7 @@ export function WorkspaceSubagentPresets({ workspaceId, workspaceAllowsContext, 
     : presets;
 
   return (
-    <section className="space-y-4 rounded-lg border p-4">
+    <section className="space-y-4 rounded-xl border p-3">
       <div><h2 className="text-sm font-medium">{t("library.local_title")}</h2><p className="text-xs text-muted-foreground">{t("library.local_help")}</p></div>
       <p className="text-xs text-muted-foreground">{t("presets.execution_notice")}</p>
       {query.isPending ? <p className="text-sm">{t("list.loading")}</p> : null}
@@ -221,10 +221,10 @@ export function WorkspaceSubagentPresets({ workspaceId, workspaceAllowsContext, 
             <Button variant="outline" disabled={busy || allPresets.length >= 16} onClick={() => replaceEditor(newSubagentPresetDraft())}>{t("presets.create")}</Button>
           </div>
           {presets.length === 0 ? <p className="text-xs text-muted-foreground">{t("presets.empty")}</p> : null}
-          <ul className="space-y-2">
+          <ul className="divide-y overflow-hidden rounded-xl border">
             {presets.map((preset, index) => {
               const invalid = preset.modelSelection === "fixed" && !models.some((m) => m.value === preset.modelId);
-              return <li key={preset.id} className="space-y-2 rounded-md border p-3">
+              return <li key={preset.id} className="space-y-2 p-3">
                 <div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{preset.name}</strong><code className="text-xs text-muted-foreground">{preset.key}</code>
                   <span className="text-xs text-muted-foreground">{t(preset.enabled ? "presets.enabled" : "presets.disabled")}</span>
                   <span className="text-xs text-muted-foreground">v{preset.version} / r{preset.executionRevision}</span>

@@ -18,6 +18,7 @@ object StoreOperationCodec {
             is SkillStoreOp -> "files.skill.v1" to json.encodeToJsonElement(SkillStoreOp.serializer(), op)
             is SubagentPresetStoreOp -> "room.subagent.v1" to json.encodeToJsonElement(SubagentPresetStoreOp.serializer(), op)
             is ConversationCommandOp -> "room.conversation-command.v1" to json.encodeToJsonElement(ConversationCommandOp.serializer(), op)
+            is CharacterStoreOp -> "room.character.v1" to json.encodeToJsonElement(CharacterStoreOp.serializer(), op)
             else -> throw IllegalArgumentException("Unregistered durable operation")
         }
         return JsonObject(mapOf("kind" to JsonPrimitive(kind), "body" to body)).toString().also {
@@ -42,6 +43,7 @@ object StoreOperationCodec {
             "files.skill.v1" -> json.decodeFromJsonElement(SkillStoreOp.serializer(), body)
             "room.subagent.v1" -> json.decodeFromJsonElement(SubagentPresetStoreOp.serializer(), body)
             "room.conversation-command.v1" -> json.decodeFromJsonElement(ConversationCommandOp.serializer(), body)
+            "room.character.v1" -> json.decodeFromJsonElement(CharacterStoreOp.serializer(), body)
             else -> throw IllegalArgumentException("Unknown durable operation discriminator")
         }
     }

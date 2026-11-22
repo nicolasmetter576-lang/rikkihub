@@ -70,6 +70,13 @@ class WebServerManager(
     private val fontDownloadService: me.rerere.rikkihub.data.fonts.FontDownloadService? = null,
     private val translationHistoryRepo: me.rerere.rikkihub.data.repository.TranslationHistoryRepository? = null,
     private val memoryScheduler: me.rerere.rikkihub.data.ai.MemoryConsolidationScheduler? = null,
+    private val tavernRuntime: me.rerere.rikkihub.data.ai.tavern.TavernRuntime? = null,
+    private val managementRuntime: me.rerere.rikkihub.data.management.runtime.ManagementRuntime? = null,
+    private val characterRepository: me.rerere.rikkihub.data.repository.CharacterRepository? = null,
+    private val characterService: me.rerere.rikkihub.data.character.CharacterService? = null,
+    private val usageStats: me.rerere.rikkihub.web.routes.WebUsageStats? = null,
+    private val fileManager: me.rerere.rikkihub.data.files.FileManagerService? = null,
+    private val acpSessionManager: me.rerere.rikkihub.data.cli.AcpSessionManager? = null,
 ) {
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
     private val tlsMaterial = AndroidTlsMaterial(context)
@@ -145,6 +152,14 @@ class WebServerManager(
                             fontDownloadService = fontDownloadService,
                             translationHistoryRepo = translationHistoryRepo,
                             memoryScheduler = memoryScheduler,
+                            tavernRuntime = tavernRuntime,
+                            managementRuntime = managementRuntime,
+                            characterRepository = characterRepository,
+                            characterService = characterService,
+                            usageStats = usageStats,
+                            fileManager = fileManager,
+                            acpSessionManager = acpSessionManager,
+                            localhostOnly = localhostOnly,
                         )
                     }.start(wait = false)
                 }

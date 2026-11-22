@@ -223,6 +223,7 @@ class DevinAccountRepository internal constructor(
                 ?: target.dailyQuotaResetAt,
             weeklyQuotaResetAt = userStatus?.weeklyQuotaResetAt
                 ?: target.weeklyQuotaResetAt,
+            quotaUpdatedAt = if (userStatus != null) System.currentTimeMillis() else target.quotaUpdatedAt,
         )
         updateState(
             state.copy(

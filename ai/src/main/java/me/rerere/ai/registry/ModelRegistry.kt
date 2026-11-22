@@ -4,6 +4,8 @@ import me.rerere.ai.provider.MAX_MODEL_CONTEXT_LENGTH
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelPricing
+import me.rerere.ai.provider.providers.devin.DevinModelCatalog
 
 fun interface ModelData<T> {
     fun getData(modelId: String): T
@@ -733,6 +735,28 @@ object ModelRegistry {
     }
 
     private fun catalogInfo(modelId: String): ModelInfo? = catalogSource.value?.find(modelId)
+
+    /** models.dev 的参考价（美元 / 百万 token），没有时为 null */
+    fun referencePrice(modelId: String): ModelPricing? {
+        val catalog = catalogSource.value ?: return null
+        // 精确记录优先，包括明确免费或没有报价的记录，不能用别名覆盖。
+        catalog.find(modelId)?.let { return it.referencePrice }
+        val id = modelId.trim().substringAfterLast('/').substringBefore(':')
+        val base = id.replace(REFERENCE_EFFORT_SUFFIX, "")
+        for (candidate in linkedSetOf(id, base)) {
+            catalog.find(candidate)?.let { return it.referencePrice }
+            // OAuth 目录的 MODEL_PRIVATE_* / MODEL_* 是协议 UID，不是 models.dev 型号。
+            // 只信内置目录里的名称，不拿用户自定义显示名猜价格。
+            DevinModelCatalog.lookup(candidate)?.displayName?.let { name ->
+                catalog.find(name.trim().replace(Regex("\\s+"), "-"))?.let { return it.referencePrice }
+            }
+            catalog.find(candidate.replace('.', '-'))?.let { return it.referencePrice }
+        }
+        return null
+    }
+
+    // 只去推理档位，不去 fast / priority / 1m 等可能影响价格的渠道或容量后缀。
+    private val REFERENCE_EFFORT_SUFFIX = Regex("[-_](none|minimal|low|medium|high|xhigh|max|thinking)$", RegexOption.IGNORE_CASE)
 
     val MODEL_INPUT_MODALITIES = ModelData { modelId ->
         val matched = resolveModels(modelId)

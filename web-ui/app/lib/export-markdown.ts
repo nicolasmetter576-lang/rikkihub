@@ -1,12 +1,14 @@
 import type { ConversationDto, MessageDto } from "~/types";
 
+import { stripTitleFromParts } from "~/lib/message-title";
+
 export function convertMessageToMarkdown(
   message: MessageDto,
   includeReasoning: boolean,
 ): string {
   const lines: string[] = [];
 
-  for (const part of message.parts) {
+  for (const part of stripTitleFromParts(message.parts, message.role)) {
     if (part.type === "text" && part.text.trim()) {
       lines.push(part.text.trim());
       lines.push("");
@@ -53,7 +55,7 @@ export function convertConversationToMarkdown(
     lines.push(roleLabel);
     lines.push("");
 
-    for (const part of message.parts) {
+    for (const part of stripTitleFromParts(message.parts, message.role)) {
       if (part.type === "text" && part.text.trim()) {
         lines.push(part.text.trim());
         lines.push("");

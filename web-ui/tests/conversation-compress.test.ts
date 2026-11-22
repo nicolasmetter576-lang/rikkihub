@@ -14,10 +14,19 @@ import { initReactI18next } from "react-i18next";
 
 import {
   COMPRESS_MAX_KEEP_RECENT,
+  compressBlockedKey,
   compressErrorKey,
+  compressionPreviewRange,
+  formatCompressResultMeta,
+  stepCarryCount,
   stepKeepRecent,
 } from "../app/components/compress-dialog";
 import { ConversationNotices } from "../app/components/conversation-notices";
+import { ChatMessageCheckpoint } from "../app/components/message/chat-message-checkpoint";
+import {
+  affectedCheckpointsForMessage,
+  laterCheckpointsForCheckpointMessage,
+} from "../../web-settings/web-ui/lib/compression";
 import {
   LAST_ASSISTANT_INPUT_TOKEN_WARNING_THRESHOLD,
   MESSAGE_NODE_WARNING_THRESHOLD,
@@ -27,10 +36,12 @@ import {
 import type { CompressStateDto, MessageNodeDto } from "../app/types";
 import en from "../app/locales/en-US/page.json";
 import zh from "../app/locales/zh-CN/page.json";
+import enMessage from "../app/locales/en-US/message.json";
+import zhMessage from "../app/locales/zh-CN/message.json";
 
 await i18next.use(initReactI18next).init({
   lng: "en-US",
-  resources: { "en-US": { page: en } },
+  resources: { "en-US": { page: en, message: enMessage } },
   interpolation: { escapeValue: false },
 });
 
@@ -120,6 +131,28 @@ test("recent messages kept after a checkpoint were generated before it, so their
   assert.equal(lastContextTokens([checkpoint, node("ASSISTANT", 5)]), 5);
 });
 
+test("new replies with no current usage never fall back to accumulated or older snapshots", () => {
+  const many = Array.from({ length: MESSAGE_NODE_WARNING_THRESHOLD + 1 }, () => node("USER"));
+  const old = node("ASSISTANT", 400_000);
+  const latest = node("ASSISTANT", 900_000);
+  for (const usageComplete of [false, true]) {
+    latest.messages[0].usageComplete = usageComplete;
+    latest.messages[0].lastUsage = null;
+    const nodes = [old, ...many, latest];
+    assert.equal(lastContextTokens(nodes), null);
+    assert.equal(conversationSizeInfo(nodes).showWarning, false);
+    assert.equal(conversationSizeInfo(nodes).lastAssistantInputTokens, 0);
+  }
+  // Explicit legacy null keeps the compatibility fallback; it is not a new missing snapshot.
+  latest.messages[0].usageComplete = null;
+  assert.equal(lastContextTokens([latest]), 900_000);
+  // Earlier incomplete steps do not invalidate an available current logical-step snapshot.
+  latest.messages[0].usageComplete = false;
+  latest.messages[0].lastUsage = { promptTokens: 100, completionTokens: 30, cachedTokens: 10, totalTokens: 180 };
+  assert.equal(lastContextTokens([old, latest]), 130);
+  assert.equal(conversationSizeInfo([old, ...many, latest]).lastAssistantInputTokens, 100);
+});
+
 test("keep-recent stepper never goes below 0 or above the server bound", () => {
   assert.equal(stepKeepRecent(0, -1), 0);
   assert.equal(stepKeepRecent(0, 1), 1);
@@ -135,7 +168,10 @@ test("every error code has a message in both languages", () => {
     "NOT_ENOUGH_MESSAGES",
     "PENDING_TOOLS",
     "TOOL_CALL_RESPONSE",
+    "REQUEST_LIMIT_EXCEEDED",
+    "REQUEST_TIMEOUT",
     "CONVERSATION_CHANGED",
+    "CLI_CONVERSATION",
     "COMPRESS_FAILED",
     undefined,
   ];
@@ -207,3 +243,142 @@ test("a failure explains the reason and offers retry; the size warning hides whi
     /very large/,
   );
 });
+
+test("preview covers the messages after the last checkpoint, minus the kept ones", () => {
+  const nodes = [node("USER"), node("ASSISTANT"), node("USER"), node("ASSISTANT"), node("USER")];
+  assert.equal(compressionPreviewRange(nodes, 0).length, 5);
+  assert.equal(compressionPreviewRange(nodes, 2).length, 3);
+  assert.equal(compressionPreviewRange(nodes, 5).length, 0);
+  nodes[2].messages[0].isContextCheckpoint = true;
+  assert.equal(compressionPreviewRange(nodes, 0).length, 2, "the checkpoint and what precedes it are not summarized again");
+  assert.equal(compressionPreviewRange(nodes, 2).length, 0);
+});
+
+test("the dialog says why there is nothing to compress, matching the server's two rejections", () => {
+  const nodes = [node("USER"), node("ASSISTANT"), node("USER"), node("ASSISTANT")];
+  assert.equal(compressBlockedKey(nodes, 0), null);
+  assert.equal(compressBlockedKey(nodes, 3), null);
+  assert.equal(compressBlockedKey(nodes, 4), "conversations.compress.error_not_enough");
+  nodes.push(node("USER"));
+  nodes[4].messages[0].isContextCheckpoint = true;
+  assert.equal(compressBlockedKey(nodes, 0), "conversations.compress.error_nothing", "only a checkpoint at the end");
+  assert.equal(compressBlockedKey(nodes, 2), "conversations.compress.error_nothing");
+  assert.equal(compressBlockedKey([], 0), "conversations.compress.error_nothing");
+});
+
+test("the notify-only hint offers compress and dismiss, and hides while compressing", () => {
+  const hint = renderNotices({ compressSuggestion: { percent: 83, exact: true } });
+  assert.match(hint, /Context at 83%/);
+  assert.match(hint, /compress-suggestion-open/);
+  assert.match(renderNotices({ compressSuggestion: { percent: 83, exact: false } }), /≈ Context at 83%/);
+  assert.doesNotMatch(
+    renderNotices({ compressSuggestion: { percent: 83, exact: true }, compressState: state("running") }),
+    /Context at/,
+  );
+});
+
+test("a summary waiting for review offers review and discard; automatic runs say so", () => {
+  const waiting = renderNotices({ compressState: state("awaiting_review", { reviewSummary: "S" }) });
+  assert.match(waiting, /Summary ready/);
+  assert.match(waiting, /compress-review-open/);
+  assert.match(waiting, /Discard/);
+  assert.match(renderNotices({ compressState: state("running", { origin: "auto" }) }), /automatically/);
+});
+
+test("batch 2 handles fromOriginal ranges, chunked running progress, carry stepper, and result summary", () => {
+  const n0 = node("USER");
+  const n1 = node("ASSISTANT");
+  const cp = node("USER");
+  cp.messages[0].isContextCheckpoint = true;
+  const n2 = node("USER");
+  const list = [n0, n1, cp, n2];
+
+  assert.equal(compressionPreviewRange(list, 0, true).length, 3);
+  assert.equal(compressionPreviewRange(list, 1, true).length, 2);
+  assert.equal(compressionPreviewRange(list, 2, true).length, 0);
+  assert.equal(compressBlockedKey(list, 1, true), null);
+  assert.equal(compressBlockedKey(list, 2, true), "conversations.compress.error_not_enough");
+  assert.equal(compressBlockedKey([n0, cp], 0, true), null);
+
+  assert.equal(stepCarryCount(1, -1), 1);
+  assert.equal(stepCarryCount(3, 2), 5);
+  assert.equal(stepCarryCount(50, 5), 50);
+
+  const runningChunked = renderNotices({
+    compressState: state("running", { chunked: true, completedChunks: 1, totalChunks: 4 }),
+  });
+  assert.match(runningChunked, /Compressing in chunks \(2\/4\)/);
+
+  const meta = formatCompressResultMeta(
+    state("succeeded", {
+      requestCount: 3,
+      chunked: true,
+      cacheBypassed: true,
+      carriedCount: 2,
+      totalUsage: { promptTokens: 400, completionTokens: 100, cachedTokens: 0, totalTokens: 500 },
+    }),
+    (k, opts) => i18next.t(`page:${k}`, opts),
+  );
+  assert.ok(meta);
+  assert.match(meta, /3 request/);
+  assert.match(meta, /chunked/);
+  assert.match(meta, /cache bypassed/);
+  assert.match(meta, /2 carried verbatim/);
+  assert.match(meta, /500 tokens/);
+});
+
+test("batch 3 renders clear checkpoint without body/edit, tracks stale messages, and keeps locale keys in sync", () => {
+  const clearHtml = renderToStaticMarkup(
+    createElement(ChatMessageCheckpoint, {
+      message: {
+        id: "cp-clear",
+        role: "USER",
+        parts: [],
+        createdAt: "",
+        isContextCheckpoint: true,
+        checkpointMeta: { kind: "clear", summarizedCount: 3 },
+      },
+      onEdit: () => {},
+      onDelete: () => {},
+    }),
+  );
+  assert.match(clearHtml, /data-context-checkpoint-clear="true"/);
+  assert.match(clearHtml, /Context cleared/);
+
+  const n1 = node("USER");
+  const n2 = node("ASSISTANT");
+  const cp1: MessageNodeDto = {
+    id: "node-cp1",
+    selectIndex: 0,
+    messages: [{ id: "m-cp1", role: "USER", parts: [{ type: "text", text: "sum" }], createdAt: "", isContextCheckpoint: true }],
+  };
+  const n3 = node("USER");
+  const cpClear: MessageNodeDto = {
+    id: "node-cp-clear",
+    selectIndex: 0,
+    messages: [{ id: "m-cp-clear", role: "USER", parts: [], createdAt: "", isContextCheckpoint: true, checkpointMeta: { kind: "clear" } }],
+  };
+  const nodes = [n1, n2, cp1, n3, cpClear];
+  assert.deepEqual(
+    affectedCheckpointsForMessage(nodes, n1.messages[0].id).map((n) => n.id),
+    ["node-cp1", "node-cp-clear"],
+  );
+  assert.deepEqual(
+    affectedCheckpointsForMessage(nodes, n3.messages[0].id).map((n) => n.id),
+    ["node-cp-clear"],
+  );
+  assert.deepEqual(affectedCheckpointsForMessage(nodes, "m-cp1"), []);
+  assert.deepEqual(laterCheckpointsForCheckpointMessage(nodes, "m-cp1"), {
+    nodeId: "node-cp1",
+    laterCount: 1,
+  });
+
+  for (const section of ["compress", "context_records", "context_usage", "stale"] as const) {
+    assert.deepEqual(
+      Object.keys(zh.conversations[section]).sort(),
+      Object.keys(en.conversations[section]).sort(),
+    );
+  }
+  assert.deepEqual(Object.keys(zhMessage.chat_message).sort(), Object.keys(enMessage.chat_message).sort());
+});
+

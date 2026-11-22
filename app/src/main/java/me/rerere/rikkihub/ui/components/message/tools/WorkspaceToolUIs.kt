@@ -184,7 +184,7 @@ object ReadFileToolUI : ToolUIRenderer {
     @Composable
     override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
         val text = remember(context) { textOf(context) }
-        if (text == null) {
+        if (shouldFallbackReadFilePreview(context) || text == null) {
             DefaultToolPreview(context = context)
             return
         }
@@ -218,13 +218,15 @@ object WriteFileToolUI : ToolUIRenderer {
             text = text,
             path = context.arguments.getStringContent("path"),
             loading = context.loading,
+            // While the model is still writing the arguments, show the newest lines and a running count.
+            streaming = context.loading && !context.tool.isExecuted,
         )
     }
 
     @Composable
     override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
         val text = remember(context) { textOf(context) }
-        if (text == null) {
+        if (shouldFallbackWriteFilePreview(context) || text == null) {
             DefaultToolPreview(context = context)
             return
         }
@@ -232,11 +234,33 @@ object WriteFileToolUI : ToolUIRenderer {
     }
 }
 
+internal fun shouldFallbackReadFilePreview(context: ToolUIContext): Boolean =
+    context.content.getStringContent("text") == null
+
+internal fun shouldFallbackWriteFilePreview(context: ToolUIContext): Boolean {
+    val text = context.arguments.getStringContent("text")
+    return text == null || (
+        context.tool.isExecuted &&
+            (context.content?.jsonObjectOrNull == null || context.content.getStringContent("error") != null)
+        )
+}
+
 /** 内联摘要: 按扩展名语法高亮展示文件内容首部若干行 */
 @Composable
-private fun FileContentSummary(text: String, path: String?, loading: Boolean) {
-    val preview = remember(text) {
-        text.lineSequence().take(FILE_SUMMARY_MAX_LINES).joinToString("\n")
+private fun FileContentSummary(text: String, path: String?, loading: Boolean, streaming: Boolean = false) {
+    val preview = remember(text, streaming) {
+        if (streaming) {
+            text.lineSequence().toList().takeLast(FILE_SUMMARY_MAX_LINES).joinToString("\n")
+        } else {
+            text.lineSequence().take(FILE_SUMMARY_MAX_LINES).joinToString("\n")
+        }
+    }
+    if (streaming) {
+        Text(
+            text = stringResource(R.string.tool_ui_streaming_chars, text.length),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
     Box(
         modifier = Modifier
@@ -371,13 +395,13 @@ object ShellToolUI : ToolUIRenderer {
         return stringResource(R.string.tool_ui_shell, truncated)
     }
 
-    override fun hasSummary(context: ToolUIContext): Boolean = context.content != null
+    override fun hasSummary(context: ToolUIContext): Boolean = context.content?.jsonObjectOrNull != null
 
     @Composable
     override fun Summary(context: ToolUIContext) {
-        val content = context.content ?: return
+        val content = context.content?.jsonObjectOrNull ?: return
         val combined = remember(content) {
-            listOf(content.getStringContent("stdout"), content.getStringContent("stderr"))
+            listOf(content.getStringContent("stdout"), content.getStringContent("stderr"), content.getStringContent("error"))
                 .filterNot { it.isNullOrBlank() }
                 .joinToString("\n")
                 .trim()
@@ -408,8 +432,8 @@ object ShellToolUI : ToolUIRenderer {
 
     @Composable
     override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
-        val content = context.content
-        if (content == null) {
+        val content = context.content?.jsonObjectOrNull
+        if (shouldFallbackShellPreview(context) || content == null) {
             DefaultToolPreview(context = context)
             return
         }
@@ -417,6 +441,7 @@ object ShellToolUI : ToolUIRenderer {
         val cwd = context.arguments.getStringContent("cwd")
         val stdout = content.getStringContent("stdout").orEmpty()
         val stderr = content.getStringContent("stderr").orEmpty()
+        val error = content.getStringContent("error").orEmpty()
         Column(
             modifier = Modifier
                 .fillMaxHeight(0.8f)
@@ -461,11 +486,29 @@ object ShellToolUI : ToolUIRenderer {
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            if (error.isNotEmpty()) {
+                Text(
+                    text = "error",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                HighlightCodeBlock(
+                    code = error,
+                    language = "plaintext",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
 
-/** Shell 退出状态文本: exit code 为 0 显示绿色, 超时或非零显示错误色 */
+internal fun shouldFallbackShellPreview(context: ToolUIContext): Boolean =
+    context.content?.jsonObjectOrNull == null
+
+/**
+ * Shell 退出状态文本: exit code 为 0 显示绿色, 超时或非零显示错误色。
+ * 没有 exit code 说明命令没产出 shell 结果 (取消、未执行、执行中被打断、工具报错), 按 status 显示。
+ */
 @Composable
 private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.text.TextStyle) {
     val exitCode = content.int("exitCode")
@@ -474,7 +517,13 @@ private fun ShellExitStatus(content: JsonElement, style: androidx.compose.ui.tex
     Text(
         text = when {
             timedOut -> stringResource(R.string.tool_ui_shell_timeout)
-            else -> stringResource(R.string.tool_ui_shell_exit, exitCode?.toString() ?: "?")
+            exitCode != null -> stringResource(R.string.tool_ui_shell_exit, exitCode.toString())
+            else -> when (content.getStringContent("status")) {
+                "cancelled" -> stringResource(R.string.tool_ui_shell_cancelled)
+                "unavailable" -> stringResource(R.string.tool_ui_shell_not_run)
+                "outcome_unknown" -> stringResource(R.string.tool_ui_shell_outcome_unknown)
+                else -> stringResource(R.string.tool_ui_shell_failed)
+            }
         },
         style = style,
         color = if (ok) DiffAddedColor else MaterialTheme.colorScheme.error,

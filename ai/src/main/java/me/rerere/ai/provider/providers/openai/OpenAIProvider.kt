@@ -1,6 +1,5 @@
 package me.rerere.ai.provider.providers.openai
 
-import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -25,14 +24,20 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.rotationStrategyOrDefault
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
-import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.CredentialLogTag
+import me.rerere.ai.util.CredentialPool
+import me.rerere.ai.util.HttpException
+import me.rerere.ai.util.PooledCredential
+import me.rerere.ai.util.apiKeyCandidates
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.mergeCustomHeaders
+import me.rerere.ai.util.parseRetryAfterMillis
 import me.rerere.common.http.await
 import me.rerere.common.http.getByKey
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -50,71 +55,91 @@ private const val TAG = "OpenAIProvider"
 
 class OpenAIProvider(
     private val client: OkHttpClient,
-    context: Context? = null
+    private val credentialPool: CredentialPool = CredentialPool(),
 ) : Provider<ProviderSetting.OpenAI> {
-    private val keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
-
-    private val chatCompletionsAPI = ChatCompletionsAPI(client = client, keyRoulette = keyRoulette)
-    private val responseAPI = ResponseAPI(client = client, keyRoulette = keyRoulette)
+    private val chatCompletionsAPI = ChatCompletionsAPI(client = client, credentialPool = credentialPool)
+    private val responseAPI = ResponseAPI(client = client, credentialPool = credentialPool)
 
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
         withContext(Dispatchers.IO) {
-            val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
-            val request = Request.Builder()
-                .url("${providerSetting.baseUrl}/models")
-                .headers(providerSetting.mergeCustomHeaders())
-                .addHeader("Authorization", "Bearer $key")
-                .get()
-                .build()
+            credentialPool.executeWithFailover(
+                providerId = providerSetting.id.toString(),
+                modelId = null,
+                candidates = providerSetting.apiKeyCandidates(),
+                strategy = providerSetting.rotationStrategyOrDefault(),
+            ) { cred ->
+                val request = Request.Builder()
+                    .url("${providerSetting.baseUrl}/models")
+                    .headers(providerSetting.mergeCustomHeaders())
+                    .addHeader("Authorization", "Bearer ${cred.value}")
+                    .tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                    .get()
+                    .build()
 
-            client.newCall(request).await().use { response ->
-                if (!response.isSuccessful) {
-                    error("Failed to get models: ${response.code} ${response.body?.string()}")
-                }
+                client.newCall(request).await().use { response ->
+                    if (!response.isSuccessful) {
+                        throw HttpException(
+                            "Failed to get models: ${response.code} ${response.body?.string()}",
+                            statusCode = response.code,
+                            retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                        )
+                    }
 
-                val bodyStr = response.body?.string() ?: ""
-                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-                val data = bodyJson["data"]?.jsonArray ?: return@withContext emptyList()
+                    val bodyStr = response.body?.string() ?: ""
+                    val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+                    val data = bodyJson["data"]?.jsonArray ?: return@executeWithFailover emptyList()
 
-                data.mapNotNull { modelJson ->
-                    val modelObj = modelJson.jsonObject
-                    val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    data.mapNotNull { modelJson ->
+                        val modelObj = modelJson.jsonObject
+                        val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
 
-                    Model(
-                        modelId = id,
-                        displayName = id,
-                    )
+                        Model(
+                            modelId = id,
+                            displayName = id,
+                        )
+                    }
                 }
             }
         }
 
     override suspend fun getBalance(providerSetting: ProviderSetting.OpenAI): String = withContext(Dispatchers.IO) {
-        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
         val url = if (providerSetting.balanceOption.apiPath.startsWith("http")) {
             providerSetting.balanceOption.apiPath
         } else {
             "${providerSetting.baseUrl}${providerSetting.balanceOption.apiPath}"
         }
-        val request = Request.Builder()
-            .url(url)
-            .headers(providerSetting.mergeCustomHeaders())
-            .addHeader("Authorization", "Bearer $key")
-            .get()
-            .build()
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) {
-                error("Failed to get balance: ${response.code} ${response.body?.string()}")
-            }
+        credentialPool.executeWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = null,
+            candidates = providerSetting.apiKeyCandidates(),
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            val request = Request.Builder()
+                .url(url)
+                .headers(providerSetting.mergeCustomHeaders())
+                .addHeader("Authorization", "Bearer ${cred.value}")
+                .tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                .get()
+                .build()
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) {
+                    throw HttpException(
+                        "Failed to get balance: ${response.code} ${response.body?.string()}",
+                        statusCode = response.code,
+                        retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                    )
+                }
 
-            val bodyStr = response.body.string()
-            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-            val value = bodyJson.getByKey(providerSetting.balanceOption.resultPath)
-            val digitalValue = value.toFloatOrNull()
-            if(digitalValue != null) {
-                "%.2f".format(digitalValue)
-            } else {
-                value
+                val bodyStr = response.body.string()
+                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+                val value = bodyJson.getByKey(providerSetting.balanceOption.resultPath)
+                val digitalValue = value.toFloatOrNull()
+                if (digitalValue != null) {
+                    "%.2f".format(digitalValue)
+                } else {
+                    value
+                }
             }
         }
     }
@@ -161,7 +186,6 @@ class OpenAIProvider(
     ): EmbeddingGenerationResult = withContext(Dispatchers.IO) {
         require(params.input.isNotEmpty()) { "Embedding input cannot be empty" }
 
-        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
         val requestBody = json.encodeToString(
             buildJsonObject {
                 put("model", params.model.modelId)
@@ -176,34 +200,46 @@ class OpenAIProvider(
             }.mergeCustomBody(params.customBody)
         )
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/embeddings")
-            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-            .addHeader("Authorization", "Bearer $key")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody.toRequestBody("application/json".toMediaType()))
-            .build()
+        credentialPool.executeWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = providerSetting.apiKeyCandidates(),
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            val request = Request.Builder()
+                .url("${providerSetting.baseUrl}/embeddings")
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .addHeader("Authorization", "Bearer ${cred.value}")
+                .addHeader("Content-Type", "application/json")
+                .tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                .post(requestBody.toRequestBody("application/json".toMediaType()))
+                .build()
 
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) {
-                error("Failed to generate embedding: ${response.code} ${response.body?.string()}")
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) {
+                    throw HttpException(
+                        "Failed to generate embedding: ${response.code} ${response.body?.string()}",
+                        statusCode = response.code,
+                        retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                    )
+                }
+
+                val bodyStr = response.body?.string() ?: ""
+                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+                val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
+                val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
+
+                val embeddings = data.map { embeddingJson ->
+                    val embeddingArray = embeddingJson.jsonObject["embedding"]?.jsonArray
+                        ?: error("No embedding in response")
+                    embeddingArray.map { it.jsonPrimitive.content.toFloat() }
+                }
+
+                EmbeddingGenerationResult(
+                    model = model,
+                    embeddings = embeddings
+                )
             }
-
-            val bodyStr = response.body?.string() ?: ""
-            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-            val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
-            val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
-
-            val embeddings = data.map { embeddingJson ->
-                val embeddingArray = embeddingJson.jsonObject["embedding"]?.jsonArray
-                    ?: error("No embedding in response")
-                embeddingArray.map { it.jsonPrimitive.content.toFloat() }
-            }
-
-            EmbeddingGenerationResult(
-                model = model,
-                embeddings = embeddings
-            )
         }
     }
 
@@ -215,14 +251,12 @@ class OpenAIProvider(
             "Expected OpenAI provider setting"
         }
 
-        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
-
         val requestBody = json.encodeToString(
             buildJsonObject {
                 put("model", params.model.modelId)
                 put("prompt", params.prompt)
                 put("n", params.numOfImages)
-                
+
                 // 不能对整个 baseUrl 字符串 contains("x.ai") —— max.ai 中转、
                 // query/路径里含 x.ai 的 URL 都会被误判成 Grok 丢 size。
                 // 只认真实 URL host == x.ai 或其正规子域（api.x.ai 等）；
@@ -240,21 +274,33 @@ class OpenAIProvider(
 
         Log.i(TAG, "generateImage: $requestBody")
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/images/generations")
-            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-            .addHeader("Authorization", "Bearer $key")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody.toRequestBody("application/json".toMediaType()))
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
-
         val items = withContext(Dispatchers.IO) {
-            client.newCall(request).await().use { response ->
-                if (!response.isSuccessful) {
-                    error("Failed to generate image: ${response.code} ${response.body?.string()}")
+            credentialPool.executeWithFailover(
+                providerId = providerSetting.id.toString(),
+                modelId = params.model.modelId,
+                candidates = providerSetting.apiKeyCandidates(),
+                strategy = providerSetting.rotationStrategyOrDefault(),
+            ) { cred ->
+                val request = Request.Builder()
+                    .url("${providerSetting.baseUrl}/images/generations")
+                    .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                    .addHeader("Authorization", "Bearer ${cred.value}")
+                    .addHeader("Content-Type", "application/json")
+                    .tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                    .post(requestBody.toRequestBody("application/json".toMediaType()))
+                    .configureReferHeaders(providerSetting.baseUrl)
+                    .build()
+
+                client.newCall(request).await().use { response ->
+                    if (!response.isSuccessful) {
+                        throw HttpException(
+                            "Failed to generate image: ${response.code} ${response.body?.string()}",
+                            statusCode = response.code,
+                            retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                        )
+                    }
+                    parseImageResponse(response.body.string())
                 }
-                parseImageResponse(response.body.string())
             }
         }
 
@@ -272,11 +318,19 @@ class OpenAIProvider(
             "At least one image is required"
         }
 
-        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
-
         // OpenRouter 没有 /images/edits，参考图要经图像生成接口的 input_references 传入
         if (providerSetting.baseUrl.toHttpUrlOrNull()?.host?.lowercase() == "openrouter.ai") {
-            editImageWithInputReferences(providerSetting, params, key).forEach { emit(it) }
+            val items = withContext(Dispatchers.IO) {
+                credentialPool.executeWithFailover(
+                    providerId = providerSetting.id.toString(),
+                    modelId = params.model.modelId,
+                    candidates = providerSetting.apiKeyCandidates(),
+                    strategy = providerSetting.rotationStrategyOrDefault(),
+                ) { cred ->
+                    editImageWithInputReferences(providerSetting, params, cred)
+                }
+            }
+            items.forEach { emit(it) }
             return@flow
         }
 
@@ -313,20 +367,34 @@ class OpenAIProvider(
             bodyBuilder.addFormDataPart(customBody.key, value)
         }
 
-        val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/images/edits")
-            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-            .addHeader("Authorization", "Bearer $key")
-            .post(bodyBuilder.build())
-            .configureReferHeaders(providerSetting.baseUrl)
-            .build()
+        val multipartBody = bodyBuilder.build()
 
         val items = withContext(Dispatchers.IO) {
-            client.newCall(request).await().use { response ->
-                if (!response.isSuccessful) {
-                    error("Failed to edit image: ${response.code} ${response.body?.string()}")
+            credentialPool.executeWithFailover(
+                providerId = providerSetting.id.toString(),
+                modelId = params.model.modelId,
+                candidates = providerSetting.apiKeyCandidates(),
+                strategy = providerSetting.rotationStrategyOrDefault(),
+            ) { cred ->
+                val request = Request.Builder()
+                    .url("${providerSetting.baseUrl}/images/edits")
+                    .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                    .addHeader("Authorization", "Bearer ${cred.value}")
+                    .tag(CredentialLogTag::class.java, CredentialLogTag(cred.displayLabel))
+                    .post(multipartBody)
+                    .configureReferHeaders(providerSetting.baseUrl)
+                    .build()
+
+                client.newCall(request).await().use { response ->
+                    if (!response.isSuccessful) {
+                        throw HttpException(
+                            "Failed to edit image: ${response.code} ${response.body?.string()}",
+                            statusCode = response.code,
+                            retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                        )
+                    }
+                    parseImageResponse(response.body.string())
                 }
-                parseImageResponse(response.body.string())
             }
         }
 
@@ -337,7 +405,7 @@ class OpenAIProvider(
     private suspend fun editImageWithInputReferences(
         providerSetting: ProviderSetting.OpenAI,
         params: ImageEditParams,
-        key: String,
+        credential: PooledCredential<String>,
     ): List<ImageGenerationItem> = withContext(Dispatchers.IO) {
         val requestBody = json.encodeToString(
             buildJsonObject {
@@ -370,15 +438,20 @@ class OpenAIProvider(
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/images/generations")
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
-            .addHeader("Authorization", "Bearer $key")
+            .addHeader("Authorization", "Bearer ${credential.value}")
             .addHeader("Content-Type", "application/json")
+            .tag(CredentialLogTag::class.java, CredentialLogTag(credential.displayLabel))
             .post(requestBody.toRequestBody("application/json".toMediaType()))
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
         client.newCall(request).await().use { response ->
             if (!response.isSuccessful) {
-                error("Failed to edit image: ${response.code} ${response.body?.string()}")
+                throw HttpException(
+                    "Failed to edit image: ${response.code} ${response.body?.string()}",
+                    statusCode = response.code,
+                    retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                )
             }
             parseImageResponse(response.body.string())
         }

@@ -24,7 +24,8 @@ import me.rerere.workspace.WorkspaceShellStatus
  * 与整消息一律不改不删。
  *
  * 输出词表与守卫/loop 对齐：status="unavailable"（未开始，零执行），
- * 供 hasUnexecutedOutcome 统计剔除；不冒充成功，不伪造执行结果。
+ * 供 hasUnexecutedOutcome 统计剔除；已开始（有 startedAt）的写 "outcome_unknown"；
+ * 不冒充成功，不伪造执行结果。
  */
 
 enum class WorkspacePendingToolStatus {
@@ -59,13 +60,14 @@ fun interface WorkspacePendingToolJudge {
 
 data class WorkspacePendingToolPatchResult(
     val conversation: Conversation,
-    /** 被写成 unavailable 的 part 数 */
+    /** 被写成 unavailable / outcome_unknown 的 part 数 */
     val patchedParts: Int,
     /** 被复核的未完成工具 part 总数 */
     val examinedParts: Int,
 )
 
 private const val TOOL_STATUS_UNAVAILABLE = "unavailable"
+private const val TOOL_STATUS_OUTCOME_UNKNOWN = "outcome_unknown"
 
 /** 启用工具表内两个 stableId 解析出同一 wire 名：归属显式歧义，拒绝恢复。 */
 internal const val NAME_COLLISION_REASON = "NAME_COLLISION"
@@ -76,7 +78,17 @@ internal const val WORKSPACE_UNAVAILABLE_REASON = "WORKSPACE_UNAVAILABLE"
 /** checkInvalidMessages 兜底标记词：未执行且不可恢复的调用。 */
 internal const val UNRESUMABLE_TOOL_CALL_REASON = "UNRESUMABLE_TOOL_CALL"
 
-internal fun unavailableOutput(
+/**
+ * 关闭一个不再执行的未完成调用：未开始的写 unavailable（零执行）；
+ * 已开始（有 startedAt）却没留下结果的写 outcome_unknown（可能有部分副作用）。
+ */
+internal fun closedPendingToolOutput(
+    part: UIMessagePart.Tool,
+    reason: String,
+): List<UIMessagePart> =
+    if (part.startedAt != null) outcomeUnknownOutput(part, reason) else unavailableOutput(part, reason)
+
+private fun unavailableOutput(
     part: UIMessagePart.Tool,
     reason: String,
 ): List<UIMessagePart> = listOf(
@@ -94,10 +106,29 @@ internal fun unavailableOutput(
     ),
 )
 
+private fun outcomeUnknownOutput(
+    part: UIMessagePart.Tool,
+    reason: String,
+): List<UIMessagePart> = listOf(
+    UIMessagePart.Text(
+        buildJsonObject {
+            put("status", TOOL_STATUS_OUTCOME_UNKNOWN)
+            put("started", true)
+            put("reason", reason)
+            put("tool", part.toolName)
+            put(
+                "error",
+                "Workspace tool call '${part.toolName}' was interrupted after it started ($reason); " +
+                    "it may have partially executed.",
+            )
+        }.toString(),
+    ),
+)
+
 /**
  * 复核 [Conversation] 全树（所有节点、所有分支消息，不限 currentMessages）
  * 中 `!isExecuted` 的 Tool part；judge 判 UNAVAILABLE 的写非空 unavailable
- * 输出（copy 只换 output，metadata/approvalState/input 全保留）。
+ * （已开始的写 outcome_unknown）输出（copy 只换 output，metadata/approvalState/input 全保留）。
  * 任何已完成 part、非 Tool part、节点结构与 selectIndex 一律不动；
  * 无变更时返回原实例（幂等，供调用方跳过持久化）。
  */
@@ -121,7 +152,7 @@ internal fun Conversation.patchWorkspacePendingToolCalls(
                     patched++
                     msgChanged = true
                     part.copy(
-                        output = unavailableOutput(
+                        output = closedPendingToolOutput(
                             part,
                             resolution.reason ?: TOOL_STATUS_UNAVAILABLE,
                         ),

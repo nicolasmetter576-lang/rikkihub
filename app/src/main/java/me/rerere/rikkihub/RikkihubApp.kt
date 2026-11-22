@@ -8,7 +8,6 @@ import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.registry.ModelsDevCatalog
 import me.rerere.workspace.WorkspaceManager
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.foundation.ComposeFoundationFlags
 import androidx.compose.runtime.Composer
 import androidx.compose.runtime.tooling.ComposeStackTraceMode
@@ -40,6 +39,8 @@ import me.rerere.rikkihub.di.viewModelModule
 import me.rerere.rikkihub.data.files.FilesManager
 import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.data.sync.BackupManager
+import me.rerere.rikkihub.data.sync.LocalSnapshotScheduler
+import me.rerere.rikkihub.data.sync.LocalSnapshotStore
 import me.rerere.rikkihub.data.sync.RestoreFailedException
 import me.rerere.rikkihub.utils.JsonInstant
 import me.rerere.rikkihub.service.WebServerService
@@ -82,11 +83,10 @@ class RikkihubApp : Application() {
                 BackupManager.applyPendingRestore(this@RikkihubApp, JsonInstant)
             }
             if (restored) {
-                Toast.makeText(this, R.string.backup_page_restore_success, Toast.LENGTH_LONG).show()
+                Log.i(TAG, "Pending backup restore committed")
             }
         } catch (e: RestoreFailedException) {
             Log.e(TAG, "Backup restore rolled back", e)
-            Toast.makeText(this, "备份恢复失败，已保留原数据。请重新导入备份。", Toast.LENGTH_LONG).show()
         }
         startKoin {
             androidLogger()
@@ -120,11 +120,31 @@ class RikkihubApp : Application() {
         // cleanup workspace temp dirs (proot + rootfs /tmp)
         cleanupWorkspaceTempDirs()
 
+        // xdg-open inside workspaces (e.g. agy sign-in) opens links in the browser through this
+        get<me.rerere.rikkihub.data.workspace.WorkspaceUrlOpener>().start()
+
         // check workspace integrity (mark workspaces with missing files as broken after backup restore)
         checkWorkspaceIntegrity()
 
         // sync upload files to DB
         syncManagedFiles()
+
+        // 用量统计：订阅类提供商的额度读数在后台记录，有新用量时自动刷新额度
+        runCatching {
+            val quotaTracker = get<me.rerere.rikkihub.data.ai.QuotaTracker>()
+            get<me.rerere.rikkihub.data.ai.UsageRecorder>().onAccountUsage = quotaTracker::onAccountUsage
+            get<me.rerere.rikkihub.data.ai.UsageRecorder>().onQuotaReadings = quotaTracker::onRequestQuota
+            get<me.rerere.rikkihub.data.ai.UsageRecorder>().spendGuard = me.rerere.rikkihub.data.ai.ProviderSpendGuard(
+                context = this@RikkihubApp,
+                settingsStore = get(),
+                stats = get(),
+                eventBus = get(),
+            )
+            quotaTracker.start()
+        }.onFailure { Log.e(TAG, "Failed to start quota tracking", it) }
+
+        // 酒馆引擎的分词器首次计数要加载编码表（约 1 秒），启动时在后台预热，免得第一次发消息时卡一下
+        get<AppScope>().launch(Dispatchers.Default) { runCatching { get<me.rerere.rikkihub.data.ai.tavern.TavernRuntime>().warmUp() } }
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
@@ -151,6 +171,9 @@ class RikkihubApp : Application() {
         // 预热 emoji 数据，避免首次打开表情选择器时在调用线程解析大 JSON
         warmupEmojiData()
         get<AppScope>().launch(Dispatchers.Default) { ModelRegistry.MODEL_CONTEXT_LENGTH.getData("warm-up") }
+
+        // 自动本地快照调度（仅在前台窗口延迟触发）
+        get<LocalSnapshotScheduler>().start()
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
     }
@@ -266,6 +289,9 @@ class RikkihubApp : Application() {
             if (dir.exists()) {
                 dir.deleteRecursively()
             }
+            BackupManager.cleanupTempDir(this@RikkihubApp)
+            runCatching { get<LocalSnapshotStore>().sweepIncomplete() }
+                .onFailure { Log.w(TAG, "sweepIncomplete snapshots failed", it) }
         }
     }
 

@@ -32,6 +32,18 @@ class InteractionsToolProgressMetadataTest {
         assertEquals("old", original.metadata!!.getValue("old_ui").jsonPrimitive.content)
     }
 
+    @Test fun `progress keeps the Gemini thoughtSignature of the call and cannot forge one`() {
+        val signed = UIMessagePart.Tool("call", "subagent", "{}", metadata = buildJsonObject { put("thoughtSignature", "sig") })
+        val unsigned = UIMessagePart.Tool("other", "subagent", "{}")
+        val messages = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = listOf(signed, unsigned)))
+        val progress = buildJsonObject { put("status", "running"); put("thoughtSignature", "forged") }
+        val result = updateToolPartMetadataAt(
+            updateToolPartMetadataAt(messages, 0, 0, "call", progress), 0, 1, "other", progress,
+        ).single().parts
+        assertEquals(buildJsonObject { put("status", "running"); put("thoughtSignature", "sig") }, result[0].metadata)
+        assertEquals(buildJsonObject { put("status", "running") }, result[1].metadata)
+    }
+
     @Test fun `progress cannot invent Interactions metadata on a non Interactions call`() {
         val messages = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = listOf(UIMessagePart.Tool("call", "tool", "{}"))))
         val result = updateToolPartMetadataAt(messages, 0, 0, "call", JsonObject(provenance + ("status" to JsonPrimitive("ok"))))

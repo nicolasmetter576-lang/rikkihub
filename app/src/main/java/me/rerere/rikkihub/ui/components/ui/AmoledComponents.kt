@@ -127,11 +127,11 @@ fun FilledTonalButton(
             colors = resolvedColors, border = border, content = content,
         )
         contentPadding != null -> androidx.compose.material3.FilledTonalButton(
-            onClick = onClick, modifier = modifier, enabled = enabled,
+            onClick = onClick, modifier = modifier, enabled = enabled, shape = MaterialTheme.shapes.medium,
             colors = resolvedColors, border = border, contentPadding = contentPadding, content = content,
         )
         else -> androidx.compose.material3.FilledTonalButton(
-            onClick = onClick, modifier = modifier, enabled = enabled,
+            onClick = onClick, modifier = modifier, enabled = enabled, shape = MaterialTheme.shapes.medium,
             colors = resolvedColors, border = border, content = content,
         )
     }

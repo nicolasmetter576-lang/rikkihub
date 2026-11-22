@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Codesandbox, Folder, LoaderCircle, Settings2 } from "lucide-react";
+import { Check, Codesandbox, Folder, LoaderCircle, Settings2, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
@@ -24,8 +24,6 @@ export interface WorkspacePickerButtonProps {
   disabled?: boolean;
   className?: string;
   conversation?: ConversationDto | null;
-  /** Fresh conversation after a cwd / scope change (the stream also delivers it). */
-  onConversationUpdated?: (conversation: ConversationDto) => void;
   /** Classes that reveal the bound workspace's name (hidden by default); viewport `sm:` unless overridden. */
   labelClassName?: string;
 }
@@ -33,6 +31,41 @@ export interface WorkspacePickerButtonProps {
 /** Request body of `PUT /api/assistants/{id}/workspace`. */
 export function assistantWorkspaceBody(workspaceId: string | null): { workspaceId: string | null } {
   return { workspaceId };
+}
+
+export function WorkspaceTerminalButton({ disabled = false }: { disabled?: boolean }) {
+  const { t } = useTranslation("workspace");
+  const { currentAssistant } = useCurrentAssistant();
+  const { data: workspaces = [] } = useQuery({
+    queryKey: workspaceQueryKeys.list,
+    queryFn: () => workspaceApi.list(),
+    enabled: Boolean(currentAssistant?.workspaceId),
+    staleTime: 30_000,
+  });
+  const bound = workspaces.find((workspace) => workspace.id === currentAssistant?.workspaceId);
+  if (!bound || bound.shellStatus === "DISABLED") return null;
+
+  return (
+    <Button
+      asChild
+      variant="ghost"
+      size="icon"
+      className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+      disabled={disabled}
+      aria-label={t("detail.terminal")}
+      title={`${bound.name} · ${t("detail.terminal")}`}
+      data-testid="chat-workspace-terminal"
+    >
+      <Link
+        to={`/workspaces/${bound.id}?tab=terminal`}
+        aria-disabled={disabled}
+        tabIndex={disabled ? -1 : undefined}
+        onClick={(event) => { if (disabled) event.preventDefault(); }}
+      >
+        <Terminal className="size-4" />
+      </Link>
+    </Button>
+  );
 }
 
 /**
@@ -44,7 +77,6 @@ export function WorkspacePickerButton({
   disabled = false,
   className,
   conversation = null,
-  onConversationUpdated,
   labelClassName = "sm:inline",
 }: WorkspacePickerButtonProps) {
   const { t } = useTranslation("input");
@@ -67,10 +99,10 @@ export function WorkspacePickerButton({
   const updateConversation = React.useCallback(
     async (patch: Record<string, unknown>) => {
       if (!conversation) return;
-      const next = await api.put<ConversationDto>(`conversations/${conversation.id}`, patch);
-      onConversationUpdated?.(next);
+      // Confirmation only: the stream projects metadata and messages from the live session.
+      await api.put(`conversations/${conversation.id}`, patch);
     },
-    [conversation, onConversationUpdated],
+    [conversation],
   );
 
   const bindMutation = useMutation({

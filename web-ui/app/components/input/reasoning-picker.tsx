@@ -4,7 +4,6 @@ import { useMutation } from "@tanstack/react-query";
 import {
   Brain,
   BrainCircuit,
-  ChevronDown,
   Lightbulb,
   LightbulbOff,
   LoaderCircle,
@@ -41,10 +40,6 @@ interface ReasoningPreset {
 export interface ReasoningPickerButtonProps {
   disabled?: boolean;
   className?: string;
-  /** Classes that reveal the level label (hidden by default); viewport `sm:` unless overridden. */
-  labelClassName?: string;
-  /** Popover alignment against the trigger; "start" when the trigger sits at the row's left. */
-  popoverAlign?: "start" | "end";
 }
 
 function isReasoningModel(model: ProviderModel | null): boolean {
@@ -122,8 +117,6 @@ function ReasoningSlider({
 export function ReasoningPickerButton({
   disabled = false,
   className,
-  labelClassName = "sm:block",
-  popoverAlign = "end",
 }: ReasoningPickerButtonProps) {
   const { t } = useTranslation("input");
   const { settings, currentAssistant } = useCurrentAssistant();
@@ -226,27 +219,22 @@ export function ReasoningPickerButton({
       <PopoverTrigger asChild>
         <Button
           type="button"
+          aria-label={t("reasoning.title")}
+          title={localPreset.label}
+          data-testid="chat-more-reasoning"
           variant="ghost"
-          size="sm"
           disabled={!canUse || loading}
           className={cn(
-            "h-8 rounded-full px-2.5 text-sm font-normal text-muted-foreground hover:text-foreground",
+            "h-auto min-h-20 flex-col gap-2 rounded-xl bg-muted px-1 py-3 text-xs font-normal hover:bg-accent",
             className,
           )}
         >
-          <ReasoningIcon level={localLevel} className="size-3.5" />
-          <span className={cn("hidden", labelClassName)}>{localPreset.label}</span>
-          <span className={cn("hidden", labelClassName)}>
-            {loading ? (
-              <LoaderCircle className="size-3.5 animate-spin" />
-            ) : (
-              <ChevronDown className="size-3.5" />
-            )}
-          </span>
+          {loading ? <LoaderCircle className="size-6 animate-spin" /> : <ReasoningIcon level={localLevel} className="size-6" />}
+          <span className="max-w-full truncate">{t("reasoning.title")}</span>
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent side="top" sideOffset={8} align={popoverAlign} className="w-[min(92vw,20rem)] space-y-3 px-4 py-4">
+      <PopoverContent side="top" sideOffset={8} align="start" className="w-[min(92vw,20rem)] space-y-3 px-4 py-4">
         <PickerErrorAlert error={error} />
 
         {/* Faster / Smarter labels */}

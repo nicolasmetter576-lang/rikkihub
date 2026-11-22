@@ -1,8 +1,10 @@
 package me.rerere.rikkihub.ui.pages.assistant
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Copy01
 import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Edit03
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Cancel01
@@ -16,28 +18,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -50,25 +47,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition
 import me.rerere.rikkihub.Screen
 import me.rerere.rikkihub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.model.Assistant
-import me.rerere.rikkihub.data.model.MemoryFile
+import me.rerere.rikkihub.ui.components.ai.AssistantCardConfigDialog
+import me.rerere.rikkihub.ui.components.ai.AssistantCardGrid
+import me.rerere.rikkihub.ui.components.ai.assistantCardSummary
+import me.rerere.rikkihub.ui.components.ai.updateCardAppearance
 import me.rerere.rikkihub.ui.components.nav.BackButton
 import me.rerere.rikkihub.ui.components.ui.FormItem
-import me.rerere.rikkihub.ui.components.ui.Tag
-import me.rerere.rikkihub.ui.components.ui.TagType
 import me.rerere.rikkihub.ui.components.ui.UIAvatar
 import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.hooks.EditState
@@ -84,6 +79,7 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
 import androidx.compose.foundation.lazy.items as lazyItems
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
 
 @Composable
 fun AssistantPage(vm: AssistantVM = koinViewModel()) {
@@ -92,14 +88,14 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
         vm.addAssistant(it)
     }
     val navController = LocalNavController.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     // 搜索关键词状态
     var searchQuery by remember { mutableStateOf("") }
     // 标签过滤状态
     var selectedTagIds by remember { mutableStateOf(emptySet<Uuid>()) }
-    // 操作菜单状态
-    var actionSheetAssistant by remember { mutableStateOf<Assistant?>(null) }
+    // 操作菜单与卡片展示设置弹窗状态（存 id + 是否自动补位，避免快照过期）
+    var actionSlot by remember { mutableStateOf<Pair<Uuid, Boolean>?>(null) }
+    var configSlot by remember { mutableStateOf<Pair<Uuid, Boolean>?>(null) }
 
     // 根据搜索关键词和选中的标签过滤助手
     val filteredAssistants = remember(settings.assistants, selectedTagIds, searchQuery) {
@@ -114,7 +110,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.assistant_page_title))
                 },
@@ -129,35 +125,21 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         Icon(HugeIcons.Add01, stringResource(R.string.assistant_page_add))
                     }
                 },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(it)
-                .padding(top = 16.dp)
+                .padding(top = 8.dp)
                 .consumeWindowInsets(it),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            val lazyListState = rememberLazyListState()
             val isFiltering = selectedTagIds.isNotEmpty() || searchQuery.isNotBlank()
-            val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                if (!isFiltering) {
-                    val moved = settings.assistants.getOrNull(from.index)?.id
-                    val target = settings.assistants.getOrNull(to.index)?.id
-                    if (moved != null && target != null) {
-                        vm.updateSettings { latest ->
-                            latest.copy(assistants = latest.assistants.moveByKey({ it.id }, moved, target))
-                        }
-                    }
-                }
-            }
-            val haptic = LocalHapticFeedback.current
 
             // 搜索框
             OutlinedTextField(
@@ -165,7 +147,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 onValueChange = { searchQuery = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 10.dp),
                 placeholder = { Text(stringResource(R.string.assistant_page_search_placeholder)) },
                 leadingIcon = {
                     Icon(HugeIcons.Search01, contentDescription = null)
@@ -191,73 +173,80 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 }
             )
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .imePadding(),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                state = lazyListState,
-            ) {
-                lazyItems(filteredAssistants, key = { assistant -> assistant.id }) { assistant ->
-                    ReorderableItem(
-                        state = reorderableState,
-                        key = assistant.id,
-                    ) { isDragging ->
-                        val memories by vm.getMemories(assistant).collectAsStateWithLifecycle(
-                            initialValue = emptyList(),
-                        )
-                        AssistantItem(
-                            assistant = assistant,
-                            settings = settings,
-                            memories = memories,
-                            onEdit = {
-                                navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
-                            },
-                            onShowActions = {
-                                actionSheetAssistant = assistant
-                            },
-                            modifier = Modifier
-                                .scale(if (isDragging) 0.95f else 1f)
-                                .fillMaxWidth()
-                                .animateItem()
-                                .then(
-                                    if (!isFiltering) {
-                                        Modifier.longPressDraggableHandle(
-                                            onDragStarted = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                                            },
-                                            onDragStopped = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.GestureEnd)
-                                            }
-                                        )
-                                    } else {
-                                        Modifier
-                                    }
-                                )
-                        )
+            AssistantCardGrid(
+                assistants = filteredAssistants,
+                dragEnabled = !isFiltering,
+                showDisabledBadge = true,
+                onClickAssistant = { assistant ->
+                    navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                },
+                onOpenMenu = { slot ->
+                    actionSlot = slot.assistant.id to slot.autoExpanded
+                },
+                onReorderAssistants = { moved, target ->
+                    vm.updateSettings { latest ->
+                        latest.copy(assistants = latest.assistants.moveByKey({ it.id }, moved, target))
                     }
-                }
-            }
+                },
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .imePadding(),
+                avatarModifier = { assistant ->
+                    Modifier.heroAnimation("assistant_${assistant.id}")
+                },
+                cardContainerColor = { _, _ -> CustomColors.listItemColors.containerColor },
+                cardContentColor = { _, _ -> MaterialTheme.colorScheme.onSurface },
+            )
         }
     }
 
     AssistantCreationSheet(createState)
 
     // 操作菜单 Bottom Sheet
-    actionSheetAssistant?.let { assistant ->
-        AssistantActionSheet(
-            assistant = assistant,
-            onDismiss = { actionSheetAssistant = null },
-            onCopy = {
-                vm.copyAssistant(assistant)
-                actionSheetAssistant = null
-            },
-            onDelete = {
-                vm.removeAssistant(assistant)
-                actionSheetAssistant = null
-            }
-        )
+    actionSlot?.let { (assistantId, autoExpanded) ->
+        val assistant = settings.assistants.find { it.id == assistantId }
+        if (assistant != null) {
+            AssistantActionSheet(
+                assistant = assistant,
+                onDismiss = { actionSlot = null },
+                onConfigureCard = {
+                    actionSlot = null
+                    configSlot = assistant.id to autoExpanded
+                },
+                onCopy = {
+                    vm.copyAssistant(assistant)
+                    actionSlot = null
+                },
+                onDelete = {
+                    vm.removeAssistant(assistant)
+                    actionSlot = null
+                }
+            )
+        } else {
+            actionSlot = null
+        }
+    }
+
+    // 卡片备注与单双栏设置弹窗
+    configSlot?.let { (assistantId, autoExpanded) ->
+        val assistant = settings.assistants.find { it.id == assistantId }
+        if (assistant != null) {
+            AssistantCardConfigDialog(
+                assistant = assistant,
+                autoExpanded = autoExpanded,
+                onDismiss = { configSlot = null },
+                onSave = { note, cardWide ->
+                    vm.updateSettings { latest ->
+                        latest.copy(assistants = latest.assistants.updateCardAppearance(assistant.id, note, cardWide))
+                    }
+                    configSlot = null
+                },
+            )
+        } else {
+            configSlot = null
+        }
     }
 }
 
@@ -282,8 +271,8 @@ private fun AssistantTagsFilterRow(
         }
 
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp),
             state = tagsListState
         ) {
             lazyItems(items = settings.assistantTags, key = { tag -> tag.id }) { tag ->
@@ -398,100 +387,10 @@ private fun AssistantCreationSheet(
 }
 
 @Composable
-private fun AssistantItem(
-    assistant: Assistant,
-    settings: Settings,
-    modifier: Modifier = Modifier,
-    memories: List<MemoryFile>,
-    onEdit: () -> Unit,
-    onShowActions: () -> Unit,
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        onClick = onEdit,
-        colors = CardDefaults.cardColors(
-            containerColor = CustomColors.listItemColors.containerColor
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            UIAvatar(
-                name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                value = assistant.avatar,
-                modifier = Modifier
-                    .size(48.dp)
-                    .heroAnimation("assistant_${assistant.id}")
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-
-                Text(
-                    text = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (assistant.enableMemory) {
-                        Tag(type = TagType.SUCCESS) {
-                            Text(stringResource(R.string.assistant_page_memory_count, memories.size))
-                        }
-                    }
-
-                    if (assistant.tags.isNotEmpty()) {
-                        assistant.tags.take(2).fastForEach { tagId ->
-                            val tag = settings.assistantTags.find { it.id == tagId }
-                                ?: return@fastForEach
-                            Surface(
-                                shape = RoundedCornerShape(50),
-                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                            ) {
-                                Text(
-                                    text = tag.name,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                        }
-                        if (assistant.tags.size > 2) {
-                            Text(
-                                text = "+${assistant.tags.size - 2}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-
-            IconButton(
-                onClick = onShowActions
-            ) {
-                Icon(
-                    imageVector = HugeIcons.MoreVertical,
-                    contentDescription = stringResource(R.string.assistant_page_actions)
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun AssistantActionSheet(
     assistant: Assistant,
     onDismiss: () -> Unit,
+    onConfigureCard: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -526,6 +425,26 @@ private fun AssistantActionSheet(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
+            // 卡片备注与单双栏设置
+            val cardSummary = assistantCardSummary(assistant)
+            CompactListItem(
+                headlineContent = { Text(stringResource(R.string.assistant_page_card_settings)) },
+                supportingContent = if (cardSummary.isNotEmpty()) {
+                    { Text(cardSummary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                } else {
+                    null
+                },
+                leadingContent = {
+                    Icon(
+                        imageVector = HugeIcons.Edit03,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                modifier = Modifier.onClick { onConfigureCard() },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+
             // 创造助手不可克隆/删除（克隆出来不带创造工具；删除后会被设置自动补回）
             val isCreator = CreatorAssistantDefinition.isCreator(assistant.id)
 
@@ -545,7 +464,7 @@ private fun AssistantActionSheet(
 
             // 删除选项（仅非默认助手显示）
             if (assistant.id !in DEFAULT_ASSISTANTS_IDS && !isCreator) {
-                ListItem(
+                CompactListItem(
                     headlineContent = {
                         Text(
                             stringResource(R.string.assistant_page_delete),

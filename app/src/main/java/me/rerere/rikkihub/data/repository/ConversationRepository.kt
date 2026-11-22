@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkihub.data.datastore.ConversationSortOrder
 import me.rerere.rikkihub.data.db.AppDatabase
@@ -19,6 +20,7 @@ import me.rerere.rikkihub.data.db.fts.MessageFtsManager
 import me.rerere.rikkihub.data.db.fts.MessageSearchSort
 import me.rerere.rikkihub.data.db.dao.ConversationDAO
 import me.rerere.rikkihub.data.db.dao.FavoriteDAO
+import me.rerere.rikkihub.data.favorite.NodeFavoriteAdapter
 import me.rerere.rikkihub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkihub.data.db.entity.AttachmentRetentionEntity
 import me.rerere.rikkihub.data.db.entity.ConversationEntity
@@ -539,6 +541,10 @@ class ConversationRepository(
                     workspaceCwd = entity.workspaceCwd,
                     workspaceCwdScoped = entity.workspaceCwdScoped,
                     folderId = entity.folderId,
+                    tavernMetadata = entity.tavernMetadata,
+                    characterId = entity.characterId,
+                    cliSession = entity.cliSession,
+                    compression = entity.compression,
                 )
                 if (updated == 0) {
                     throw MutationConflictException(
@@ -565,6 +571,7 @@ class ConversationRepository(
                 // 删除旧的节点，插入新的节点
                 messageNodeDAO.deleteByConversation(conversationId)
                 saveMessageNodes(conversationId, conversation.messageNodes)
+                deleteFavoritesOfRemovedNodes(conversationId, conversation.messageNodes)
                 // FTS 索引并入同一事务，消除每行自动提交
                 messageFtsManager.indexConversationSync(conversation)
             }
@@ -675,7 +682,21 @@ class ConversationRepository(
      * 启动维护时调用。
      */
     suspend fun purgeExpiredDeletedConversations(now: Long = System.currentTimeMillis()): Int =
-        conversationDAO.purgeDeletedBefore(now - RETENTION_TTL_MILLIS)
+        database.withTransaction {
+            conversationDAO.purgeDeletedBefore(now - RETENTION_TTL_MILLIS).also {
+                favoriteDAO.deleteOrphanNodeFavorites()
+            }
+        }
+
+    /** 节点从会话里移除后（删消息、删分支），它们的收藏一并删掉。 */
+    private suspend fun deleteFavoritesOfRemovedNodes(conversationId: String, nodes: List<MessageNode>) {
+        val kept = nodes.mapTo(HashSet()) { it.id.toString() }
+        favoriteDAO.getFavoriteNodeIdsOfConversation(conversationId)
+            .filterNot { it in kept }
+            .map { NodeFavoriteAdapter.buildRefKey(conversationId, it) }
+            .chunked(500)
+            .forEach { favoriteDAO.deleteByRefKeys(it) }
+    }
 
     /** 物理删除一个已软删除的会话；活跃或不存在的 ID 不受影响。 */
     private suspend fun purgeDeletedConversation(conversationId: Uuid) {
@@ -685,6 +706,7 @@ class ConversationRepository(
             if (entity.deletedAt != null) {
                 conversationDAO.delete(entity)
                 messageFtsManager.deleteConversationSync(id)
+                favoriteDAO.deleteOrphanNodeFavorites()
             }
         }
         dirtyConversationIds.remove(id)
@@ -778,6 +800,10 @@ class ConversationRepository(
         }
     }
 
+    /** 损坏或不是 JSON 对象时当作没有酒馆状态，不让一条会话因此打不开。 */
+    private fun decodeTavernMetadata(raw: String): JsonObject =
+        runCatching { JsonInstant.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: JsonObject(emptyMap())
+
     fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
         require(conversation.messageNodes.none { it.messages.any { message -> message.hasBase64Part() } })
         return ConversationEntity(
@@ -795,6 +821,10 @@ class ConversationRepository(
             workspaceCwd = conversation.workspaceCwd ?: "",
             workspaceCwdScoped = conversation.workspaceCwdScoped,
             folderId = conversation.folderId?.toString() ?: "",
+            tavernMetadata = JsonInstant.encodeToString(conversation.tavernMetadata),
+            characterId = conversation.characterId?.toString() ?: "",
+            cliSession = conversation.cliSession?.let { JsonInstant.encodeToString(it) }.orEmpty(),
+            compression = conversation.compression?.takeUnless { it.isEmpty }?.let { JsonInstant.encodeToString(it) }.orEmpty(),
         )
     }
 
@@ -817,6 +847,14 @@ class ConversationRepository(
             workspaceCwd = conversationEntity.workspaceCwd.ifEmpty { null },
             workspaceCwdScoped = conversationEntity.workspaceCwdScoped,
             folderId = conversationEntity.folderId.ifEmpty { null }?.let { Uuid.parse(it) },
+            tavernMetadata = decodeTavernMetadata(conversationEntity.tavernMetadata),
+            characterId = conversationEntity.characterId.ifEmpty { null }?.let { runCatching { Uuid.parse(it) }.getOrNull() },
+            cliSession = conversationEntity.cliSession.ifEmpty { null }?.let {
+                runCatching { JsonInstant.decodeFromString<me.rerere.rikkihub.data.cli.ConversationCliSession>(it) }.getOrNull()
+            },
+            compression = conversationEntity.compression.ifEmpty { null }?.let {
+                runCatching { JsonInstant.decodeFromString<me.rerere.rikkihub.data.ai.ConversationCompressionOverride>(it) }.getOrNull()
+            },
             revision = conversationEntity.revision,
             generation = conversationEntity.generation,
             deletedAt = conversationEntity.deletedAt,
@@ -840,6 +878,32 @@ class ConversationRepository(
     /** Moving between assistants atomically clears the old assistant's folder; nodes are untouched. */
     suspend fun updateConversationAssistant(conversationId: Uuid, assistantId: Uuid) {
         conversationDAO.updateAssistant(conversationId.toString(), assistantId.toString())
+    }
+
+    /**
+     * Atomically updates assistant binding and, when the workspace changes, resets workspace-scoped
+     * fields and CLI session state in a single transaction.
+     */
+    suspend fun updateConversationAssistantAndCli(
+        conversationId: Uuid,
+        assistantId: Uuid,
+        resetWorkspaceFields: Boolean,
+        workspaceCwd: String? = null,
+        workspaceCwdScoped: Boolean = true,
+        cliSession: me.rerere.rikkihub.data.cli.ConversationCliSession? = null,
+    ) {
+        val id = conversationId.toString()
+        database.withTransaction {
+            conversationDAO.updateAssistant(id, assistantId.toString())
+            if (resetWorkspaceFields) {
+                conversationDAO.updateWorkspaceCwd(id, workspaceCwd ?: "")
+                conversationDAO.updateWorkspaceCwdScoped(id, workspaceCwdScoped)
+                conversationDAO.updateCliSession(
+                    id = id,
+                    cliSession = cliSession?.let { JsonInstant.encodeToString(it) }.orEmpty(),
+                )
+            }
+        }
     }
 
     /**
@@ -898,6 +962,13 @@ class ConversationRepository(
     /**
      * 单列更新会话级 system prompt 覆写，null 表示清除（列内以空串存储）。
      */
+    suspend fun updateCompression(conversationId: Uuid, compression: me.rerere.rikkihub.data.ai.ConversationCompressionOverride?) {
+        conversationDAO.updateCompression(
+            id = conversationId.toString(),
+            compression = compression?.takeUnless { it.isEmpty }?.let { JsonInstant.encodeToString(it) }.orEmpty(),
+        )
+    }
+
     suspend fun updateCustomSystemPrompt(conversationId: Uuid, customSystemPrompt: String?) {
         conversationDAO.updateCustomSystemPrompt(
             id = conversationId.toString(),
@@ -917,6 +988,19 @@ class ConversationRepository(
 
     suspend fun updateWorkspaceCwdScoped(conversationId: Uuid, scoped: Boolean) {
         conversationDAO.updateWorkspaceCwdScoped(id = conversationId.toString(), scoped = scoped)
+    }
+
+    /** 单列更新会话里的酒馆状态（作者注释、聊天变量……）；不碰消息节点。 */
+    suspend fun updateTavernMetadata(conversationId: Uuid, metadata: kotlinx.serialization.json.JsonObject) {
+        conversationDAO.updateTavernMetadata(id = conversationId.toString(), tavernMetadata = JsonInstant.encodeToString(metadata))
+    }
+
+    /** 单列更新会话的 CLI 状态；不碰消息节点。null = 关闭 CLI。 */
+    suspend fun updateCliSession(conversationId: Uuid, cliSession: me.rerere.rikkihub.data.cli.ConversationCliSession?) {
+        conversationDAO.updateCliSession(
+            id = conversationId.toString(),
+            cliSession = cliSession?.let { JsonInstant.encodeToString(it) }.orEmpty(),
+        )
     }
 
     private fun conversationSummaryToConversation(entity: LightConversationEntity): Conversation {

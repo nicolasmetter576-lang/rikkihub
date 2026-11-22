@@ -1,8 +1,13 @@
 package me.rerere.rikkihub.ui.pages.extensions.workspace
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.activity.compose.BackHandler
 import me.rerere.rikkihub.data.ai.tools.toolEnabled
 import me.rerere.rikkihub.ui.components.ui.CardGroup
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvMirror
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvSetupState
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvStatus
 import me.rerere.rikkihub.data.workspace.defaultRootfsUrl
 import me.rerere.rikkihub.data.workspace.WORKSPACE_FILE_SNAPSHOT_MAX_DEPTH
 import me.rerere.hugeicons.stroke.MinusSign
@@ -50,6 +55,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,6 +105,9 @@ fun WorkspaceDetailPage(id: String) {
     val installProgress by vm.installProgress.collectAsStateWithLifecycle()
     val installError by vm.installError.collectAsStateWithLifecycle()
     val settingsError by vm.settingsError.collectAsStateWithLifecycle()
+    val envSetup by vm.envSetup.collectAsStateWithLifecycle()
+    val envStatus by vm.envStatus.collectAsStateWithLifecycle()
+    var showEnvSheet by remember { mutableStateOf(false) }
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     var showInstallDialog by remember { mutableStateOf(false) }
@@ -129,6 +138,7 @@ fun WorkspaceDetailPage(id: String) {
                     }
                 },
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         bottomBar = {
@@ -162,6 +172,12 @@ fun WorkspaceDetailPage(id: String) {
                     installProgress = installProgress,
                     onInstallRootfs = { showInstallDialog = true },
                     onCancelInstall = vm::cancelRootfsInstall,
+                    envSetup = envSetup,
+                    envStatus = envStatus,
+                    onOpenEnvSetup = {
+                        if (envSetup == null) vm.refreshEnvStatus()
+                        showEnvSheet = true
+                    },
                     onFirstMessageFileSnapshotDepthChange = vm::setFirstMessageFileSnapshotDepth,
                     onOpenDeviceDirectory = { navController.navigate(Screen.WorkspaceDeviceDirectory(id)) },
                     onToolApprovalChange = vm::setToolApproval,
@@ -188,13 +204,26 @@ fun WorkspaceDetailPage(id: String) {
         if (showInstallDialog) {
             InstallRootfsDialog(
                 workspace = workspace,
+                initialEnvMirror = vm.lastEnvMirror,
                 onDismiss = { showInstallDialog = false },
-                onConfirm = { url ->
-                    vm.installRootfs(url)
+                onConfirm = { url, envMirror ->
+                    vm.installRootfs(url, envMirror)
                     showInstallDialog = false
                 },
             )
         }
+    }
+
+    if (showEnvSheet) {
+        WorkspaceEnvSetupSheet(
+            setup = envSetup,
+            status = envStatus,
+            initialMirror = vm.lastEnvMirror,
+            onStart = vm::startEnvSetup,
+            onCancel = vm::cancelEnvSetup,
+            onDismissResult = vm::dismissEnvSetup,
+            onDismiss = { showEnvSheet = false },
+        )
     }
 
     settingsError?.let { message ->
@@ -236,6 +265,9 @@ private fun WorkspaceBasicPage(
     installProgress: RootfsInstallProgress?,
     onInstallRootfs: () -> Unit,
     onCancelInstall: () -> Unit,
+    envSetup: WorkspaceEnvSetupState?,
+    envStatus: WorkspaceEnvStatus?,
+    onOpenEnvSetup: () -> Unit,
     onFirstMessageFileSnapshotDepthChange: (Int) -> Unit,
     onOpenDeviceDirectory: () -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
@@ -259,7 +291,7 @@ private fun WorkspaceBasicPage(
     // null = 存储 JSON 损坏 (fail-closed: 视为全部不可用)
     val enablement = workspace?.let { WorkspaceToolEnablement.tryParse(it.toolEnablement) }
     val subagentEnabled = enablement?.toolEnabled(BuiltinToolIds.SUBAGENT) == true
-    val groupModifier = Modifier.padding(horizontal = 8.dp)
+    val groupModifier = Modifier.padding(horizontal = AppSpacing.xxs)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -291,6 +323,7 @@ private fun WorkspaceBasicPage(
                             OutlinedButton(
                                 onClick = onCancelInstall,
                                 contentPadding = ButtonDefaults.SmallContentPadding,
+                                shape = MaterialTheme.shapes.medium,
                             ) {
                                 Text(stringResource(R.string.common_cancel))
                             }
@@ -298,10 +331,24 @@ private fun WorkspaceBasicPage(
                             FilledTonalButton(
                                 onClick = onInstallRootfs,
                                 enabled = workspace != null && !installing,
-                                contentPadding = ButtonDefaults.SmallContentPadding,
+                                contentPadding = ButtonDefaults.SmallContentPadding
                             ) {
                                 Text(installButtonText)
                             }
+                        }
+                    },
+                )
+                item(
+                    headlineContent = { Text(stringResource(R.string.workspace_env_title)) },
+                    supportingContent = { Text(workspaceEnvRowText(rootfsReady, envSetup, envStatus)) },
+                    trailingContent = {
+                        FilledTonalButton(
+                            onClick = onOpenEnvSetup,
+                            enabled = envSetup != null || (rootfsReady && !installing),
+                            contentPadding = ButtonDefaults.SmallContentPadding,
+                            modifier = Modifier.testTag("workspace_env_open")
+                        ) {
+                            Text(stringResource(R.string.workspace_env_configure))
                         }
                     },
                 )
@@ -776,10 +823,14 @@ private fun RootfsProgress(progress: RootfsInstallProgress) {
 @Composable
 private fun InstallRootfsDialog(
     workspace: WorkspaceEntity,
+    initialEnvMirror: WorkspaceEnvMirror,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
+    /** url, mirror of the environment setup to run afterwards (null = none). */
+    onConfirm: (String, WorkspaceEnvMirror?) -> Unit,
 ) {
     var url by rememberSaveable(workspace.id) { mutableStateOf(defaultRootfsUrl()) }
+    var setupEnvironment by rememberSaveable(workspace.id) { mutableStateOf(false) }
+    var envMirror by rememberSaveable(workspace.id) { mutableStateOf(initialEnvMirror) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -798,11 +849,19 @@ private fun InstallRootfsDialog(
                     label = { Text(stringResource(R.string.workspace_detail_download_url)) },
                     maxLines = 5,
                 )
+                WorkspaceEnvSetupOption(
+                    title = stringResource(R.string.workspace_env_setup_after_install),
+                    description = stringResource(R.string.workspace_env_setup_after_install_desc),
+                    checked = setupEnvironment,
+                    onCheckedChange = { setupEnvironment = it },
+                    mirror = envMirror,
+                    onMirrorChange = { envMirror = it },
+                )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(url.trim()) },
+                onClick = { onConfirm(url.trim(), envMirror.takeIf { setupEnvironment }) },
                 enabled = url.isNotBlank(),
             ) {
                 Text(stringResource(R.string.common_install))

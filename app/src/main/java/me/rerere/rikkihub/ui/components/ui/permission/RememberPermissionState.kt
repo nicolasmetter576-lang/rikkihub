@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.components.ui.permission
 
+import androidx.compose.material3.MaterialTheme
+import me.rerere.rikkihub.utils.getComponentActivity
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,7 +38,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
  * )
  *
  * // 请求权限
- * Button(onClick = { permissionState.requestPermissions() }) {
+ * Button(onClick = { permissionState.requestPermissions() }, shape = MaterialTheme.shapes.medium) {
  *     Text("请求权限")
  * }
  *
@@ -51,7 +53,8 @@ fun rememberPermissionState(
     permissions: Set<PermissionInfo>
 ): PermissionState {
     val context = LocalContext.current
-    val activity = context as? ComponentActivity
+    // 底部面板、对话框里的 LocalContext 是包了一层的 ContextWrapper，要往里找到 Activity
+    val activity = context.getComponentActivity()
         ?: throw IllegalStateException("rememberPermissionState 必须在 ComponentActivity 中使用")
 
     // 创建权限状态对象

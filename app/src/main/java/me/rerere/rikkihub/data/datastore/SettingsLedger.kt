@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.datastore
 
+import me.rerere.rikkihub.data.model.regexScripts
 import kotlinx.serialization.Serializable
 import me.rerere.rikkihub.data.mutation.ExpectedVersions
 import me.rerere.rikkihub.data.mutation.MutationConflictException
@@ -99,10 +100,19 @@ internal fun settingsObjects(settings: Settings): Map<String, Any?> = buildMap {
         provider.models.forEach { put("model:${it.id}", it) }
     }
     settings.lorebooks.forEach { put("lorebook:${it.id}", it) }
-    settings.modeInjections.forEach { put("modeInjection:${it.id}", it) }
+    // 内部键名沿用 modeInjection：提示词库就是原来的模式注入，管理链/撤销按这个键找对象
+    settings.promptLibrary.forEach { put("modeInjection:${it.identifier}", it) }
     settings.quickMessages.forEach { put("quickMessage:${it.id}", it) }
     settings.mcpServers.forEach { put("mcpServer:${it.id}", it) }
     settings.assistantTags.forEach { put("assistantTag:${it.id}", it) }
+    // 创造助手按条目、预设条目、正则脚本逐个管理：它们各有自己的版本号
+    settings.lorebooks.forEach { book -> book.entries.forEach { put("lorebookEntry:${book.id}/${it.uid}", it) } }
+    settings.assistants.forEach { assistant ->
+        assistant.promptPreset.prompts.forEach { put("presetEntry:${assistant.id}/${it.identifier}", it) }
+        assistant.promptPreset.regexScripts.forEach { put("assistantRegex:${assistant.id}/${it.id}", it) }
+    }
+    settings.tavern.regexScripts.forEach { put("globalRegex:${it.id}", it) }
+    put("setting:tavern", settings.tavern)
     settings.searchServices.forEach { put("searchService:${it.id}", it) }
     settings.asrProviders.forEach { put("asrProvider:${it.id}", it) }
     settings.ttsProviders.forEach { put("ttsProvider:${it.id}", it) }
@@ -115,6 +125,7 @@ internal fun settingsObjects(settings: Settings): Map<String, Any?> = buildMap {
     put("setting:translatePrompt", settings.translatePrompt)
     put("setting:suggestionPrompt", settings.suggestionPrompt)
     put("setting:ocrPrompt", settings.ocrPrompt)
+    put("setting:messageTitlePrompt", settings.messageTitlePrompt)
     put("setting:toolOverrides", settings.toolOverrides)
     put("setting:assistantId", settings.assistantId)
     put("setting:favoriteModels", settings.favoriteModels)
@@ -126,7 +137,7 @@ internal fun settingsCollections(settings: Settings): Map<String, List<Any?>> = 
     put("assistants", settings.assistants)
     put("providers", settings.providers)
     put("lorebooks", settings.lorebooks)
-    put("modeInjections", settings.modeInjections)
+    put("modeInjections", settings.promptLibrary)
     put("quickMessages", settings.quickMessages)
     put("mcpServers", settings.mcpServers)
     put("assistantTags", settings.assistantTags)
@@ -135,7 +146,7 @@ internal fun settingsCollections(settings: Settings): Map<String, List<Any?>> = 
     put("ttsProviders", settings.ttsProviders)
     put("favoriteModels", settings.favoriteModels)
     put("assistants[].quickMessageIds", settings.assistants.map { it.id to it.quickMessageIds })
-    put("assistants[].modeInjectionIds", settings.assistants.map { it.id to it.modeInjectionIds })
+    put("assistants[].modeInjectionIds", settings.assistants.map { it.id to it.libraryEntryIds })
     put("assistants[].lorebookIds", settings.assistants.map { it.id to it.lorebookIds })
     put("assistants[].enabledSkills", settings.assistants.map { it.id to it.enabledSkills })
     put("assistants[].chatModelId", settings.assistants.map { it.id to it.chatModelId })
@@ -143,6 +154,13 @@ internal fun settingsCollections(settings: Settings): Map<String, List<Any?>> = 
     put("defaults.modelSlots", listOf(settings.chatModelId, settings.fastModelId, settings.translateModeId,
         settings.imageGenerationModelId, settings.ocrModelId))
     put("defaults.prompts", listOf(settings.titlePrompt, settings.translatePrompt, settings.suggestionPrompt,
-        settings.ocrPrompt))
+        settings.ocrPrompt, settings.messageTitlePrompt))
     settings.providers.forEach { put("providers.${it.id}.models", it.models) }
+    settings.lorebooks.forEach { put("lorebooks.${it.id}.entries", it.entries) }
+    settings.assistants.forEach {
+        put("assistants.${it.id}.presetEntries", listOf(it.promptPreset.prompts, it.promptPreset.promptOrder))
+        put("assistants.${it.id}.regexScripts", it.promptPreset.regexScripts)
+    }
+    put("tavern", listOf(settings.tavern))
+    put("tavern.regexScripts", settings.tavern.regexScripts)
 }

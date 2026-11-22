@@ -3,6 +3,7 @@ package me.rerere.ai.ui
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import me.rerere.ai.core.MessageRole
@@ -27,17 +28,25 @@ data class UIMessage(
     val modelId: Uuid? = null,
     // 模型名称的快照：modelId 指向的模型被删除后，靠它继续显示这条消息由谁生成
     val modelSnapshot: ModelSnapshot? = null,
-    // 多轮工具调用共用同一条消息时是各步累计值（每次请求都按完整上下文计费）
+    // 消息生成时使用的模型上下文窗口大小（token）
+    val contextLength: Int? = null,
+    // 同一助手消息各逻辑模型步骤已报告用量的累计，不包含未报告的用量或失败重试的完整账单
     val usage: TokenUsage? = null,
-    // 模型实际生成耗时（各步从首个 chunk 到响应结束的累计），不含首 token 延迟、工具执行和审批等待
+    // 应用侧观测耗时：流式首 chunk 至流结束；非流式为成功请求耗时。不含客户端工具/审批等待
     val generationTimeMs: Long? = null,
-    // 最后一次请求自己的 usage；usage 是多步累计值，看上下文占用和缓存命中要用这个
+    // 当前逻辑模型步骤的完整输入/输出快照；明确缺报时为空，不沿用上一阶段
     val lastUsage: TokenUsage? = null,
-    // 这条消息累计请求了多少次模型
+    // 逻辑模型步骤数，流式预览包括当前步；不是实际 HTTP 请求/重试次数
     val stepCount: Int? = null,
     val translation: String? = null,
+    // 每轮标题：生成结束时从回复末行的 <rk-title> 解析，用户可改（只改这里，不回改原文）
+    val title: String? = null,
     // 压缩检查点：此消息是它之前全部历史的摘要，组装请求时从最后一个检查点开始取
     val isContextCheckpoint: Boolean = false,
+    // 检查点元数据（生成方式、模板、覆盖范围、用量等）；旧检查点缺省为 null
+    val checkpointMeta: ContextCheckpointMetadata? = null,
+    // null = 旧消息完整性未知；false = 生成中或已知缺报；true = 各步骤成功且用量完整
+    val usageComplete: Boolean? = null,
     // 请求期间生成的内部消息；该标记仅在内存中使用
     @Transient
     val isSynthetic: Boolean = false,
@@ -45,14 +54,29 @@ data class UIMessage(
     fun summaryAsText(maxLength: Int = Int.MAX_VALUE): String {
         val text = "[${role.name}]: " + parts.joinToString(separator = "\n") { part ->
             when (part) {
-                is UIMessagePart.Text -> part.text
+                is UIMessagePart.Text -> displayTextOf(part)
                 else -> ""
             }
         }
         return if (text.length > maxLength) text.take(maxLength) + "..." else text
     }
 
+    /** 是否为「清空上下文」空摘要检查点（只截断，不作为用户消息发给模型）。 */
+    val isClearContextCheckpoint: Boolean
+        get() = isContextCheckpoint && (
+            checkpointMeta?.kind == ContextCheckpointKind.CLEAR || toRawText().isBlank()
+        )
+
+    /** 文字内容（助手消息去掉每轮标题标签，见 [stripMessageTitle]）。 */
     fun toText() = parts.joinToString(separator = "\n") { part ->
+        when (part) {
+            is UIMessagePart.Text -> displayTextOf(part)
+            else -> ""
+        }
+    }
+
+    /** 原样的文字内容（含标题标签），给要原样发回模型的地方用。 */
+    fun toRawText() = parts.joinToString(separator = "\n") { part ->
         when (part) {
             is UIMessagePart.Text -> part.text
             else -> ""
@@ -68,7 +92,8 @@ data class UIMessage(
             is UIMessagePart.Video -> part.url.isNotBlank()
             is UIMessagePart.Audio -> part.url.isNotBlank()
             is UIMessagePart.Document -> part.url.isNotBlank()
-            is UIMessagePart.Reasoning -> part.reasoning.isNotBlank()
+            is UIMessagePart.Reasoning -> part.reasoning.isNotBlank() ||
+                part.metadataAs<ClaudeReasoningMetadata>()?.redactedData != null
             else -> true
         }
     }
@@ -84,14 +109,16 @@ data class UIMessage(
     }
 
     /**
-     * 最后一次请求的 usage
-     *
-     * 没有 [lastUsage] 的旧消息退回用 [usage]：那时的 usage 只保留了最后一步，正好就是它。
+     * 最近逻辑模型步骤的上下文参考。仅旧消息允许回退到累计字段；新消息的 null 表示缺报。
+     * provider 内部续接（如 Claude pause_turn）可能折叠多个物理请求，不是下一请求的精确容量。
      */
-    fun lastRequestUsage(): TokenUsage? = lastUsage ?: usage
+    fun lastRequestUsage(): TokenUsage? = if (usageComplete == null) lastUsage ?: usage else lastUsage
 
-    /** 最后一次请求结束时的上下文占用（prompt + completion） */
-    fun contextTokens(): Int? = lastRequestUsage()?.let { it.promptTokens + it.completionTokens }
+    /** 最近模型步骤的输入 + 输出参考；未知时不拿累计量冒充。 */
+    fun contextTokens(): Int? = lastRequestUsage()
+        ?.takeIf { it.promptTokens >= 0 && it.completionTokens >= 0 }
+        ?.let { it.promptTokens.toLong() + it.completionTokens }
+        ?.takeIf { it <= Int.MAX_VALUE }?.toInt()
 
     /**
      * 用快照还原出一个只用于展示名称和图标的 [Model]
@@ -108,8 +135,13 @@ data class UIMessage(
      * 把一次请求的 usage 和生成耗时累加到 [stepBase]（这一步开始前的消息）的统计上。
      * 接收者的 [usage] 只带这一步的 usage。
      */
-    fun withStepStats(stepBase: UIMessage?, stepTimeMillis: Long): UIMessage {
-        // 升级前的旧消息有 usage 但没有记录耗时：累计不出准确的耗时，交给界面退回按起止时间估算
+    fun withStepStats(
+        stepBase: UIMessage?,
+        stepTimeMillis: Long,
+        hasCompleteUsage: Boolean,
+        stepFinished: Boolean,
+    ): UIMessage {
+        // 旧基线缺少耗时时不能凭空补齐；完整性另外记录，界面不会把不完整统计当精确速度
         val baseTime = when {
             stepBase == null -> 0L
             stepBase.generationTimeMs != null -> stepBase.generationTimeMs
@@ -117,11 +149,13 @@ data class UIMessage(
             else -> 0L
         }
         val baseSteps = stepBase?.stepCount ?: if (stepBase?.usage != null) 1 else 0
+        val baseComplete = baseSteps == 0 || stepBase?.usageComplete == true
         return copy(
             usage = stepBase?.usage.sum(usage),
             generationTimeMs = baseTime?.plus(stepTimeMillis.coerceAtLeast(0)),
-            lastUsage = usage ?: stepBase?.lastRequestUsage(),
+            lastUsage = usage.takeIf { hasCompleteUsage },
             stepCount = baseSteps + 1,
+            usageComplete = baseComplete && stepFinished && hasCompleteUsage && usage != null,
         )
     }
 
@@ -142,6 +176,38 @@ data class UIMessage(
         )
     }
 }
+
+/** 压缩检查点的产生方式。 */
+@Serializable
+enum class ContextCheckpointKind {
+    @SerialName("manual")
+    MANUAL,
+
+    @SerialName("auto")
+    AUTO,
+
+    @SerialName("overflow_retry")
+    OVERFLOW_RETRY,
+
+    @SerialName("clear")
+    CLEAR,
+}
+
+/** 压缩检查点的可选元数据；旧检查点没有该字段时整块为 null。 */
+@Serializable
+data class ContextCheckpointMetadata(
+    val kind: ContextCheckpointKind? = null,
+    val templateId: String? = null,
+    val fromOriginal: Boolean = false,
+    val chunked: Boolean = false,
+    val requestCount: Int? = null,
+    val carriedCount: Int? = null,
+    val rangeStartNodeId: Uuid? = null,
+    val rangeEndNodeId: Uuid? = null,
+    val summarizedCount: Int? = null,
+    val supersededCheckpointNodeId: Uuid? = null,
+    val usage: TokenUsage? = null,
+)
 
 /**
  * 消息上保存的模型名称快照，对应 [Model.modelId] 与 [Model.displayName]
@@ -210,7 +276,9 @@ private const val CONTEXT_KEEP_RATIO = 0.5f
 fun List<UIMessage>.limitContext(limit: Int): List<UIMessage> {
     val checkpointIndex = indexOfLast { it.isContextCheckpoint }
     if (checkpointIndex < 0) return limitMessageCount(limit)
-    return listOf(this[checkpointIndex]) + subList(checkpointIndex + 1, size).limitMessageCount(limit)
+    val checkpoint = this[checkpointIndex]
+    val tail = subList(checkpointIndex + 1, size).limitMessageCount(limit)
+    return if (checkpoint.isClearContextCheckpoint) tail else listOf(checkpoint) + tail
 }
 
 /**

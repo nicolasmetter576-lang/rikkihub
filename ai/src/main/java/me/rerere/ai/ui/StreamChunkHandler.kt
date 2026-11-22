@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
-import me.rerere.ai.core.merge
+import me.rerere.ai.core.UsageAccumulator
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.stream.ToolStreamProtocolException
 import me.rerere.ai.provider.TextGenerationResult
@@ -38,7 +38,7 @@ import kotlin.time.Clock
  *    - `ImageStart/Delta/End`：创建图片 part，并逐步追加 Base64 数据。
  *    - `ImageSnapshot`：用最新的完整 Base64 快照替换同 id 图片的旧数据。
  *    - `Annotations`：追加并去重消息注解。
- *    - `Usage`：将本次用量合并到消息已有的 Token 用量中。
+ *    - `Usage`：归并本 attempt 的已报告字段并写入独立快照，不继承消息的历史步骤用量。
  *    - `Finish`：设置消息完成时间，结束尚未关闭的推理 part，并清空事件索引。
  * 4. 使用 [UIMessage.copy] 生成更新后的助手消息，将其替换到列表末尾并返回新列表。
  *
@@ -57,6 +57,12 @@ import kotlin.time.Clock
  * 事件应按 Provider 产生的顺序交给同一实例处理。
  */
 class StreamChunkHandler(private val model: Model? = null) {
+    private val usageAccumulator = UsageAccumulator()
+
+    /** This attempt only; never seeded from the assistant message's previous steps. */
+    val usage: TokenUsage? get() = usageAccumulator.snapshot
+    val hasCompleteUsage: Boolean get() = usageAccumulator.hasCompleteUsage
+
     // Map 的值是对应 part 在当前助手消息 parts 列表中的下标。
     private val textPartIndexes = mutableMapOf<String, Int>()
     private val reasoningPartIndexes = mutableMapOf<String, Int>()
@@ -535,7 +541,10 @@ class StreamChunkHandler(private val model: Model? = null) {
             }
 
             is StreamChunk.Annotations -> copy(annotations = (annotations + chunk.annotations).distinct())
-            is StreamChunk.Usage -> copy(usage = usage.merge(chunk.usage))
+            is StreamChunk.Usage -> {
+                usageAccumulator.update(chunk.update)
+                copy(usage = usageAccumulator.snapshot)
+            }
             is StreamChunk.Finish -> copy(
                 finishedAt = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
             ).finishReasoning().also {
@@ -648,6 +657,7 @@ private fun mergeMetadata(old: JsonObject?, new: JsonObject?): JsonObject? = whe
  * [newStep]: the result is the next request of a multi-step (tool call) generation. Its text and
  * reasoning become parts of their own instead of being glued onto the previous step's last part.
  * Provider-internal continuations of one reply (Claude `pause_turn`) keep the default.
+ * Usage is this result's already-normalized snapshot; cross-step/pass sums belong to the caller.
  */
 fun List<UIMessage>.handleTextGenerationResult(
     result: TextGenerationResult,
@@ -665,7 +675,7 @@ fun List<UIMessage>.handleTextGenerationResult(
     } else {
         dropLast(1) + last().appendMessage(incoming, mergeTextAndReasoning = !newStep).copy(
             modelId = model?.id ?: last().modelId,
-            usage = last().usage.merge(result.usage ?: TokenUsage()),
+            usage = result.usage,
             finishedAt = incoming.finishedAt,
         ).finishReasoning()
     }
@@ -692,24 +702,9 @@ private fun UIMessage.appendMessage(delta: UIMessage, mergeTextAndReasoning: Boo
             is UIMessagePart.Image -> acc + deltaPart
 
             is UIMessagePart.Reasoning -> {
-                if (deltaPart.reasoning.isEmpty() && deltaPart.metadata == null) {
-                    acc
-                } else {
-                    val lastPart = acc.lastOrNull()
-                    if (mergeTextAndReasoning && lastPart is UIMessagePart.Reasoning &&
-                        lastPart.reasoningType == deltaPart.reasoningType
-                    ) {
-                        acc.dropLast(1) + UIMessagePart.Reasoning(
-                            reasoning = lastPart.reasoning + deltaPart.reasoning,
-                            createdAt = lastPart.createdAt,
-                            finishedAt = null,
-                            metadata = deltaPart.metadata ?: lastPart.metadata,
-                            reasoningType = lastPart.reasoningType,
-                        )
-                    } else {
-                        acc + deltaPart
-                    }
-                }
+                // 非流式结果里每个推理块都是完整的，签名等 metadata 只对自己那一块有效，
+                // 拼到相邻的块上回传时会校验失败。
+                if (deltaPart.reasoning.isEmpty() && deltaPart.metadata == null) acc else acc + deltaPart
             }
 
             is UIMessagePart.Tool -> {

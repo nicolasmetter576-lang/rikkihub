@@ -67,7 +67,7 @@ class SkillSearchTest {
         assertEquals(256, SKILL_SEARCH_QUERY_MAX_CHARS)
         assertTrue(page.contains("it.take(SKILL_SEARCH_QUERY_MAX_CHARS)"))
         assertTrue(page.contains("remember(skills, searchQuery) { filterSkills(skills, searchQuery) }"))
-        assertTrue(page.contains("items(filteredSkills, key = { it.skillDir.absolutePath })"))
+        assertTrue(page.contains("itemsIndexed(filteredSkills, key = { _, skill -> skill.skillDir.absolutePath })"))
         assertTrue(page.contains("if (skills.isEmpty())"))
         assertTrue(page.contains("skills.isNotEmpty() && filteredSkills.isEmpty()"))
         assertTrue(page.contains("onClick = { navController.navigate(Screen.SkillDetail(skill.name)) }"))

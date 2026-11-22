@@ -29,10 +29,12 @@ class MemoryConsolidationSchedulerTest {
 
         // 不在这里的对话都属于 memoryId
         val memoryIdOf = mutableMapOf<Uuid, String>()
+        val assistantIdOf = mutableMapOf<Uuid, Uuid>()
 
         // 助手关了自动整理的对话
         val manual = mutableSetOf<Uuid>()
         val calls = mutableListOf<Call>()
+        val copiedMarksToGlobal = mutableListOf<Uuid>()
         var failure: Exception? = null
         var gate: CompletableDeferred<Unit>? = null
 
@@ -49,7 +51,13 @@ class MemoryConsolidationSchedulerTest {
         var stuck = false
 
         private fun item(id: Uuid, turns: Int) =
-            PendingMemoryConversation(id, memoryIdOf[id] ?: memoryId, turns, automatic = id !in manual)
+            PendingMemoryConversation(
+                conversationId = id,
+                memoryId = memoryIdOf[id] ?: memoryId,
+                turns = turns,
+                automatic = id !in manual,
+                assistantId = assistantIdOf[id] ?: Uuid.NIL,
+            )
 
         override suspend fun pendingOf(conversation: Conversation) =
             pending[conversation.id]?.let { item(conversation.id, it) }
@@ -61,6 +69,13 @@ class MemoryConsolidationSchedulerTest {
             val found = pending.map { (id, turns) -> item(id, turns) }.filter { it.memoryId == memoryId }
             scanGate?.await()
             return found
+        }
+
+        override suspend fun findPending(memoryId: String, sinceMs: Long, limit: Int): List<PendingMemoryConversation> =
+            findPending(memoryId).take(limit)
+
+        override suspend fun copyMarksToGlobal(assistantId: Uuid) {
+            copiedMarksToGlobal += assistantId
         }
 
         override suspend fun markConsolidated(conversation: Conversation) {
@@ -589,5 +604,79 @@ class MemoryConsolidationSchedulerTest {
 
         assertTrue(worker.calls.isEmpty())
         assertEquals(2, scheduler.statusOf(memoryId).first().pendingTurns)
+    }
+
+    @Test
+    fun `switching assistant memory scope updates pending counts without starting an automatic timer`() = runTest {
+        val scheduler = scheduler()
+        worker.assistantIdOf[chat.id] = chat.assistantId
+        scheduler.finishTurn(chat, pendingTurns = 2)
+        runCurrent()
+        assertEquals(2, scheduler.statusOf(memoryId).first().pendingTurns)
+
+        // Move chat to __global__
+        worker.memoryIdOf[chat.id] = "__global__"
+        scheduler.onAssistantMemoryScopeChanged(chat.assistantId, memoryId, "__global__")
+        runCurrent()
+
+        assertEquals(0, scheduler.statusOf(memoryId).first().pendingTurns)
+        assertEquals(2, scheduler.statusOf("__global__").first().pendingTurns)
+        // Waiting past idleDelay must NOT auto-run __global__ purely from toggling the switch
+        advanceTimeBy(10.minutes)
+        assertTrue(worker.calls.isEmpty())
+    }
+
+    @Test
+    fun `cancelling a running dream stops it cleanly without marking failure`() = runTest {
+        val scheduler = scheduler()
+        worker.gate = CompletableDeferred()
+        worker.pending[chat.id] = 2
+
+        scheduler.organize(memoryId)
+        runCurrent()
+        assertTrue(scheduler.statusOf(memoryId).first().running)
+        assertEquals(1, activeHolds)
+
+        scheduler.cancel(memoryId)
+        runCurrent()
+
+        val status = scheduler.statusOf(memoryId).first()
+        assertFalse(status.running)
+        assertNull(status.lastRun?.error)
+        assertEquals(0, activeHolds)
+        assertEquals(2, worker.pending[chat.id])
+    }
+
+    @Test
+    fun `backfill consolidates at most the requested cap without full review`() = runTest {
+        val scheduler = scheduler()
+        val third = Conversation(assistantId = Uuid.random(), messageNodes = emptyList())
+        listOf(chat, otherChat, third).forEach { worker.pending[it.id] = 1 }
+        worker.perRun = 1
+
+        scheduler.backfill(memoryId, sinceMs = 0L, maxConversations = 2)
+        runCurrent()
+
+        assertEquals(2, worker.calls.size)
+        assertTrue(worker.calls.none { it.fullReview })
+        assertFalse(scheduler.statusOf(memoryId).first().running)
+    }
+
+    @Test
+    fun `syncMarksToGlobal delegates to worker and refreshes global pending count`() = runTest {
+        val scheduler = scheduler()
+        val aId = chat.assistantId
+        worker.assistantIdOf[chat.id] = aId
+        worker.memoryIdOf[chat.id] = "__global__"
+        scheduler.finishTurn(chat, pendingTurns = 2)
+        runCurrent()
+        assertEquals(2, scheduler.statusOf("__global__").first().pendingTurns)
+
+        // Simulate worker copyMarks clearing pending for this assistant
+        worker.pending.remove(chat.id)
+        scheduler.syncMarksToGlobal(aId)
+
+        assertEquals(listOf(aId), worker.copiedMarksToGlobal)
+        assertEquals(0, scheduler.statusOf("__global__").first().pendingTurns)
     }
 }

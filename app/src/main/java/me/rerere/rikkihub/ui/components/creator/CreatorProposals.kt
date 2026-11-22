@@ -287,5 +287,6 @@ private fun domainLabel(domain: me.rerere.rikkihub.data.management.common.Manage
         me.rerere.rikkihub.data.management.common.ManagementDomain.SUBAGENT_PRESET -> R.string.creator_domain_subagent
         me.rerere.rikkihub.data.management.common.ManagementDomain.USER_SKILL -> R.string.creator_domain_skill
         me.rerere.rikkihub.data.management.common.ManagementDomain.CONVERSATION -> R.string.creator_domain_conversation
+        me.rerere.rikkihub.data.management.common.ManagementDomain.CHARACTER -> R.string.creator_domain_character
     }
 )

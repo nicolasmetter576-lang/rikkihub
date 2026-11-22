@@ -3,10 +3,12 @@ package me.rerere.rikkihub.ui.pages.chat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import me.rerere.ai.ui.displayTextOf
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.encodeBase64
+import me.rerere.rikkihub.data.cli.AcpParts
 import me.rerere.rikkihub.utils.JsonInstantPretty
 
 // Keep the original public name and first positional argument for fork callers.
@@ -33,19 +35,29 @@ internal fun buildConversationMarkdown(
         append("$role:\n\n")
         exportedMessageParts(message.parts, options).forEach { part ->
             when (part) {
-                is UIMessagePart.Text -> appendLine(part.text)
+                is UIMessagePart.Text -> appendLine(message.displayTextOf(part))
                 is UIMessagePart.Image -> appendLine("![Image](${imageData(part)})")
                 is UIMessagePart.Reasoning -> {
                     appendMarkdownReasoning(part.reasoning)
                     appendLine()
                 }
                 is UIMessagePart.Tool -> {
-                    appendLine("**Tool**: `${part.toolName}`")
+                    val isAcp = AcpParts.isAcpTool(part) || part.toolName.startsWith(AcpParts.TOOL_PREFIX)
+                    val toolTitle = if (isAcp) AcpParts.titleOf(part) else part.toolName
+                    appendLine("**Tool**: `$toolTitle`")
                     if (part.toolCallId.isNotBlank()) appendLine("- Call ID: `${part.toolCallId}`")
                     appendLine("Input:")
                     appendLine("```json")
                     appendLine(JsonInstantPretty.encodeToString(part.inputAsJson()))
                     appendLine("```")
+                    if (isAcp) {
+                        AcpParts.unifiedDiffOf(part)?.let { diff ->
+                            appendLine("Diff:")
+                            appendLine("```diff")
+                            appendLine(diff)
+                            appendLine("```")
+                        }
+                    }
                     if (part.output.isNotEmpty()) {
                         appendLine("Output:")
                         part.output.forEach { output ->

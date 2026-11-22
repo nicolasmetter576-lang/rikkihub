@@ -38,7 +38,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -55,7 +54,6 @@ import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
 import me.rerere.rikkihub.data.ai.tools.resolveBuiltinToolId
-import me.rerere.rikkihub.ui.components.message.tools.DefaultToolPreview
 import me.rerere.rikkihub.ui.components.message.tools.ToolUIContext
 import me.rerere.rikkihub.ui.components.message.tools.ToolUIRegistry
 import me.rerere.rikkihub.ui.context.LocalSettings
@@ -130,13 +128,12 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
             null
         }
     }
-    // 输出不是 JSON（例如超长被截断后只剩说明和预览）时，定制渲染器读不到任何字段，详情改用默认渲染显示原文
-    val outputUnparsable = tool.isExecuted && outputJson == null
-    val context = remember(tool, loading, memoryId) {
+    val context = remember(tool, loading, memoryId, outputJson) {
         ToolUIContext(
             tool = tool,
-            arguments = tool.inputAsJson(),
-            content = if (tool.isExecuted) outputJson ?: JsonObject(emptyMap()) else null,
+            // Arguments still streaming in are a JSON prefix; execution always parses them strictly.
+            arguments = if (loading && !tool.isExecuted) tool.inputAsPartialJson() else tool.inputAsJson(),
+            content = outputJson,
             loading = loading,
             memoryId = memoryId,
         )
@@ -276,14 +273,10 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
             ),
             onDismissRequest = { showResult = false },
             content = {
-                if (outputUnparsable) {
-                    DefaultToolPreview(context = context)
-                } else {
-                    renderer.Preview(
-                        context = context,
-                        onDismissRequest = { showResult = false },
-                    )
-                }
+                renderer.Preview(
+                    context = context,
+                    onDismissRequest = { showResult = false },
+                )
             },
         )
     }
@@ -480,7 +473,7 @@ private fun ChainOfThoughtScope.AskUserToolStep(
                                 else -> !answers[q.id].isNullOrBlank()
                             }
                         },
-                        modifier = Modifier.align(Alignment.End),
+                        modifier = Modifier.align(Alignment.End)
                     ) {
                         Icon(
                             imageVector = HugeIcons.Tick01,

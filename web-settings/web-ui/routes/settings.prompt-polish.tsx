@@ -65,7 +65,7 @@ export default function SettingsPromptPolishPage() {
     <div className="space-y-6">
       <SettingsPageHeader title={t("prompt_polish.title")} description={t("prompt_polish.description")} />
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("prompt_polish.model_section")}</h2>
         <SettingsSelectField
           label={t("prompt_polish.model")}
@@ -86,7 +86,7 @@ export default function SettingsPromptPolishPage() {
         </p>
       </section>
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("prompt_polish.context_section")}</h2>
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -106,7 +106,7 @@ export default function SettingsPromptPolishPage() {
         ) : null}
       </section>
 
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 rounded-xl border p-3">
         <h2 className="text-base font-semibold">{t("prompt_polish.prompt")}</h2>
         <p className="text-xs text-muted-foreground">{t("prompt_polish.prompt_hint")}</p>
         <SettingsField label={t("prompt_polish.prompt")}>

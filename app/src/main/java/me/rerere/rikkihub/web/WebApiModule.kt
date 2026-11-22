@@ -69,9 +69,17 @@ fun Application.configureWebApi(
     fontDownloadService: me.rerere.rikkihub.data.fonts.FontDownloadService? = null,
     translationHistoryRepo: me.rerere.rikkihub.data.repository.TranslationHistoryRepository? = null,
     memoryScheduler: me.rerere.rikkihub.data.ai.MemoryConsolidationScheduler? = null,
+    tavernRuntime: me.rerere.rikkihub.data.ai.tavern.TavernRuntime? = null,
+    managementRuntime: me.rerere.rikkihub.data.management.runtime.ManagementRuntime? = null,
+    characterRepository: me.rerere.rikkihub.data.repository.CharacterRepository? = null,
+    characterService: me.rerere.rikkihub.data.character.CharacterService? = null,
+    usageStats: me.rerere.rikkihub.web.routes.WebUsageStats? = null,
+    fileManager: me.rerere.rikkihub.data.files.FileManagerService? = null,
     // Optional injection point for DI (AppModule); null → per-server instance
     // under filesDir/web-auth (fail-closed default, no external wiring needed).
     webAuthSecurity: WebAuthSecurity? = null,
+    acpSessionManager: me.rerere.rikkihub.data.cli.AcpSessionManager? = null,
+    localhostOnly: Boolean = false,
 ) {
     install(ContentNegotiation) {
         json(JsonInstant)
@@ -86,20 +94,23 @@ fun Application.configureWebApi(
     val security = webAuthSecurity ?: WebAuthSecurity(File(context.filesDir, "web-auth"))
     val rateLimiter = WebAuthRateLimiter()
 
+    val currentAuthConfig: () -> WebAuthConfig = {
+        val current = settingsStore.settingsFlow.value
+        WebAuthConfig(
+            jwtEnabled = current.webServerJwtEnabled,
+            accessPassword = current.webServerAccessPassword,
+            requireHttps = current.webServerHttpsEnabled,
+            localhostOnly = localhostOnly,
+        )
+    }
+
     // Authentication is always installed so the JWT provider can be challenged
     // whenever the CURRENT settings allow it. Admission is decided per request
     // (see the gate intercept below): disabling web auth or clearing/changing
     // the access password takes effect immediately for already-running servers
     // and revokes previously-issued tokens — no restart is required.
     install(Authentication) {
-        installWebJwtAuth(security) {
-            val current = settingsStore.settingsFlow.value
-            WebAuthConfig(
-                jwtEnabled = current.webServerJwtEnabled,
-                accessPassword = current.webServerAccessPassword,
-                requireHttps = current.webServerHttpsEnabled,
-            )
-        }
+        installWebJwtAuth(security, currentAuthConfig)
     }
 
     // Gate + Origin admission for the admin surface, registered on the
@@ -109,28 +120,14 @@ fun Application.configureWebApi(
     // disabling web auth or clearing/changing the access password takes effect
     // immediately on a running server and revokes previously-issued tokens —
     // no restart is required.
-    installWebApiBoundary {
-        val current = settingsStore.settingsFlow.value
-        WebAuthConfig(
-            jwtEnabled = current.webServerJwtEnabled,
-            accessPassword = current.webServerAccessPassword,
-            requireHttps = current.webServerHttpsEnabled,
-        )
-    }
+    installWebApiBoundary(currentAuthConfig)
 
     routing {
         route("/api") {
             publicWebApiRoutes(
                 security = security,
                 rateLimiter = rateLimiter,
-                currentConfig = {
-                    val current = settingsStore.settingsFlow.value
-                    WebAuthConfig(
-                        jwtEnabled = current.webServerJwtEnabled,
-                        accessPassword = current.webServerAccessPassword,
-                        requireHttps = current.webServerHttpsEnabled,
-                    )
-                },
+                currentConfig = currentAuthConfig,
             )
 
             aiIconRoutes(context)
@@ -138,14 +135,7 @@ fun Application.configureWebApi(
             authenticate(WEB_OPEN_PROVIDER, WEB_JWT_PROVIDER) {
                 authenticatedWebAuthRoutes(
                     security = security,
-                    currentConfig = {
-                        val current = settingsStore.settingsFlow.value
-                        WebAuthConfig(
-                            jwtEnabled = current.webServerJwtEnabled,
-                            accessPassword = current.webServerAccessPassword,
-                            requireHttps = current.webServerHttpsEnabled,
-                        )
-                    },
+                    currentConfig = currentAuthConfig,
                 )
                 installApiRoutes(
                     chatService = chatService,
@@ -169,6 +159,14 @@ fun Application.configureWebApi(
                     fontDownloadService = fontDownloadService,
                     translationHistoryRepo = translationHistoryRepo,
                     memoryScheduler = memoryScheduler,
+                    tavernRuntime = tavernRuntime,
+                    managementRuntime = managementRuntime,
+                    characterRepository = characterRepository,
+                    characterService = characterService,
+                    usageStats = usageStats,
+                    fileManager = fileManager,
+                    acpSessionManager = acpSessionManager,
+                    authConfigProvider = currentAuthConfig,
                 )
             }
 
@@ -209,10 +207,25 @@ private fun Route.installApiRoutes(
     fontDownloadService: me.rerere.rikkihub.data.fonts.FontDownloadService? = null,
     translationHistoryRepo: me.rerere.rikkihub.data.repository.TranslationHistoryRepository? = null,
     memoryScheduler: me.rerere.rikkihub.data.ai.MemoryConsolidationScheduler? = null,
+    tavernRuntime: me.rerere.rikkihub.data.ai.tavern.TavernRuntime? = null,
+    managementRuntime: me.rerere.rikkihub.data.management.runtime.ManagementRuntime? = null,
+    characterRepository: me.rerere.rikkihub.data.repository.CharacterRepository? = null,
+    characterService: me.rerere.rikkihub.data.character.CharacterService? = null,
+    usageStats: me.rerere.rikkihub.web.routes.WebUsageStats? = null,
+    fileManager: me.rerere.rikkihub.data.files.FileManagerService? = null,
+    acpSessionManager: me.rerere.rikkihub.data.cli.AcpSessionManager? = null,
+    authConfigProvider: (() -> WebAuthConfig)? = null,
 ) {
-    conversationRoutes(chatService, conversationRepo, folderRepo, settingsStore, favoriteRepo)
+    conversationRoutes(
+        chatService, conversationRepo, folderRepo, settingsStore, favoriteRepo,
+        displayProjector = tavernRuntime?.let { me.rerere.rikkihub.web.dto.WebDisplayProjector(settingsStore, it, characterRepository) },
+        acpSessionManager = acpSessionManager,
+        authConfigProvider = authConfigProvider,
+    )
     folderRoutes(chatService, folderRepo, settingsStore)
-    eventsRoutes(chatService, conversationRepo, folderRepo, settingsStore, workspaceRepository, subagentPresetRepository = subagentPresetRepository)
+    eventsRoutes(chatService, conversationRepo, folderRepo, settingsStore, workspaceRepository, subagentPresetRepository = subagentPresetRepository,
+        creatorProposalChanges = managementRuntime?.proposalChanges,
+        acpSessionManager = acpSessionManager)
     settingsRoutes(settingsStore)
     installWebSettingsRoutes(
         settingsStore,
@@ -234,6 +247,12 @@ private fun Route.installApiRoutes(
         editorFonts = fontDownloadService?.let { me.rerere.rikkihub.data.fonts.EditorFontFiles.forContext(context, it) },
         translationHistoryRepo = translationHistoryRepo,
         memoryScheduler = memoryScheduler,
+        tavernRuntime = tavernRuntime,
+        managementRuntime = managementRuntime,
+        characterRepository = characterRepository,
+        characterService = characterService,
+        usageStats = usageStats,
+        fileManager = fileManager,
     )
     filesRoutes(filesManager, context)
     assetsRoutes(context)

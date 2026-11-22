@@ -17,6 +17,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.channelFlow
@@ -30,6 +32,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.sum
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.ToolExecutionContext
 import me.rerere.ai.core.ToolProgressException
@@ -41,12 +44,17 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.defaultTextSessionId
 import me.rerere.ai.provider.stream.ToolStreamProtocolException
+import me.rerere.ai.util.CredentialSwitchObserver
+import me.rerere.ai.util.isContextLengthError
+import me.rerere.rikkihub.service.ChunkCompressionPlanner
+import me.rerere.rikkihub.service.prepareChunkingInputs
 import me.rerere.ai.ui.ModelSnapshot
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.StreamChunkHandler
+import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.handleTextGenerationResult
 import me.rerere.ai.ui.limitContext
 import me.rerere.rikkihub.R
@@ -59,10 +67,16 @@ import me.rerere.rikkihub.data.ai.transformers.transforms
 import me.rerere.rikkihub.data.ai.transformers.visualTransforms
 import me.rerere.rikkihub.data.ai.transformers.transformThinkTags
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
+import me.rerere.rikkihub.data.ai.tools.local.PseudoIo
+import me.rerere.rikkihub.data.ai.tools.local.PseudoIoNames
+import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.ui.TOOL_STEP_START_KEY
+import me.rerere.ai.ui.markedAsStepStart
 import me.rerere.rikkihub.data.ai.tools.ChatToolSnapshot
 import me.rerere.rikkihub.data.ai.tools.ToolExecutionConfig
 import me.rerere.rikkihub.data.ai.tools.resolveBuiltinToolId
 import me.rerere.rikkihub.data.ai.tools.withProviderWireToolRenames
+import me.rerere.rikkihub.data.datastore.NetworkSetting
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.workspace.WorkspacePolicyCancellationException
 import me.rerere.rikkihub.data.workspace.WorkspaceRequestCapabilities
@@ -73,7 +87,9 @@ import me.rerere.rikkihub.data.datastore.findProvider
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.ai.prompts.buildMemoryPrompt
 import me.rerere.rikkihub.data.model.MemoryFile
-import me.rerere.rikkihub.data.model.effectiveSystemPrompt
+import me.rerere.rikkihub.data.ai.tavern.PreparedTurn
+import me.rerere.rikkihub.data.ai.transformers.PreAssemblyTransformer
+import me.rerere.rikkihub.data.model.legacyMainPrompt
 import java.io.File
 import java.io.IOException
 import java.net.ConnectException
@@ -105,9 +121,9 @@ internal const val PARALLEL_TOOL_CALLS_PROMPT =
     "Independent operations can be issued as multiple tool calls in a single response: read-only calls " +
         "in one response run concurrently, while calls that change files or state run one at a time in " +
         "the order given."
-/** 限流（429/503）退避重试策略。只给子代理用，主对话照旧直接报错。 */
-data class RateLimitRetryPolicy(
-    val maxRetries: Int = 3,
+/** 限流（429/503）退避重试策略；开关是「限流自动重试」（`NetworkSetting.enableRateLimitRetry`）。 */
+internal data class RateLimitRetryPolicy(
+    val maxRetries: Int = 5,
     val baseDelayMillis: Long = 2_000,
     val maxDelayMillis: Long = 30_000,
 )
@@ -201,8 +217,8 @@ sealed interface GenerationChunk {
      *
      * @param stepIndex 该生成步在循环中的下标 (0 起)
      * @param stepNumber 人读序号, 恒等于 stepIndex + 1
-     * @param usage 本步的用量。流式: attempt 内多个 Usage 按 [mergeStepUsage] 归并
-     *              (p/c 正值覆盖, totalTokens 取最新有效快照, 允许向下修正);
+     * @param usage 本步的规范化用量。流式与消息共用 handler 的请求级快照，
+     *              保留明确的零值/独立total，允许向下修正；
      *              非流式: `TextGenerationResult.usage`。provider 未上报时为 null
      * @param finishReason provider 上报的结束原因原文 (流式 Finish / 非流式 result), 可为 null
      * @param pendingToolCount 本步产生且尚未执行的工具调用数; 0 表示文本步
@@ -243,9 +259,10 @@ sealed interface GenerationChunk {
 
 /**
  * 一次成功 provider 生成的观测结果, 由 [GenerationLoop] 内部采集并转成
- * [GenerationChunk.StepFinished] 发射, 统计口径见 [mergeStepUsage]。
+ * [GenerationChunk.StepFinished] 发射。消息与事件共用同一份规范化用量和完成时点。
  */
 internal data class GenerationStepOutcome(
+    val messages: List<UIMessage>,
     val usage: TokenUsage? = null,
     val finishReason: String? = null,
     /**
@@ -281,9 +298,8 @@ private data class ProviderRequestInputs(
     val requestSessionId: String?,
     val processingStatus: MutableStateFlow<String?>,
     val conversationSystemPrompt: String?,
+    val turn: PreparedTurn?,
     val conversationId: Uuid?,
-    val conversationModeInjectionIds: Set<Uuid>,
-    val conversationLorebookIds: Set<Uuid>,
     val workspaceCwd: String?,
     val harnessMinimalWorkspace: Boolean,
     val exposeUpload: Boolean,
@@ -302,7 +318,14 @@ class GenerationLoop(
     private val context: Context,
     private val providerManager: ProviderManager,
     private val json: Json,
+    private val usageRecorder: UsageRecorder? = null,
 ) {
+    /** 用量流水：每次 provider 请求（每步、每次重试）由包装层记一行，来源由调用方给 */
+    private fun providerFor(provider: ProviderSetting, tag: UsageTag): Provider<ProviderSetting> {
+        val impl = providerManager.getProviderByType(provider)
+        return usageRecorder?.wrap(impl, tag) ?: impl
+    }
+
     /**
      * 运行期状态文案解析 seam。生产默认走 `context.getString`;
      * `Context.getString` 是 final, JVM 单测无法构造真实 Resources,
@@ -311,6 +334,12 @@ class GenerationLoop(
     internal var statusStrings: StatusStringResolver = StatusStringResolver { resId, args ->
         context.getString(resId, *args)
     }
+
+    // Monotonic in production; deterministic clock for final-publication and retry timing tests.
+    internal var generationTimeSource: TimeSource = TimeSource.Monotonic
+
+    // Production backoff; tests shorten the waits.
+    internal var rateLimitRetryPolicy: RateLimitRetryPolicy = RateLimitRetryPolicy()
 
     fun generateText(
         settings: Settings,
@@ -324,12 +353,12 @@ class GenerationLoop(
         maxSteps: Int = 256,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
+        turn: PreparedTurn? = null,
         conversationId: Uuid? = null,
-        conversationModeInjectionIds: Set<Uuid> = emptySet(),
-        conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         harnessMinimalWorkspace: Boolean = false,
         exposeUpload: Boolean = true,
+        usageTag: UsageTag? = null,
     ): Flow<GenerationChunk> = generateTextObserved(
         settings = settings,
         model = model,
@@ -342,13 +371,13 @@ class GenerationLoop(
         maxSteps = maxSteps,
         processingStatus = processingStatus,
         conversationSystemPrompt = conversationSystemPrompt,
+        turn = turn,
         conversationId = conversationId,
-        conversationModeInjectionIds = conversationModeInjectionIds,
-        conversationLorebookIds = conversationLorebookIds,
         workspaceCwd = workspaceCwd,
         harnessMinimalWorkspace = harnessMinimalWorkspace,
         exposeUpload = exposeUpload,
         eventsObserver = null,
+        usageTag = usageTag,
     )
 
     /**
@@ -369,9 +398,8 @@ class GenerationLoop(
         maxSteps: Int = 256,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
+        turn: PreparedTurn? = null,
         conversationId: Uuid? = null,
-        conversationModeInjectionIds: Set<Uuid> = emptySet(),
-        conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         harnessMinimalWorkspace: Boolean = false,
         exposeUpload: Boolean = true,
@@ -385,18 +413,18 @@ class GenerationLoop(
          * 不经网络重试路径，直接终止生成。
          */
         toolSnapshotProvider: (suspend () -> ChatToolSnapshot)? = null,
-        /**
-         * 限流（429/503）退避重试；null = 不重试（主对话的现行行为）。子代理传入，
-         * 并行的子代理同时请求时更容易撞上限流。
-         */
-        rateLimitRetry: RateLimitRetryPolicy? = null,
+        /** 用量记到哪个来源；null = 对话（CHAT，记在 [conversationId] 与 [assistant] 名下） */
+        usageTag: UsageTag? = null,
     ): Flow<GenerationChunk> = channelFlow {
         // channelFlow 而非 flow{}：工具执行经 gate 会切到带 WorkspaceOpElement 的
         // SupervisorJob 上下文，flow{} 的 SafeCollector 对外来 emit 做严格 context
         // 等值检查会抛 invariant violation；channelFlow 的 send 只走通道，跨上下文
         // 调用合法。send 挂起交付，生产仍单线程顺序，不改变 emit 语义与顺序。
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
-        val providerImpl = providerManager.getProviderByType(provider)
+        val providerImpl = providerFor(
+            provider,
+            usageTag ?: UsageTag(UsageSource.CHAT, assistantId = assistant.id, conversationId = conversationId),
+        )
         // Once per collected run (not per tool step, retry, or snapshot rebuild).
         // A real conversation keeps its original identity/priority; standalone manual
         // session headers remain untouched instead of being overwritten by a new UUID.
@@ -496,6 +524,12 @@ class GenerationLoop(
                     } else null
                 } ?: emptyList()
 
+            // 伪工具读写：这条回复已经在等用户输入（同一步里的其他调用也都处理完了），回合结束
+            if (pendingTools.isEmpty() && messages.lastOrNull()?.let(PseudoIo::awaitsUser) == true) {
+                endReason = GenerationChunk.GenerationEnd.Reason.COMPLETED
+                break
+            }
+
             val toolsToProcess: List<ToolPartRef>
             // 并行分段用的工具表（只用来判定可否并行；执行仍按每次调用取的最新快照）
             var schedulingSnapshot: ChatToolSnapshot? = null
@@ -564,17 +598,22 @@ class GenerationLoop(
                     settings = settings,
                     messages = messages,
                     snapshotProvider = requestSnapshotProvider,
-                    onUpdateMessages = { updated ->
+                    onUpdateMessages = { updated, attemptSnapshot ->
                         // 循环内部保留原始内容（think 标签等要等这一步结束才真正处理），
                         // 发出去的是本步新 part 做过视觉转换的版本
                         messages = updated
-                        send(GenerationChunk.Messages(updated.withTransformedStep(newPartsFrom) {
+                        // 伪工具读写：write 还在传的参数先显示成回复文字
+                        val shown = attemptSnapshot.pseudoIoFor(model)?.let { names ->
+                            updated.dropLast(1) + PseudoIo.preview(updated.last(), newPartsFrom, names)
+                        } ?: updated
+                        send(GenerationChunk.Messages(shown.withTransformedStep(newPartsFrom) {
                             it.visualTransforms(
                                 transformers = outputTransformers,
                                 context = context,
                                 model = model,
                                 assistant = assistant,
                                 settings = settings,
+                                turn = turn,
                             )
                         }))
                     },
@@ -587,44 +626,80 @@ class GenerationLoop(
                     requestSessionId = requestSessionId,
                     processingStatus = processingStatus,
                     conversationSystemPrompt = conversationSystemPrompt,
+                    turn = turn,
                     conversationId = conversationId,
-                    conversationModeInjectionIds = conversationModeInjectionIds,
-                    conversationLorebookIds = conversationLorebookIds,
                     workspaceCwd = workspaceCwd,
                     harnessMinimalWorkspace = harnessMinimalWorkspace,
                     exposeUpload = exposeUpload,
                     requestObserver = requestObserver,
-                    rateLimitRetry = rateLimitRetry,
+                    onPreserveInterruptedAttempt = { updated, attemptSnapshot ->
+                        val settled = updated.last()
+                            .settleInterruptedAttempt(newPartsFrom, attemptSnapshot.pseudoIoFor(model), json)
+                            ?: return@generateInternal false
+                        val transformed = (updated.dropLast(1) + settled).withTransformedStep(newPartsFrom) {
+                            it.transforms(
+                                transformers = outputTransformers,
+                                context = context,
+                                model = model,
+                                assistant = assistant,
+                                settings = settings,
+                                turn = turn,
+                            ).visualTransforms(
+                                transformers = outputTransformers,
+                                context = context,
+                                model = model,
+                                assistant = assistant,
+                                settings = settings,
+                                turn = turn,
+                            )
+                        }
+                        val finalized = transformed.dropLast(1) + transformed.last().finishReasoning().copy(
+                            finishedAt = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()),
+                        )
+                        messages = finalized
+                        send(GenerationChunk.Messages(finalized))
+                        true
+                    },
                 )
-                messages = messages.withTransformedStep(newPartsFrom) {
+                // Use the statistics frozen after collection, not the last chunk's preview.
+                // Reuse the existing final publication instead of sending another preview.
+                // 本步成功 attempt 的冻结快照：审批判定/后续签发一律查这张表，
+                // 不用最新 Override 反解 alias。
+                val issuedSnapshot = stepOutcome.toolSnapshot ?: fixedSnapshot
+                lastIssuedSnapshot = issuedSnapshot
+                val settled = stepOutcome.messages.last().withStepStartMarked(newPartsFrom).let { last ->
+                    issuedSnapshot.pseudoIoFor(model)?.let { PseudoIo.settle(last, newPartsFrom, it) }
+                        ?: PseudoIo.Settled(last, retry = false)
+                }
+                messages = (stepOutcome.messages.dropLast(1) + settled.message).withTransformedStep(newPartsFrom) {
                     it.transforms(
                         transformers = outputTransformers,
                         context = context,
                         model = model,
                         assistant = assistant,
                         settings = settings,
+                        turn = turn,
                     ).visualTransforms(
                         transformers = outputTransformers,
                         context = context,
                         model = model,
                         assistant = assistant,
                         settings = settings,
+                        turn = turn,
                     ).onGenerationFinish(
                         transformers = outputTransformers,
                         context = context,
                         model = model,
                         assistant = assistant,
                         settings = settings,
+                        turn = turn,
+                        history = stepOutcome.messages.dropLast(1),
                     )
                 }
                 messages = messages.slice(0 until messages.lastIndex) + messages.last().copy(
                     finishedAt = Clock.System.now()
                         .toLocalDateTime(TimeZone.currentSystemDefault())
                 )
-                // 本 step 成功 attempt 的冻结快照：审批判定/后续签发一律查这张表，
-                // 不用最新 Override 反解 alias。
-                val issuedSnapshot = stepOutcome.toolSnapshot ?: fixedSnapshot
-                lastIssuedSnapshot = issuedSnapshot
                 // 拼接参数（{A}{B}）拆回独立调用：须在审批判定前，让每个调用按
                 // 自己的参数审批/执行/回写。诊断日志只记身份与计数，不记参数正文。
                 // 名字不在本轮表里的调用不拆（执行端只会报 not found）。
@@ -664,6 +739,8 @@ class GenerationLoop(
                 notifyObserver(eventsObserver, stepFinished)
                 send(stepFinished)
                 if (toolCallRefs.isEmpty()) {
+                    // 伪工具读写给模型回了提示或报错：让它看到后再答一次
+                    if (settled.retry) continue
                     // no tool calls, break
                     endReason = GenerationChunk.GenerationEnd.Reason.COMPLETED
                     break
@@ -1029,6 +1106,14 @@ class GenerationLoop(
 
     }.flowOn(Dispatchers.IO)
 
+    private suspend fun <T : Any> withOptionalTimeout(timeoutSeconds: Int?, block: suspend () -> T): T {
+        if (timeoutSeconds == null) return block()
+        val result = withTimeoutOrNull(timeoutSeconds * 1000L) { block() }
+        if (result != null) return result
+        currentCoroutineContext().ensureActive()
+        throw CompressionTimeoutException(timeoutSeconds)
+    }
+
     /**
      * 生成压缩摘要。
      *
@@ -1038,6 +1123,7 @@ class GenerationLoop(
      * 不经过请求开始侧观测（缓存保活不重放压缩请求）。
      *
      * @throws CompressionToolCallException 模型没写摘要而是发起了工具调用
+     * @throws CompressionTimeoutException 单次请求超过配置超时
      */
     internal suspend fun generateCompressionSummary(
         settings: Settings,
@@ -1049,15 +1135,18 @@ class GenerationLoop(
         toolSnapshotProvider: suspend () -> ChatToolSnapshot,
         compressPrompt: String,
         conversationSystemPrompt: String?,
+        turn: PreparedTurn?,
         conversationId: Uuid,
-        conversationModeInjectionIds: Set<Uuid> = emptySet(),
-        conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         harnessMinimalWorkspace: Boolean = false,
         exposeUpload: Boolean = true,
-    ): String {
+        timeoutSeconds: Int? = null,
+    ): CompressionRunResult {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
-        val providerImpl = providerManager.getProviderByType(provider)
+        val providerImpl = providerFor(
+            provider,
+            UsageTag(UsageSource.COMPRESSION, assistantId = assistant.id, conversationId = conversationId),
+        )
         val inputs = ProviderRequestInputs(
             assistant = assistant,
             settings = settings,
@@ -1069,28 +1158,175 @@ class GenerationLoop(
             requestSessionId = conversationId.toString(),
             processingStatus = MutableStateFlow(null),
             conversationSystemPrompt = conversationSystemPrompt,
+            turn = turn,
             conversationId = conversationId,
-            conversationModeInjectionIds = conversationModeInjectionIds,
-            conversationLorebookIds = conversationLorebookIds,
             workspaceCwd = workspaceCwd,
             harnessMinimalWorkspace = harnessMinimalWorkspace,
             exposeUpload = exposeUpload,
         )
-        val result = executeProviderRequestWithRetry(
+        var callUsage: TokenUsage? = null
+        val reply = executeProviderRequestWithRetry(
             processingStatus = inputs.processingStatus,
-            enabled = settings.networkSetting.enableAutoRetry,
+            network = settings.networkSetting,
         ) {
             val attempt = buildCurrentProviderRequest(inputs, messages)
-            providerImpl.generateText(
-                providerSetting = provider,
-                // 压缩指令不经过输入转换器（模板转换器会把其中的花括号当成模板语法）
-                messages = attempt.internalMessages + UIMessage.user(compressPrompt),
-                // 助手的输出上限是给聊天回复定的，结构化摘要写不完会被截断；max_tokens 不属于请求前缀
-                params = attempt.params.copy(maxTokens = null),
-            )
+            var switched = false
+            val result = withOptionalTimeout(timeoutSeconds) {
+                withCredentialSwitchObserver(
+                    processingStatus = inputs.processingStatus,
+                    onSwitched = { switched = true },
+                ) {
+                    providerImpl.generateText(
+                        providerSetting = provider,
+                        // 压缩指令不经过输入转换器（模板转换器会把其中的花括号当成模板语法）
+                        messages = attempt.internalMessages + UIMessage.user(compressPrompt),
+                        // 助手的输出上限是给聊天回复定的，结构化摘要写不完会被截断；max_tokens 不属于请求前缀
+                        params = attempt.params.copy(maxTokens = null),
+                    )
+                }
+            }.also {
+                if (switched) inputs.processingStatus.value = null
+            }
+            callUsage = result.usage
+            // 伪工具读写开着时历史全是 write 调用，模型照样用 write 交摘要：落定成文字，read 不算工具调用
+            attempt.snapshot.pseudoIoFor(model)?.let { names ->
+                PseudoIo.settle(result.message, newPartsFrom = 0, names).message
+                    .let { settled -> settled.copy(parts = settled.parts.filterNot(PseudoIo::isRead)) }
+            } ?: result.message
         }
-        val summary = result.message.compressionSummaryOrNull() ?: throw CompressionToolCallException()
-        return summary.ifBlank { error("The model returned an empty summary") }
+        val summary = reply.compressionSummaryOrNull() ?: throw CompressionToolCallException()
+        val text = summary.ifBlank { error("The model returned an empty summary") }
+        return CompressionRunResult(
+            summary = text,
+            requestCount = 1,
+            completedChunks = 1,
+            totalChunks = 1,
+            chunked = false,
+            totalUsage = callUsage,
+        )
+    }
+
+    /**
+     * 独立通道分段压缩（单次请求放不下时的兜底，或「从原文重新总结」跳过旧检查点与对话前缀）。
+     * 每次请求均经 [UsageSource.COMPRESSION] 记账；受 [maxRequests] 与 [timeoutSeconds] 约束。
+     */
+    internal suspend fun generateStandaloneCompressionSummary(
+        settings: Settings,
+        model: Model,
+        assistant: Assistant,
+        conversationId: Uuid,
+        materials: List<String>,
+        initialPreviousSummary: String,
+        inputBudgetTokens: Int,
+        summaryTokens: Int,
+        maxRequests: Int,
+        timeoutSeconds: Int?,
+        initialMaxSegmentTokens: Int? = null,
+        renderStage: (previousSummary: String, segment: String, targetTokens: Int) -> String,
+        renderFinal: (previousSummary: String, segment: String, targetTokens: Int) -> String,
+        onProgress: suspend (completedChunks: Int, totalChunks: Int, requestCount: Int) -> Unit = { _, _, _ -> },
+    ): CompressionRunResult {
+        val provider = model.findProvider(settings.providers) ?: error("Provider not found")
+        val providerImpl = providerFor(
+            provider,
+            UsageTag(UsageSource.COMPRESSION, assistantId = assistant.id, conversationId = conversationId),
+        )
+        val processingStatus = MutableStateFlow<String?>(null)
+        val params = TextGenerationParams(
+            model = model,
+            temperature = assistant.temperature,
+            topP = assistant.topP,
+            maxTokens = null,
+            tools = emptyList(),
+            reasoningLevel = assistant.reasoningLevel,
+            customHeaders = assistant.customHeaders + model.customHeaders,
+            customBody = assistant.customBodies + model.customBodies,
+            defaultSessionId = null,
+            sessionId = conversationId.toString(),
+        )
+        var budget = inputBudgetTokens.coerceAtLeast(256)
+        var segmentCap = initialMaxSegmentTokens
+        val (preparedMaterials, preparedPrev) = prepareChunkingInputs(
+            materials, initialPreviousSummary, summaryTokens, budget, renderStage, renderFinal,
+        )
+        val planner = ChunkCompressionPlanner(preparedMaterials, summaryTokens, renderStage, renderFinal)
+        var totalChunks = planner.estimateChunkCount(preparedPrev, budget, segmentCapTokens = segmentCap).coerceAtLeast(1)
+        if (totalChunks > maxRequests) {
+            throw CompressionRequestLimitException(maxRequests)
+        }
+
+        var index = 0
+        var offset = 0
+        var runningSummary = preparedPrev
+        var pendingPreviousOnly = preparedMaterials.isEmpty() && runningSummary.isNotBlank()
+        var attempts = 0
+        var completedChunks = 0
+        var totalUsage: TokenUsage? = null
+
+        while (index < preparedMaterials.size || pendingPreviousOnly) {
+            currentCoroutineContext().ensureActive()
+            if (attempts >= maxRequests) throw CompressionRequestLimitException(maxRequests)
+            val segment = planner.nextSegment(index, offset, runningSummary, budget, segmentCap)
+            val estimatedTotal = maxOf(totalChunks, completedChunks + if (segment.isFinal) 1 else 2)
+            onProgress(completedChunks, estimatedTotal, attempts + 1)
+            attempts++
+            try {
+                val result = executeProviderRequestWithRetry(
+                    processingStatus = processingStatus,
+                    network = settings.networkSetting,
+                ) {
+                    var switched = false
+                    withOptionalTimeout(timeoutSeconds) {
+                        withCredentialSwitchObserver(
+                            processingStatus = processingStatus,
+                            onSwitched = { switched = true },
+                        ) {
+                            providerImpl.generateText(
+                                providerSetting = provider,
+                                messages = listOf(UIMessage.user(segment.prompt)),
+                                params = params,
+                            )
+                        }
+                    }.also {
+                        if (switched) processingStatus.value = null
+                    }
+                }
+                totalUsage = totalUsage.sum(result.usage)
+                val summary = result.message.compressionSummaryOrNull() ?: throw CompressionToolCallException()
+                if (summary.isBlank()) error("The model returned an empty summary")
+                runningSummary = summary
+                index = segment.nextIndex
+                offset = segment.nextOffset
+                pendingPreviousOnly = !segment.isFinal && segment.nextIndex >= preparedMaterials.size
+                completedChunks++
+                totalChunks = maxOf(
+                    totalChunks,
+                    completedChunks + if (pendingPreviousOnly || index < preparedMaterials.size) 1 else 0,
+                )
+            } catch (error: Throwable) {
+                if (error is CancellationException || !error.isContextLengthError()) throw error
+                val currentSeg = segmentCap ?: segment.segmentTokens
+                val nextSegCap = if (currentSeg > 12) minOf(currentSeg - 1, (currentSeg * 65) / 100) else 0
+                if (nextSegCap >= 12) {
+                    segmentCap = nextSegCap
+                } else {
+                    val empty = planner.minPromptTokens(runningSummary, budget)
+                    val margin = (budget - empty).coerceAtLeast(0)
+                    val shrunk = minOf(budget - 1, maxOf((budget * 65) / 100, empty + (margin / 2)))
+                    val minRequired = planner.minPromptTokens(runningSummary, shrunk) + 16
+                    if (shrunk < minRequired || shrunk >= budget) throw error
+                    budget = shrunk
+                }
+            }
+        }
+        return CompressionRunResult(
+            summary = runningSummary,
+            requestCount = attempts,
+            completedChunks = completedChunks,
+            totalChunks = completedChunks,
+            chunked = completedChunks > 1 || attempts > 1,
+            totalUsage = totalUsage,
+        )
     }
 
     /**
@@ -1130,7 +1366,7 @@ class GenerationLoop(
         assistant: Assistant,
         settings: Settings,
         messages: List<UIMessage>,
-        onUpdateMessages: suspend (List<UIMessage>) -> Unit,
+        onUpdateMessages: suspend (List<UIMessage>, ChatToolSnapshot) -> Unit,
         transformers: List<MessageTransformer>,
         model: Model,
         providerImpl: Provider<ProviderSetting>,
@@ -1141,16 +1377,16 @@ class GenerationLoop(
         requestSessionId: String?,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
         conversationSystemPrompt: String? = null,
+        turn: PreparedTurn? = null,
         conversationId: Uuid? = null,
-        conversationModeInjectionIds: Set<Uuid> = emptySet(),
-        conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
         harnessMinimalWorkspace: Boolean = false,
         exposeUpload: Boolean = true,
         requestObserver: ProviderRequestObserver? = null,
-        rateLimitRetry: RateLimitRetryPolicy? = null,
+        onPreserveInterruptedAttempt: suspend (List<UIMessage>, ChatToolSnapshot) -> Boolean = { _, _ -> false },
     ): GenerationStepOutcome {
 
+        var messages: List<UIMessage> = messages
         val requestInputs = ProviderRequestInputs(
             assistant = assistant,
             settings = settings,
@@ -1162,16 +1398,14 @@ class GenerationLoop(
             requestSessionId = requestSessionId,
             processingStatus = processingStatus,
             conversationSystemPrompt = conversationSystemPrompt,
+            turn = turn,
             conversationId = conversationId,
-            conversationModeInjectionIds = conversationModeInjectionIds,
-            conversationLorebookIds = conversationLorebookIds,
             workspaceCwd = workspaceCwd,
             harnessMinimalWorkspace = harnessMinimalWorkspace,
             exposeUpload = exposeUpload,
         )
         suspend fun buildCurrentAttempt(): ProviderAttemptRequest = buildCurrentProviderRequest(requestInputs, messages)
 
-        var messages: List<UIMessage> = messages
         // 本次成功 attempt 的观测结果。重试时在 attempt 开始时重置, 失败 attempt 的
         // 统计被丢弃, 保证“一次成功的 provider 请求恰一次 StepFinished”的口径。
         var stepUsage: TokenUsage? = null
@@ -1186,9 +1420,12 @@ class GenerationLoop(
                 // 多轮工具调用共用同一条助手消息，消息上已有的 usage 和耗时来自之前的步骤。
                 // 本步从清空的统计开始（StreamChunkHandler 的 merge 只适合同一次请求内的
                 // 快照），结束时再与之前的步骤累加。
-                val stepBase = messages.lastOrNull()?.takeIf { it.role == MessageRole.ASSISTANT }
-                val responseBaseMessages = if (stepBase != null) {
-                    messages.dropLast(1) + stepBase.copy(usage = null, generationTimeMs = null)
+                var stepBase = messages.lastOrNull()?.takeIf { it.role == MessageRole.ASSISTANT }
+                var responseBaseMessages = if (stepBase != null) {
+                    messages.dropLast(1) + stepBase.copy(
+                        usage = null, generationTimeMs = null, lastUsage = null,
+                        finishedAt = null, usageComplete = false,
+                    )
                 } else {
                     messages + UIMessage(
                         role = MessageRole.ASSISTANT,
@@ -1196,13 +1433,19 @@ class GenerationLoop(
                         modelId = model.id,
                     )
                 }
-                fun List<UIMessage>.withStepStats(firstChunk: TimeMark?): List<UIMessage> =
-                    dropLast(1) + last().withStepStats(
-                        stepBase = stepBase,
-                        stepTimeMillis = firstChunk?.elapsedNow()?.inWholeMilliseconds ?: 0L,
-                    ).withModelSnapshot(model)
+                fun List<UIMessage>.withStepStats(
+                    firstChunk: TimeMark?,
+                    hasCompleteUsage: Boolean,
+                    stepFinished: Boolean = false,
+                ): List<UIMessage> = dropLast(1) + last().withStepStats(
+                    stepBase = stepBase,
+                    stepTimeMillis = firstChunk?.elapsedNow()?.inWholeMilliseconds ?: 0L,
+                    hasCompleteUsage = hasCompleteUsage,
+                    stepFinished = stepFinished,
+                ).withModelSnapshot(model)
                 var retryCount = 0
                 var rateLimitRetries = 0
+                var credentialSwitched = false
 
                 while (true) {
                     // 每个 attempt（含重试）重新取完整快照 + 重建 prompt/params；
@@ -1214,41 +1457,44 @@ class GenerationLoop(
                     val params = attempt.params
                     val streamChunkHandler = StreamChunkHandler(model)
                     var attemptMessages = responseBaseMessages
-                    var attemptUsage: TokenUsage? = null
                     var attemptFinishReason: String? = null
                     // TPS 只算模型实际生成的时间：从首个 chunk 到响应结束
                     var firstChunk: TimeMark? = null
                     try {
                         notifyRequestObserver(requestObserver, provider, internalMessages, params, messages)
-                        providerImpl.streamText(
-                            providerSetting = provider,
-                            messages = internalMessages,
-                            params = params
-                        ).collect { chunk ->
-                            try {
-                                if (firstChunk == null) firstChunk = TimeSource.Monotonic.markNow()
-                                if (retryCount > 0) {
-                                    processingStatus.value = null
+                        withCredentialSwitchObserver(
+                            processingStatus = processingStatus,
+                            onSwitched = { credentialSwitched = true },
+                        ) {
+                            providerImpl.streamText(
+                                providerSetting = provider,
+                                messages = internalMessages,
+                                params = params
+                            ).collect { chunk ->
+                                try {
+                                    if (firstChunk == null) firstChunk = generationTimeSource.markNow()
+                                    if (retryCount > 0 || rateLimitRetries > 0 || credentialSwitched) {
+                                        processingStatus.value = null
+                                        credentialSwitched = false
+                                    }
+                                    if (chunk is StreamChunk.Finish) attemptFinishReason = chunk.finishReason
+                                    attemptMessages = streamChunkHandler.handle(attemptMessages, chunk)
+                                    onUpdateMessages(
+                                        attemptMessages.withStepStats(firstChunk, streamChunkHandler.hasCompleteUsage),
+                                        attemptSnapshot,
+                                    )
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Throwable) {
+                                    // 下游消息转换或 UI 更新失败不属于网络故障，不能重放模型请求。
+                                    throw StreamChunkHandlingException(error)
                                 }
-                                // attempt 内多个 Usage chunk 归并: p/c 正值覆盖、0 保留;
-                                // totalTokens 取最新的有效上报 (独立 total/完整快照覆盖,
-                                // 无新上报时保留在案值), 允许向下修正, 不是历史 max。
-                                when (chunk) {
-                                    is StreamChunk.Usage -> attemptUsage = mergeStepUsage(attemptUsage, chunk.usage)
-                                    is StreamChunk.Finish -> attemptFinishReason = chunk.finishReason
-                                    else -> {}
-                                }
-                                attemptMessages = streamChunkHandler.handle(attemptMessages, chunk)
-                                onUpdateMessages(attemptMessages.withStepStats(firstChunk))
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (error: Throwable) {
-                                // 下游消息转换或 UI 更新失败不属于网络故障，不能重放模型请求。
-                                throw StreamChunkHandlingException(error)
                             }
                         }
-                        messages = attemptMessages.withStepStats(firstChunk)
-                        stepUsage = attemptUsage
+                        messages = attemptMessages.withStepStats(
+                            firstChunk, streamChunkHandler.hasCompleteUsage, stepFinished = true,
+                        )
+                        stepUsage = streamChunkHandler.usage
                         stepFinishReason = attemptFinishReason
                         stepSnapshot = attemptSnapshot
                         break
@@ -1287,25 +1533,52 @@ class GenerationLoop(
                         if (error is StreamChunkHandlingException) {
                             throw error.cause ?: error
                         }
-                        if (awaitRateLimitRetry(error, rateLimitRetries, rateLimitRetry)) {
+                        if (
+                            awaitRateLimitRetry(
+                                error = error,
+                                retries = rateLimitRetries,
+                                enabled = settings.networkSetting.enableRateLimitRetry,
+                                processingStatus = processingStatus,
+                            )
+                        ) {
                             rateLimitRetries++
-                            continue
+                        } else {
+                            retryCount = awaitNetworkRetryOrThrow(
+                                error = error,
+                                retryCount = retryCount,
+                                processingStatus = processingStatus,
+                                enabled = settings.networkSetting.enableAutoRetry,
+                            )
                         }
-                        retryCount = awaitNetworkRetryOrThrow(
-                            error = error,
-                            retryCount = retryCount,
-                            processingStatus = processingStatus,
-                            enabled = settings.networkSetting.enableAutoRetry,
+                        // 确定要重试了：这次尝试已经显示出来的内容结算成「已中断」留在前一个分支，
+                        // 重试写进一条新 id 的助手消息，Conversation.updateCurrentMessages 让它成为当前分支。
+                        currentCoroutineContext().ensureActive()
+                        val preserved = onPreserveInterruptedAttempt(
+                            attemptMessages.withStepStats(
+                                firstChunk,
+                                streamChunkHandler.hasCompleteUsage,
+                                stepFinished = true,
+                            ),
+                            attemptSnapshot,
                         )
+                        if (preserved) {
+                            val freshId = Uuid.random()
+                            stepBase?.let { currentBase ->
+                                val freshBase = currentBase.copy(id = freshId)
+                                stepBase = freshBase
+                                messages = messages.dropLast(1) + freshBase
+                            }
+                            responseBaseMessages = responseBaseMessages.dropLast(1) +
+                                responseBaseMessages.last().copy(id = freshId)
+                        }
                     }
                 }
             } else {
                 // 非流式拿不到首 token 时间，只能统计最后一次尝试的整个请求耗时
-                var requestMark = TimeSource.Monotonic.markNow()
+                var requestMark = generationTimeSource.markNow()
                 val result = executeProviderRequestWithRetry(
                     processingStatus = processingStatus,
-                    enabled = settings.networkSetting.enableAutoRetry,
-                    rateLimitRetry = rateLimitRetry,
+                    network = settings.networkSetting,
                 ) {
                     // 非流式同样每 attempt 重建（快照/提示/能力/策略一致），
                     // 且构建后复查时效——发送面不落半更新快照。
@@ -1318,18 +1591,29 @@ class GenerationLoop(
                         attempt.params,
                         messages,
                     )
-                    requestMark = TimeSource.Monotonic.markNow()
-                    providerImpl.generateText(
-                        providerSetting = provider,
-                        messages = attempt.internalMessages,
-                        params = attempt.params,
-                    )
+                    requestMark = generationTimeSource.markNow()
+                    var switched = false
+                    withCredentialSwitchObserver(
+                        processingStatus = processingStatus,
+                        onSwitched = { switched = true },
+                    ) {
+                        providerImpl.generateText(
+                            providerSetting = provider,
+                            messages = attempt.internalMessages,
+                            params = attempt.params,
+                        )
+                    }.also {
+                        if (switched) processingStatus.value = null
+                    }
                 }
                 val requestMillis = requestMark.elapsedNow().inWholeMilliseconds
                 // 同流式：本步从清空的统计开始，一次请求只有一份 usage，再与之前的步骤累加
                 val stepBase = messages.lastOrNull()?.takeIf { it.role == MessageRole.ASSISTANT }
                 val stepStart = if (stepBase != null) {
-                    messages.dropLast(1) + stepBase.copy(usage = null, generationTimeMs = null)
+                    messages.dropLast(1) + stepBase.copy(
+                        usage = null, generationTimeMs = null, lastUsage = null,
+                        finishedAt = null, usageComplete = false,
+                    )
                 } else {
                     messages
                 }
@@ -1337,9 +1621,13 @@ class GenerationLoop(
                 messages = stepStart.handleTextGenerationResult(result = result, model = model, newStep = true)
                 messages = messages.dropLast(1) + messages.last()
                     .copy(usage = result.usage)
-                    .withStepStats(stepBase, requestMillis)
+                    .withStepStats(
+                        stepBase, requestMillis,
+                        hasCompleteUsage = result.hasCompleteUsage == true,
+                        stepFinished = true,
+                    )
                     .withModelSnapshot(model)
-                onUpdateMessages(messages)
+                stepSnapshot?.let { onUpdateMessages(messages, it) }
                 stepUsage = result.usage
                 stepFinishReason = result.finishReason
             }
@@ -1347,6 +1635,7 @@ class GenerationLoop(
             processingStatus.value = null
         }
         return GenerationStepOutcome(
+            messages = messages,
             usage = stepUsage,
             finishReason = stepFinishReason,
             toolSnapshot = stepSnapshot,
@@ -1368,51 +1657,59 @@ class GenerationLoop(
             provider = provider,
             overrides = settings.toolOverrides,
         )
-        val internalMessages = buildList {
-            val system = buildString {
-                val effectiveSystemPrompt = assistant.effectiveSystemPrompt(conversationSystemPrompt)
-                if (effectiveSystemPrompt.isNotBlank()) {
-                    append(effectiveSystemPrompt)
-                }
-
-                // 记忆
-                if (assistant.enableMemory) {
-                    appendLine()
-                    append(buildMemoryPrompt(memories, settings.toolOverrides))
-                }
-                // 工具prompt（本 attempt 快照的 tools）
-                snapshot.tools.forEach { tool ->
-                    appendLine()
-                    append(tool.systemPrompt(model, messages))
-                }
-                parallelToolCallsPrompt(settings.toolExecution, snapshot.tools)?.let {
-                    appendLine()
-                    append(it)
-                }
+        // rikkihub 自有段：记忆、工具说明、并行提示。每项前面一个换行（空项也占一个），
+        // 去掉最前面的换行后放在系统块里，和旧版拼进系统提示词时逐字一致
+        val ownSection = buildString {
+            if (assistant.enableMemory) {
+                appendLine()
+                append(buildMemoryPrompt(memories, settings.toolOverrides))
             }
-            if (system.isNotBlank()) {
-                add(UIMessage.system(prompt = system).copy(isSynthetic = true))
+            // 工具prompt（本 attempt 快照的 tools）
+            snapshot.tools.forEach { tool ->
+                appendLine()
+                append(tool.systemPrompt(model, messages))
             }
-            addAll(messages.limitContext(assistant.contextMessageLimit))
-        }.transforms(
-            transformers = transformers,
+            parallelToolCallsPrompt(settings.toolExecution, snapshot.tools)?.let {
+                appendLine()
+                append(it)
+            }
+        }
+        suspend fun List<UIMessage>.runTransformers(which: List<MessageTransformer>) = transforms(
+            transformers = which,
             context = context,
             model = model,
             assistant = assistant,
             settings = settings,
-            conversationModeInjectionIds = conversationModeInjectionIds,
-            conversationLorebookIds = conversationLorebookIds,
             processingStatus = processingStatus,
             workspaceCwd = workspaceCwd,
             harnessMinimalWorkspace = harnessMinimalWorkspace,
             exposeUpload = exposeUpload,
             workspaceCapabilities = snapshot.workspaceCapabilities,
         )
+        val (preTransformers, postTransformers) = transformers.partition { it is PreAssemblyTransformer }
+        val chat = messages.limitContext(assistant.contextMessageLimit).runTransformers(preTransformers)
+        val assembled = if (turn != null) {
+            // 酒馆组装：系统块、世界书、库条目、深度注入按预设布局落位，聊天消息原样保留。
+            // 其余转换器在组装之后——它们要看到完整的请求消息（文档包装、OCR、消息模板……）
+            turn.build(chat, rikkihubContext = ownSection.removePrefix("\n"))
+        } else {
+            // 不走酒馆组装的调用方（记忆整理、子代理）：助手的提示词文本 + 自有段，没有注入和世界书
+            val system = assistant.legacyMainPrompt(conversationSystemPrompt) + ownSection
+            if (system.isBlank()) chat else listOf(UIMessage.system(prompt = system).copy(isSynthetic = true)) + chat
+        }
+        val internalMessages = PseudoIo.toWire(assembled.runTransformers(postTransformers), snapshot.pseudoIoFor(model))
         val params = TextGenerationParams(
             model = model,
             temperature = assistant.temperature,
             topP = assistant.topP,
             maxTokens = assistant.maxTokens,
+            topK = assistant.topK,
+            frequencyPenalty = assistant.frequencyPenalty,
+            presencePenalty = assistant.presencePenalty,
+            repetitionPenalty = assistant.repetitionPenalty,
+            minP = assistant.minP,
+            topA = assistant.topA,
+            seed = assistant.seed,
             tools = snapshot.tools,
             reasoningLevel = assistant.reasoningLevel,
             customHeaders = buildList {
@@ -1462,8 +1759,7 @@ class GenerationLoop(
 
     private suspend fun <T> executeProviderRequestWithRetry(
         processingStatus: MutableStateFlow<String?>,
-        enabled: Boolean,
-        rateLimitRetry: RateLimitRetryPolicy? = null,
+        network: NetworkSetting,
         block: suspend () -> T,
     ): T {
         var retryCount = 0
@@ -1473,7 +1769,7 @@ class GenerationLoop(
                 return block()
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
-                if (awaitRateLimitRetry(error, rateLimitRetries, rateLimitRetry)) {
+                if (awaitRateLimitRetry(error, rateLimitRetries, network.enableRateLimitRetry, processingStatus)) {
                     rateLimitRetries++
                     continue
                 }
@@ -1481,26 +1777,58 @@ class GenerationLoop(
                     error = error,
                     retryCount = retryCount,
                     processingStatus = processingStatus,
-                    enabled = enabled,
+                    enabled = network.enableAutoRetry,
                 )
             }
         }
     }
 
+    private suspend inline fun <T> withCredentialSwitchObserver(
+        processingStatus: MutableStateFlow<String?>,
+        crossinline onSwitched: () -> Unit = {},
+        crossinline block: suspend () -> T,
+    ): T {
+        val observer = CredentialSwitchObserver { event ->
+            onSwitched()
+            val statusCodeText = event.statusCode?.let { " (HTTP $it)" } ?: ""
+            processingStatus.value = statusStrings.resolve(
+                R.string.chat_generation_credential_switching,
+                event.fromLabel.ifBlank { "#1" },
+                statusCodeText,
+                event.toLabel,
+                event.attempt,
+                event.total,
+            )
+        }
+        return withContext(observer) {
+            block()
+        }
+    }
+
     /**
-     * 限流退避：[error] 是 429/503 且未超过 [policy] 的次数时等待后返回 true（调用方重发），
-     * 否则返回 false 交给后续分类。等待取 `Retry-After`，没有则指数退避，都不超过上限。
+     * 限流退避：开关开着、[error] 是 429/503 且未超过 [rateLimitRetryPolicy] 的次数时，
+     * 在状态栏提示后等待并返回 true（调用方重发），否则返回 false 交给后续分类。
+     * 等待取 `Retry-After`，没有则指数退避，都不超过上限。
      */
     private suspend fun awaitRateLimitRetry(
         error: Throwable,
         retries: Int,
-        policy: RateLimitRetryPolicy?,
+        enabled: Boolean,
+        processingStatus: MutableStateFlow<String?>,
     ): Boolean {
-        if (policy == null || retries >= policy.maxRetries) return false
+        val policy = rateLimitRetryPolicy
+        if (!enabled || retries >= policy.maxRetries) return false
         val limited = rateLimitedStatus(error) ?: return false
         currentCoroutineContext().ensureActive()
         val wait = (limited.retryAfterMillis ?: (policy.baseDelayMillis shl retries))
             .coerceIn(0, policy.maxDelayMillis)
+        processingStatus.value = statusStrings.resolve(
+            R.string.chat_generation_rate_limit_retrying,
+            limited.statusCode,
+            (wait + 999) / 1000,
+            retries + 1,
+            policy.maxRetries,
+        )
         Log.w(
             TAG,
             "Provider rate limited (HTTP ${limited.statusCode}), retrying in ${wait}ms " +
@@ -1644,16 +1972,13 @@ private fun applyToolResultAt(messages: List<UIMessage>, executed: ToolPartRef):
 }
 
 /**
- * 截断落盘的文件名：provider 的 toolCallId 去掉非法字符；去掉了字符时追加原 id 的短哈希，
- * 避免 `a:b`/`a#b` 这类 id 落到同一个文件（并行调用会同时写）。
+ * 截断落盘的文件名：provider 的 toolCallId 去掉非法字符后加随机后缀，每次保存都是新文件。
+ * 同一个 id 会在后续请求里再次出现（Chat Completions 合成的 `response:tool-N`），
+ * 固定文件名会让后一次输出覆盖前一次、旧提示指向的全文随之丢失。
  */
 internal fun toolOutputFileName(toolCallId: String): String {
-    val sanitized = toolCallId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }.take(64)
-    if (sanitized.isBlank()) return "tool_output_${Uuid.random().toHexString().take(8)}.txt"
-    if (sanitized == toolCallId) return "$sanitized.txt"
-    val hash = java.security.MessageDigest.getInstance("SHA-256")
-        .digest(toolCallId.toByteArray()).take(4).joinToString("") { "%02x".format(it) }
-    return "${sanitized}_$hash.txt"
+    val sanitized = toolCallId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }.take(64).ifBlank { "tool_output" }
+    return "${sanitized}_${Uuid.random().toHexString().take(12)}.txt"
 }
 
 /**
@@ -1669,8 +1994,64 @@ internal suspend fun UIMessage.transformNewParts(
     return transformed.copy(parts = parts.take(keep) + transformed.parts)
 }
 
+/** 不支持工具的模型收不到这两个工具，按普通对话处理。 */
+internal fun ChatToolSnapshot.pseudoIoFor(model: Model): PseudoIoNames? =
+    pseudoIo?.takeIf { ModelAbility.TOOL in model.abilities }
+
+internal const val INTERRUPTED_TOOL_CALL_REASON = "RESPONSE_INTERRUPTED"
+
+/**
+ * 流中途断开、马上要重试时，把这次尝试已经给用户看到的内容结算成「已中断」的回复，留作前一个分支；
+ * 这一步没有可见内容（只有空白文字/思考、空的伪工具 write）时返回 null，照旧直接重试。
+ *
+ * 伪工具读写走 [PseudoIo.settleInterrupted]（write 变文字）。其余这一步里还没执行的调用写上
+ * unavailable 结果：永远不会再执行，这个分支以后被接着聊时也是成对的调用与结果。
+ */
+internal fun UIMessage.settleInterruptedAttempt(newPartsFrom: Int, pseudoIo: PseudoIoNames?, json: Json): UIMessage? {
+    pseudoIo?.let { names -> PseudoIo.settleInterrupted(this, newPartsFrom, names)?.let { return it } }
+    val keepFrom = newPartsFrom.coerceIn(0, parts.size)
+    fun isPseudoCall(part: UIMessagePart.Tool) = pseudoIo != null && part.toolName in setOf(pseudoIo.read, pseudoIo.write)
+    val visible = parts.drop(keepFrom).any { part ->
+        part is UIMessagePart.Text && part.text.isNotBlank() ||
+            part is UIMessagePart.Tool && !part.isExecuted && !isPseudoCall(part)
+    }
+    if (!visible) return null
+    val marked = withStepStartMarked(keepFrom)
+    return marked.copy(parts = marked.parts.mapIndexedNotNull { index, part ->
+        when {
+            index < keepFrom || part !is UIMessagePart.Tool || part.isExecuted -> part
+            isPseudoCall(part) -> null
+            else -> part.copy(output = unavailableToolParts(json, INTERRUPTED_TOOL_CALL_REASON, part.toolName))
+        }
+    })
+}
+
+/** 给这一步的第一个工具调用打上步界标记（见 [TOOL_STEP_START_KEY]）。 */
+internal fun UIMessage.withStepStartMarked(newPartsFrom: Int): UIMessage {
+    val index = parts.indices.firstOrNull { it >= newPartsFrom && (parts[it] as? UIMessagePart.Tool)?.isExecuted == false }
+        ?: return this
+    return copy(parts = parts.toMutableList().apply { set(index, (parts[index] as UIMessagePart.Tool).markedAsStepStart()) })
+}
+
 /** 压缩请求的回复里有工具调用而没有摘要。 */
 class CompressionToolCallException : IllegalStateException("The model called a tool instead of writing the summary")
+
+/** 单次压缩请求超过用户设定的超时秒数。 */
+class CompressionTimeoutException(val timeoutSeconds: Int) :
+    IllegalStateException("Compression request timed out after ${timeoutSeconds}s")
+
+/** 分段压缩所需或实际发起的请求次数超过上限。 */
+class CompressionRequestLimitException(val maxRequests: Int) :
+    IllegalStateException("Compression exceeded the limit of $maxRequests requests")
+
+internal data class CompressionRunResult(
+    val summary: String,
+    val requestCount: Int,
+    val completedChunks: Int,
+    val totalChunks: Int,
+    val chunked: Boolean,
+    val totalUsage: TokenUsage?,
+)
 
 /**
  * 取出压缩请求回复里的摘要正文。
@@ -1750,14 +2131,22 @@ internal fun updateToolPartMetadataAt(
     }
     val updated = target.copy(
         parts = target.parts.toMutableList().apply {
-            // Progress replaces its own UI metadata as before, but must not erase
-            // provider-issued signature/order provenance or inject forged replacements.
-            val providerKeys = setOf("interactions_signature", "interactions_step_index",
-                "interactions_content_index", "interactions_exchange_key")
-            val preserved = part.metadata.orEmpty().filterKeys { it in providerKeys }
-            val progress = metadata.filterKeys { it !in providerKeys }
-            set(partIndex, part.copy(metadata = JsonObject(progress + preserved)))
+            set(partIndex, part.copy(metadata = replaceToolProgressMetadata(part.metadata, metadata)))
         }
     )
     return messages.toMutableList().apply { set(messageIndex, updated) }
+}
+
+// Provider-issued signature/order provenance on a tool call part. Gemini 3+ rejects the next
+// request with HTTP 400 when the step's first function call comes back without its thoughtSignature.
+private val PROVIDER_TOOL_METADATA_KEYS = setOf(
+    "thoughtSignature",
+    "interactions_signature", "interactions_step_index", "interactions_content_index", "interactions_exchange_key",
+    TOOL_STEP_START_KEY,
+)
+
+/** Progress replaces its own UI metadata, but never erases provider provenance or forges it. */
+internal fun replaceToolProgressMetadata(current: JsonObject?, progress: JsonObject): JsonObject {
+    val preserved = current.orEmpty().filterKeys { it in PROVIDER_TOOL_METADATA_KEYS }
+    return JsonObject(progress.filterKeys { it !in PROVIDER_TOOL_METADATA_KEYS } + preserved)
 }

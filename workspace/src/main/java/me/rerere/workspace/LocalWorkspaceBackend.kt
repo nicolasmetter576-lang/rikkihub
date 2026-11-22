@@ -110,6 +110,22 @@ class LocalWorkspaceBackend(
         mode: WorkspaceTransferMode,
         onProgress: (WorkspaceTransferProgress) -> Unit,
     ) = manager.transferFiles(sourceRoot, paths, targetRoot, targetDir, mode, onProgress)
+    override suspend fun importFromHost(
+        sourceRoot: File,
+        paths: List<String>,
+        root: String,
+        area: WorkspaceStorageArea,
+        targetDir: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit,
+    ) = manager.importFromHost(sourceRoot, paths, root, area, targetDir, onProgress)
+    override suspend fun importFolderFromHost(
+        sourceDir: File,
+        name: String,
+        root: String,
+        area: WorkspaceStorageArea,
+        targetDir: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit,
+    ) = manager.importFolderFromHost(sourceDir, name, root, area, targetDir, onProgress)
     override fun glob(root: String, pattern: String, path: String) = manager.glob(root, pattern, path)
     override fun grep(root: String, query: String, path: String, regex: Boolean, ignoreCase: Boolean, includeGlob: String?) =
         manager.grep(root, query, path, regex, ignoreCase, includeGlob)
@@ -144,6 +160,18 @@ class LocalWorkspaceBackend(
         )
     }
 
+    override fun openSubprocess(root: String, request: WorkspaceSubprocessRequest): WorkspaceSubprocess {
+        manager.ensureWorkspace(root)
+        return WorkspaceSubprocess.start(
+            nativeLibraryDir = nativeLibraryDir,
+            filesDir = manager.filesDir(root),
+            linuxDir = manager.linuxDir(root),
+            tempDir = manager.tempDir(root),
+            bindMounts = bindMounts(request.mounts),
+            request = request,
+            patcher = patcher,
+        )
+    }
 
     private companion object {
         const val UNAVAILABLE_TEXT =

@@ -29,7 +29,7 @@ import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.data.datastore.findModelById
 import me.rerere.rikkihub.data.datastore.findProvider
 import me.rerere.rikkihub.data.model.Assistant
-import me.rerere.rikkihub.data.model.SystemPromptMode
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlin.uuid.Uuid
 
 /** Preserve legacy/default budgets; the independently configurable ceiling is 120. */
@@ -181,12 +181,10 @@ fun parseSubagentArgs(element: JsonElement, allowContext: Boolean): SubagentPars
 }
 
 fun stripWorkerAssistant(parent: Assistant): Assistant = parent.copy(
-    systemPrompt = SUBAGENT_WORKER_PREAMBLE,
-    systemPromptMode = SystemPromptMode.WHOLE,
-    promptSections = emptyList(),
+    // 子代理不走酒馆组装的各项功能（世界书、提示词库、助手正则）：预设只有一段 worker 提示词
+    promptPreset = AssistantPresets.withSystemPrompt(SUBAGENT_WORKER_PREAMBLE),
     presetMessages = emptyList(),
     messageTemplate = "{{ message }}",
-    regexes = emptyList(),
     customHeaders = emptyList(),
     customBodies = emptyList(),
     enableMemory = false,
@@ -196,7 +194,7 @@ fun stripWorkerAssistant(parent: Assistant): Assistant = parent.copy(
     localTools = emptyList(),
     enabledSkills = emptySet(),
     lorebookIds = emptySet(),
-    modeInjectionIds = emptySet(),
+    libraryEntryIds = emptySet(),
     quickMessageIds = emptySet(),
     enableRecentChatsReference = false,
     enableTimeReminder = false,
@@ -457,7 +455,7 @@ internal fun availableSubagentPresetModel(settings: Settings, parentModel: Model
 internal fun presetWorkerAssistant(parent: Assistant, model: Model, preset: WorkspaceSubagentPreset): Assistant =
     stripWorkerAssistant(parent).copy(
         name = preset.name,
-        systemPrompt = SUBAGENT_WORKER_PREAMBLE + "\n\n" + preset.systemPrompt,
+        promptPreset = AssistantPresets.withSystemPrompt(SUBAGENT_WORKER_PREAMBLE + "\n\n" + preset.systemPrompt),
         chatModelId = model.id,
         temperature = preset.generationConfig.temperature,
         topP = preset.generationConfig.topP,

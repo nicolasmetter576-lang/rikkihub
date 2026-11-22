@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.memory
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,13 +24,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +38,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +52,7 @@ import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.model.MemoryFile
 import me.rerere.rikkihub.data.model.memoryTitleOf
+import me.rerere.rikkihub.data.repository.MemoryRepository
 import me.rerere.rikkihub.data.repository.MemoryWriteResult
 import me.rerere.rikkihub.ui.components.nav.BackButton
 import me.rerere.rikkihub.ui.components.richtext.MarkdownBlock
@@ -66,6 +66,7 @@ import me.rerere.rikkihub.ui.components.ui.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import java.time.Instant
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 /**
  * 记忆文件的详情页：查看时按「更新时间 / 摘要 / 别名 / 正文」分段展示，编辑时也是这几项各填各的，
@@ -84,9 +85,9 @@ fun MemoryFilePage(memoryId: String, path: String?) {
     val state by vm.state.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val toaster = LocalToaster.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     val isNew = path == null
+    val isGlobal = memoryId == MemoryRepository.GLOBAL_MEMORY_ID
     val file = (state as? MemoryFileState.Loaded)?.file
     // 新文件没有内容可看，直接进编辑
     var editing by rememberSaveable { mutableStateOf(isNew) }
@@ -141,7 +142,7 @@ fun MemoryFilePage(memoryId: String, path: String?) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(
                         text = (file?.title ?: MemoryFile(path = path ?: draftPath, content = "", updatedAt = 0).title)
@@ -151,8 +152,14 @@ fun MemoryFilePage(memoryId: String, path: String?) {
                     )
                 },
                 subtitle = {
-                    if (path != null) {
-                        Text(text = file?.path ?: path, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val subtitleText = when {
+                        path != null && isGlobal -> "${stringResource(R.string.memory_scope_global_label)} · ${file?.path ?: path}"
+                        path != null -> file?.path ?: path
+                        isGlobal -> stringResource(R.string.memory_scope_global_label)
+                        else -> null
+                    }
+                    if (subtitleText != null) {
+                        Text(text = subtitleText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 },
                 navigationIcon = {
@@ -212,11 +219,10 @@ fun MemoryFilePage(memoryId: String, path: String?) {
                         }
                     }
                 },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         when {
@@ -268,7 +274,16 @@ fun MemoryFilePage(memoryId: String, path: String?) {
         },
         onDismiss = { showDeleteDialog = false },
         text = {
-            Text(text = file?.path.orEmpty())
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(text = file?.path.orEmpty())
+                if (isGlobal) {
+                    Text(
+                        text = stringResource(R.string.memory_global_delete_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
     )
 }
@@ -283,7 +298,7 @@ private fun MemoryFileDetail(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(innerPadding)
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = AppSpacing.sm)
             .padding(bottom = 16.dp),
     ) {
         CardGroup {
@@ -359,7 +374,7 @@ private fun MemoryFileEditor(
             // 放在滚动外面：键盘弹出时可滚动的区域跟着变矮，正在输入的那一行才会被滚到键盘上方
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = AppSpacing.sm)
             .padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {

@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.PencilEdit01
@@ -17,21 +18,19 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +41,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -66,11 +64,16 @@ import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.reflect.full.primaryConstructor
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
+import androidx.compose.foundation.lazy.items
 
 @Composable
 fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val lazyListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val nav = LocalNavController.current
@@ -78,7 +81,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.setting_page_search_title))
                 },
@@ -95,11 +98,10 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                         )
                     }
                 },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors
+                colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor
     ) {
         val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -120,17 +122,18 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
-            contentPadding = it + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = it + PaddingValues(AppSpacing.sm),
             state = lazyListState
         ) {
-            items(settings.searchServices, key = { it.id }) { service ->
+            itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
                 ReorderableItem(
                     state = reorderableState,
                     key = service.id
                 ) { isDragging ->
                     SearchProviderCard(
                         service = service,
+                        shape = cardGroupItemShape(index, settings.searchServices.size),
+                        divider = index > 0,
                         onEdit = {
                             nav.navigate(Screen.SettingSearchDetail(service.id.toString()))
                         },
@@ -161,6 +164,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
 
             item("common_options") {
                 CommonOptions(
+                    modifier = Modifier.padding(top = AppSpacing.sm),
                     settings = settings,
                     onUpdate = { options ->
                         vm.updateSettings { latest -> latest.copy(searchCommonOptions = options) }
@@ -263,6 +267,8 @@ private fun AddProviderDialog(
 @Composable
 private fun SearchProviderCard(
     service: SearchServiceOptions,
+    shape: Shape,
+    divider: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     canDelete: Boolean,
@@ -272,14 +278,16 @@ private fun SearchProviderCard(
 
     Card(
         modifier = modifier,
+        shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = CustomColors.listItemColors.containerColor
         )
     ) {
+        if (divider) CardGroupDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(AppSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -362,12 +370,14 @@ fun SearchAbilityTagLine(
 @Composable
 private fun CommonOptions(
     settings: me.rerere.rikkihub.data.datastore.Settings,
-    onUpdate: (SearchCommonOptions) -> Unit
+    onUpdate: (SearchCommonOptions) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var commonOptions by remember(settings.searchCommonOptions) {
         mutableStateOf(settings.searchCommonOptions)
     }
     Card(
+        modifier = modifier,
         colors = CardDefaults.cardColors(
             containerColor = CustomColors.listItemColors.containerColor
         )
@@ -375,7 +385,7 @@ private fun CommonOptions(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(

@@ -21,6 +21,16 @@ object ChatWorkspaceSwipe {
 
     fun conversationGesturesEnabled(filesDrawerOpen: Boolean): Boolean = !filesDrawerOpen
 
+    /**
+     * Reset an open files drawer only when the bound workspace itself changes (e.g., switching
+     * assistants or changing the binding), not when returning to Chat from a sub-screen like the
+     * workspace file editor.
+     */
+    fun shouldResetFilesOpen(
+        lastWorkspaceId: String?,
+        currentWorkspaceId: String?,
+    ): Boolean = lastWorkspaceId != currentWorkspaceId
+
     fun isOpenGestureOrigin(
         x: Float,
         y: Float,

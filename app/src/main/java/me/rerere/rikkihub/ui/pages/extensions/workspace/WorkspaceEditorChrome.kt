@@ -13,6 +13,8 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -59,6 +61,8 @@ internal fun WorkspaceEditorToolbarTextButton(
     size: WorkspaceEditorToolbarSize,
     enabled: Boolean = true,
     fill: Boolean = false,
+    /** A switch that is on (八股 while its marks are shown): tinted like a selected chip. */
+    checked: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     // In a row of its own a min height (not a fixed one) replaces the button's 40dp minimum and leaves the
@@ -70,6 +74,10 @@ internal fun WorkspaceEditorToolbarTextButton(
             modifier = if (fill) Modifier.heightIn(min = size.rowHeight).fillMaxWidth()
             else Modifier.heightIn(min = min(size.rowHeight, 40.dp)).widthIn(min = size.minWidth),
             enabled = enabled,
+            colors = if (checked) ButtonDefaults.textButtonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            ) else ButtonDefaults.textButtonColors(),
             contentPadding = PaddingValues(horizontal = if (fill) 2.dp else size.horizontalPadding),
         ) {
             CompositionLocalProvider(LocalTextStyle provides LocalTextStyle.current.copy(fontSize = size.fontSize)) { content() }

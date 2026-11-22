@@ -3,6 +3,8 @@ package me.rerere.rikkihub.data.ai
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
@@ -30,6 +32,7 @@ import me.rerere.rikkihub.data.datastore.getAssistantById
 import me.rerere.rikkihub.data.db.dao.MemoryConsolidationDAO
 import me.rerere.rikkihub.data.db.entity.MemoryConsolidationEntity
 import me.rerere.rikkihub.data.model.Assistant
+import me.rerere.rikkihub.data.model.AssistantPresets
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.data.model.MemoryFile
 import me.rerere.rikkihub.data.repository.ConversationRepository
@@ -51,7 +54,8 @@ private const val USER_MESSAGE_LENGTH = 8000
 private const val ASSISTANT_MESSAGE_LENGTH = 2000
 
 // 更早的对话不再补整理：刚开启记忆或导入了一批旧对话时，不该把整段历史都交给模型
-private const val PENDING_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
+internal const val PENDING_WINDOW_MS = 7L * 24 * 60 * 60 * 1000
+internal const val MAX_BACKFILL_CONVERSATIONS = 20
 
 /** 跑一次整理用的模型调用，由 [GenerationLoop] 实现；测试里换成假的 */
 fun interface MemoryDreamRunner {
@@ -70,7 +74,7 @@ fun interface MemoryDreamRunner {
 fun generationLoopDreamRunner(generationLoop: GenerationLoop) = MemoryDreamRunner { settings, model, systemPrompt, input, tools, maxSteps ->
     val worker = Assistant(
         name = "memory_dream",
-        systemPrompt = systemPrompt,
+        promptPreset = AssistantPresets.withSystemPrompt(systemPrompt),
         streamOutput = false,
         reasoningLevel = settings.fastModelReasoningLevel,
     )
@@ -87,6 +91,7 @@ fun generationLoopDreamRunner(generationLoop: GenerationLoop) = MemoryDreamRunne
         // 整次整理的每一步用同一个会话 ID，服务端才能命中前面几步的缓存
         conversationId = Uuid.random(),
         exposeUpload = false,
+        usageTag = UsageTag(UsageSource.MEMORY),
     ).collect { chunk ->
         when (chunk) {
             is GenerationChunk.Messages -> messages = chunk.messages
@@ -115,60 +120,148 @@ class MemoryConsolidator(
     private val settingsStore: SettingsStore,
 ) : MemoryConsolidationWorker {
 
+    @Volatile
+    private var legacyReconciled = false
+    private val reconcileMutex = Mutex()
+
     private suspend fun settings(): Settings = settingsStore.settingsFlow.first { !it.init }
+
+    override suspend fun reconcileLegacyMarks() = withContext(Dispatchers.IO) {
+        ensureLegacyReconciled()
+    }
+
+    /**
+     * 把 DB46 → DB47 迁移留下的哨兵行（memory_id = ""）按当前设置中各助手真实的 memoryId 一次性回填。
+     * 既保证升级前已开启全局记忆的助手不重跑旧对话，也保证旧备份恢复后按恢复出的设置准确归位。
+     */
+    private suspend fun ensureLegacyReconciled() {
+        if (legacyReconciled) return
+        reconcileMutex.withLock {
+            if (legacyReconciled) return
+            val legacyRows = consolidationDao.getLegacyRows()
+            if (legacyRows.isNotEmpty()) {
+                val assistantMemoryIds = settings().assistants.associate { it.id.toString() to it.memoryId }
+                val resolved = legacyRows.map { row ->
+                    MemoryConsolidationEntity(
+                        conversationId = row.conversationId,
+                        memoryId = assistantMemoryIds[row.assistantId] ?: row.assistantId,
+                        consolidatedAt = row.consolidatedAt,
+                    )
+                }
+                consolidationDao.reconcileLegacyRows(resolved)
+                Logging.log(TAG, "reconciled ${resolved.size} legacy consolidation marks")
+            }
+            legacyReconciled = true
+        }
+    }
 
     override suspend fun pendingOf(conversation: Conversation): PendingMemoryConversation? =
         withContext(Dispatchers.IO) {
+            ensureLegacyReconciled()
+            if (conversation.cliSession != null) return@withContext null
             val assistant = settings().getAssistantById(conversation.assistantId)
                 ?.takeIf { it.enableMemory } ?: return@withContext null
-            val pending = loadPendingTurns(conversation)
+            val memoryId = assistant.memoryId
+            val pending = loadPendingTurns(conversation, memoryId)
             if (pending.turns.isEmpty()) {
                 null
             } else {
                 PendingMemoryConversation(
                     conversationId = conversation.id,
-                    memoryId = assistant.memoryId,
+                    memoryId = memoryId,
                     turns = pending.totalTurns,
                     automatic = assistant.autoConsolidateMemory,
+                    assistantId = conversation.assistantId,
                 )
             }
         }
 
     override suspend fun memoryIdsWithUpdates(): List<String> = withContext(Dispatchers.IO) {
+        ensureLegacyReconciled()
         val assistants = settings().assistants.filter { it.enableMemory }
         if (assistants.isEmpty()) return@withContext emptyList()
-        val updated = consolidationDao.getAssistantIdsWithUpdatedConversations(
-            assistantIds = assistants.map { it.id.toString() },
-            since = System.currentTimeMillis() - PENDING_WINDOW_MS,
-        ).toSet()
-        assistants.filter { it.id.toString() in updated }.map { it.memoryId }.distinct()
+        val since = System.currentTimeMillis() - PENDING_WINDOW_MS
+        val (globalAssistants, privateAssistants) = assistants.partition { it.useGlobalMemory }
+        buildList {
+            if (privateAssistants.isNotEmpty()) {
+                addAll(
+                    consolidationDao.getPrivateAssistantIdsWithUpdatedConversations(
+                        assistantIds = privateAssistants.map { it.id.toString() },
+                        since = since,
+                    )
+                )
+            }
+            if (globalAssistants.isNotEmpty()) {
+                val updatedGlobal = consolidationDao.getAssistantIdsWithUpdatedConversations(
+                    assistantIds = globalAssistants.map { it.id.toString() },
+                    memoryId = MemoryRepository.GLOBAL_MEMORY_ID,
+                    since = since,
+                )
+                if (updatedGlobal.isNotEmpty()) add(MemoryRepository.GLOBAL_MEMORY_ID)
+            }
+        }.distinct()
     }
 
     override suspend fun findPending(memoryId: String): List<PendingMemoryConversation> =
+        findPending(memoryId, sinceMs = System.currentTimeMillis() - PENDING_WINDOW_MS, limit = MAX_CONVERSATIONS_PER_RUN)
+
+    override suspend fun findPending(
+        memoryId: String,
+        sinceMs: Long,
+        limit: Int,
+    ): List<PendingMemoryConversation> = withContext(Dispatchers.IO) {
+        ensureLegacyReconciled()
+        val assistants = settings().assistants
+            .filter { it.enableMemory && it.memoryId == memoryId }
+        // 开着和关了自动整理的助手分开找：混在一起截断的话，关了的助手的对话一直不整理、一直排在前面，
+        // 会把要自动整理的对话挤掉
+        assistants.partition { it.autoConsolidateMemory }.toList()
+            .filter { it.isNotEmpty() }
+            .flatMap { group -> findPendingOf(group.map { it.id.toString() }, memoryId, sinceMs, limit) }
+    }
+
+    override suspend fun countPendingConversations(memoryId: String, sinceMs: Long): Int =
         withContext(Dispatchers.IO) {
-            val assistants = settings().assistants
+            ensureLegacyReconciled()
+            val assistantIds = settings().assistants
                 .filter { it.enableMemory && it.memoryId == memoryId }
-            // 开着和关了自动整理的助手分开找：混在一起截断的话，关了的助手的对话一直不整理、一直排在前面，
-            // 会把要自动整理的对话挤掉
-            assistants.partition { it.autoConsolidateMemory }.toList()
-                .filter { it.isNotEmpty() }
-                .flatMap { group -> findPendingOf(group.map { it.id.toString() }) }
+                .map { it.id.toString() }
+            if (assistantIds.isEmpty()) return@withContext 0
+            consolidationDao.countUpdatedConversations(assistantIds, memoryId, sinceMs)
         }
 
-    private suspend fun findPendingOf(assistantIds: List<String>): List<PendingMemoryConversation> {
+    override suspend fun copyMarksToGlobal(assistantId: Uuid) = withContext(Dispatchers.IO) {
+        ensureLegacyReconciled()
+        consolidationDao.copyMarks(assistantId.toString(), MemoryRepository.GLOBAL_MEMORY_ID)
+    }
+
+    private suspend fun findPendingOf(
+        assistantIds: List<String>,
+        memoryId: String,
+        sinceMs: Long,
+        limit: Int,
+    ): List<PendingMemoryConversation> {
+        val scanLimit = maxOf(MAX_SCANNED_CONVERSATIONS, limit * 4)
         val candidates = consolidationDao.getUpdatedConversationIds(
             assistantIds = assistantIds,
-            since = System.currentTimeMillis() - PENDING_WINDOW_MS,
-            limit = MAX_SCANNED_CONVERSATIONS,
+            memoryId = memoryId,
+            since = sinceMs,
+            limit = scanLimit,
         )
-        return collectPending(candidates, limit = MAX_CONVERSATIONS_PER_RUN) { id ->
+        return collectPending(candidates, limit = limit) { id ->
             conversationRepo.getConversationById(Uuid.parse(id))?.let { pendingOf(it) }
+                ?.takeIf { it.memoryId == memoryId }
         }
     }
 
     override suspend fun markConsolidated(conversation: Conversation) {
         withContext(Dispatchers.IO) {
-            advance(conversation.id, maxOf(System.currentTimeMillis(), conversation.updateAt.toEpochMilli()))
+            ensureLegacyReconciled()
+            val mark = maxOf(System.currentTimeMillis(), conversation.updateAt.toEpochMilli())
+            // 分叉对话复制来的前缀同时在私有库与全局库记标：无论后续是否切换全局记忆，
+            // 原会话负责整理旧前缀，分叉会话只整理分叉之后的新轮次，避免双倍整理。
+            advance(conversation.id, conversation.assistantId.toString(), mark)
+            advance(conversation.id, MemoryRepository.GLOBAL_MEMORY_ID, mark)
         }
     }
 
@@ -178,6 +271,7 @@ class MemoryConsolidator(
         fullReview: Boolean,
     ): MemoryConsolidationRun? = withContext(Dispatchers.IO) {
         try {
+            ensureLegacyReconciled()
             consolidateStore(memoryId, conversationIds, fullReview)
         } catch (e: CancellationException) {
             throw e
@@ -195,36 +289,47 @@ class MemoryConsolidator(
         val settings = settings()
         val config = settings.memoryDream
         val assistants = settings.assistants.filter { it.enableMemory && it.memoryId == memoryId }
-        if (assistants.isEmpty()) return null
+        val files = memoryRepository.getFiles(memoryId)
+        val allowStandaloneGlobalReview =
+            memoryId == MemoryRepository.GLOBAL_MEMORY_ID && fullReview && files.isNotEmpty()
+        if (assistants.isEmpty() && !allowStandaloneGlobalReview) return null
         val assistantIds = assistants.map { it.id }.toSet()
 
-        val batches = conversationIds
-            .mapNotNull { conversationRepo.getConversationById(it) }
-            .filter { it.assistantId in assistantIds }
-            .sortedByDescending { it.updateAt }
-            .mapNotNull { conversation ->
-                val pending = loadPendingTurns(conversation)
-                if (pending.turns.isEmpty()) null else Batch(conversation, pending, settings.toolOverrides)
-            }
-            .withinTranscriptBudget()
-        val files = memoryRepository.getFiles(memoryId)
+        val batches = if (assistantIds.isEmpty()) {
+            emptyList()
+        } else {
+            conversationIds
+                .mapNotNull { conversationRepo.getConversationById(it) }
+                .filter { it.assistantId in assistantIds && it.cliSession == null }
+                .sortedByDescending { it.updateAt }
+                .mapNotNull { conversation ->
+                    val pending = loadPendingTurns(conversation, memoryId)
+                    if (pending.turns.isEmpty()) null else Batch(conversation, pending, settings.toolOverrides)
+                }
+                .withinTranscriptBudget()
+        }
         // 没有新的轮次时，只有手动清理且记忆库里有东西才值得调用模型
         if (batches.isEmpty() && (!fullReview || files.isEmpty())) return null
 
         val assistant = batches.firstOrNull()?.conversation?.assistantId
             ?.let { id -> assistants.find { it.id == id } }
-            ?: assistants.first()
+            ?: assistants.firstOrNull()
+            ?: Assistant()
         val model = settings.consolidationModel(assistant) ?: error("No model available for memory dreaming")
         // 自动整理只增改；删文件只在用户手动要求清理整个记忆库时才允许
-        val tools = buildMemoryTools(memoryRepository, memoryId)
-            .filter { fullReview || it.name != MemoryToolNames.DELETE } +
+        val conversationTools = if (assistantIds.isEmpty()) {
+            emptyList()
+        } else {
             createMemoryConversationTools(conversationRepo, assistantIds)
+        }
+        val tools = buildMemoryTools(memoryRepository, memoryId)
+            .filter { fullReview || it.name != MemoryToolNames.DELETE } + conversationTools
         val systemPrompt = buildMemoryConsolidationPrompt(
             fullReview = fullReview,
             dreamPrompt = config.effectivePrompt,
             fullReviewPrompt = config.effectiveFullReviewPrompt,
         )
-        // 生成中途失败会抛出，走不到后面：进度不推进，下次连同新的轮次一起重试
+        // 生成中途失败或被用户取消会抛出，走不到后面：进度不推进，下次连同新的轮次一起重试
         val messages = runner.run(
             settings = settings,
             model = model,
@@ -235,7 +340,7 @@ class MemoryConsolidator(
         )
 
         val advanced = batches.filter { batch ->
-            batch.pending.consolidatedThrough?.let { advance(batch.conversation.id, it) } == true
+            batch.pending.consolidatedThrough?.let { advance(batch.conversation.id, memoryId, it) } == true
         }
 
         // 整理用的工具没有改名，按默认名认
@@ -257,27 +362,27 @@ class MemoryConsolidator(
         )
     }
 
-    private suspend fun loadPendingTurns(conversation: Conversation): PendingMemoryTurns {
+    private suspend fun loadPendingTurns(conversation: Conversation, memoryId: String): PendingMemoryTurns {
         val messages = conversation.dialogueMessages()
-        val consolidatedAt = consolidationDao.getConsolidatedAt(conversation.id.toString())
-            // 第一次见到这个对话：定下从哪里开始整理并记下来，这之后的轮次一轮都不会被跳过
-            ?: initialMemoryProgress(messages).also { advance(conversation.id, it) }
+        val consolidatedAt = consolidationDao.getConsolidatedAt(conversation.id.toString(), memoryId)
+            // 第一次见到这个对话在该记忆库下的记录：定下从哪里开始整理并记下来，这之后的轮次一轮都不会被跳过
+            ?: initialMemoryProgress(messages).also { advance(conversation.id, memoryId, it) }
         val pending = pendingMemoryTurns(
             messages = messages,
             updatedAt = conversation.updateAt.toEpochMilli(),
             consolidatedAt = consolidatedAt,
         )
         // 没有新的轮次（比如只是重新生成了回复）也推进进度，免得每次扫描都把它读出来
-        if (pending.turns.isEmpty()) pending.consolidatedThrough?.let { advance(conversation.id, it) }
+        if (pending.turns.isEmpty()) pending.consolidatedThrough?.let { advance(conversation.id, memoryId, it) }
         return pending
     }
 
     // 返回进度是否写进去了
-    private suspend fun advance(conversationId: Uuid, consolidatedAt: Long): Boolean = runCatching {
-        consolidationDao.upsert(MemoryConsolidationEntity(conversationId.toString(), consolidatedAt))
+    private suspend fun advance(conversationId: Uuid, memoryId: String, consolidatedAt: Long): Boolean = runCatching {
+        consolidationDao.upsert(MemoryConsolidationEntity(conversationId.toString(), memoryId, consolidatedAt))
     }.onFailure {
         // 对话在整理期间被删掉时外键约束会拒绝写入
-        Logging.log(TAG, "advance $conversationId: $it")
+        Logging.log(TAG, "advance $conversationId ($memoryId): $it")
     }.isSuccess
 }
 

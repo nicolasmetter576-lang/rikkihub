@@ -10,6 +10,7 @@ import {
   FolderPlus,
   Globe,
   HardDrive,
+  FolderOpen,
   Laptop,
   Languages,
   Moon,
@@ -76,6 +77,7 @@ import {
   type CustomThemeCss,
   type Theme,
 } from "~/components/theme-provider";
+import { CharacterPickerButton, FavoriteCharacterStrip } from "~/components/character-picker";
 import { ConversationFavoritesButton } from "~/components/conversation-favorites-button";
 import { ConversationSearchButton } from "~/components/conversation-search-button";
 import {
@@ -232,6 +234,8 @@ export interface ConversationSidebarProps {
   onRenameFolder?: (id: string, name: string) => Promise<void>;
   onDeleteFolder?: (id: string) => Promise<void>;
   onMoveToFolder?: (conversationId: string, folderId: string | null) => Promise<void>;
+  /** Opens the conversation the character picker just made; without it the picker is not shown. */
+  onStartCharacterChat?: (conversationId: string) => void;
 }
 
 interface ConversationListRowProps {
@@ -267,7 +271,10 @@ const ConversationListRow = React.memo(
     const [pendingAction, setPendingAction] = React.useState<string | null>(null);
 
     const moveTargets = React.useMemo(
-      () => assistants.filter((assistant) => assistant.id !== conversation.assistantId),
+      () =>
+        assistants.filter(
+          (assistant) => assistant.id !== conversation.assistantId && assistant.enabled !== false,
+        ),
       [assistants, conversation.assistantId],
     );
 
@@ -585,11 +592,12 @@ const FOOTER_LINKS: Array<{
   { to: "/workspaces", labelKey: "conversation_sidebar.open_workspaces", icon: FolderKanban },
   { to: "/translator", labelKey: "settings:nav.translator", icon: Globe },
   { to: "/storage", labelKey: "settings:nav.storage", icon: HardDrive },
+  { to: "/files", labelKey: "fileManager:title", icon: FolderOpen },
 ];
 
-// 宽度按底部那一行算：6 个 32px 按钮 + 5 个 4px 间距 + 两组之间多留 4px + 左右内边距 1rem + 右边框 1px，
+// 宽度按底部那一行算：7 个 32px 按钮 + 6 个 4px 间距 + 两组之间多留 4px + 左右内边距 1rem + 右边框 1px，
 // 不留空格。改底部按钮数要同步改这里（测试里有对照）
-export const SIDEBAR_FOOTER_BUTTONS = 6;
+export const SIDEBAR_FOOTER_BUTTONS = 7;
 export const CONVERSATION_SIDEBAR_WIDTH = `calc(${SIDEBAR_FOOTER_BUTTONS} * 2rem + ${SIDEBAR_FOOTER_BUTTONS} * 0.25rem + 1rem + 1px)`;
 export const CONVERSATION_SIDEBAR_STYLE = {
   "--sidebar-width": CONVERSATION_SIDEBAR_WIDTH,
@@ -923,6 +931,7 @@ export const ConversationSidebar = React.memo(
     onRenameFolder,
     onDeleteFolder,
     onMoveToFolder,
+    onStartCharacterChat,
   }: ConversationSidebarProps) => {
     const { t, i18n } = useTranslation();
     const { setColorTheme, customThemeCss, setCustomThemeCss } = useTheme();
@@ -964,14 +973,17 @@ export const ConversationSidebar = React.memo(
       [conversations, i18n.resolvedLanguage, t],
     );
 
-    const filteredAssistants = React.useMemo(() => {
-      if (selectedTagIds.length === 0) {
-        return assistants;
-      }
-      return assistants.filter((assistant) =>
-        assistant.tags.some((tagId) => selectedTagIds.includes(tagId)),
-      );
-    }, [assistants, selectedTagIds]);
+    // Disabled assistants are not offered (the current one stays listed), then the tag filter applies
+    const filteredAssistants = React.useMemo(
+      () =>
+        assistants.filter(
+          (assistant) =>
+            (assistant.enabled !== false || assistant.id === currentAssistantId) &&
+            (selectedTagIds.length === 0 ||
+              assistant.tags.some((tagId) => selectedTagIds.includes(tagId))),
+        ),
+      [assistants, currentAssistantId, selectedTagIds],
+    );
 
     const toggleTag = React.useCallback((tagId: string) => {
       setSelectedTagIds((current) =>
@@ -1063,6 +1075,15 @@ export const ConversationSidebar = React.memo(
 
               <ConversationSearchButton onSelect={onSelect} assistantId={currentAssistantId} />
               <ConversationFavoritesButton onSelect={onSelect} />
+              {onStartCharacterChat ? (
+                <>
+                  <CharacterPickerButton
+                    onStarted={onStartCharacterChat}
+                    assistantName={currentAssistant ? getAssistantDisplayName(currentAssistant.name) : ""}
+                  />
+                  <FavoriteCharacterStrip onStarted={onStartCharacterChat} />
+                </>
+              ) : null}
             </div>
           </SidebarGroup>
 

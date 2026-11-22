@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.ai.polish
 
+import me.rerere.rikkihub.data.model.AssistantPresets
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
@@ -159,7 +160,7 @@ class PromptPolishTest {
     }
 
     private val chat = Model(modelId = "chat")
-    private val assistant = Assistant(chatModelId = chat.id, systemPrompt = "助手提示词不该出现")
+    private val assistant = Assistant(chatModelId = chat.id, promptPreset = AssistantPresets.withSystemPrompt("助手提示词不该出现"))
     private val settings = Settings(
         providers = listOf(ProviderSetting.OpenAI(apiKey = "k", baseUrl = "http://localhost", models = listOf(chat))),
         assistants = listOf(assistant),

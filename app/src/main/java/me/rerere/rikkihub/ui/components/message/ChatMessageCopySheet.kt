@@ -28,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
+import me.rerere.ai.ui.displayTextOf
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
@@ -91,7 +92,7 @@ fun ChatMessageCopySheet(
 
             // Content
             val textParts =
-                message.parts.filterIsInstance<UIMessagePart.Text>().filter { it.text.isNotBlank() }
+                message.parts.filterIsInstance<UIMessagePart.Text>().map { it.copy(text = message.displayTextOf(it)) }.filter { it.text.isNotBlank() }
 
             if (textParts.isEmpty()) {
                 // No text content available

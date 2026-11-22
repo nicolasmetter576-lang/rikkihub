@@ -44,11 +44,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.highlight.CodeHighlightText
 import me.rerere.hugeicons.HugeIcons
@@ -245,7 +242,7 @@ object SearchWebToolUI : ToolUIRenderer {
     )
 
     private fun items(context: ToolUIContext): List<JsonElement> =
-        context.content?.jsonObjectOrNull?.get("items")?.jsonArray ?: emptyList()
+        context.content?.jsonObjectOrNull?.get("items")?.jsonArrayOrNull ?: emptyList()
 
     override fun hasSummary(context: ToolUIContext): Boolean =
         context.content.getStringContent("answer") != null || items(context).isNotEmpty()
@@ -283,8 +280,8 @@ object SearchWebToolUI : ToolUIRenderer {
 
     @Composable
     override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
-        val content = context.content
-        if (content == null) {
+        val content = context.content?.jsonObjectOrNull
+        if (shouldFallbackSearchWebPreview(context) || content == null) {
             DefaultToolPreview(context = context)
             return
         }
@@ -318,8 +315,8 @@ object ScrapeWebToolUI : ToolUIRenderer {
 
     @Composable
     override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
-        val content = context.content
-        if (content == null) {
+        val content = context.content?.jsonObjectOrNull
+        if (shouldFallbackScrapeWebPreview(context) || content == null) {
             DefaultToolPreview(context = context)
             return
         }
@@ -506,7 +503,7 @@ object GetScreenTimeToolUI : ToolUIRenderer {
         stringResource(R.string.chat_message_tool_screen_time)
 
     private fun apps(context: ToolUIContext): List<JsonElement> =
-        context.content?.jsonObjectOrNull?.get("apps")?.let { it as? JsonArray } ?: emptyList()
+        context.content?.jsonObjectOrNull?.get("apps")?.jsonArrayOrNull ?: emptyList()
 
     private fun isNoPermission(context: ToolUIContext): Boolean =
         context.content.getStringContent("error") == "NO_PERMISSION"
@@ -574,14 +571,24 @@ object GetScreenTimeToolUI : ToolUIRenderer {
 
     @Composable
     override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
+        val content = context.content?.jsonObjectOrNull
         val apps = apps(context)
-        if (apps.isEmpty()) {
+        if (shouldFallbackGetScreenTimePreview(context) || content == null || apps.isEmpty()) {
             DefaultToolPreview(context = context)
             return
         }
-        ScreenTimePreview(content = context.content!!, apps = apps)
+        ScreenTimePreview(content = content, apps = apps)
     }
 }
+
+internal fun shouldFallbackSearchWebPreview(context: ToolUIContext): Boolean =
+    context.content?.jsonObjectOrNull == null
+
+internal fun shouldFallbackScrapeWebPreview(context: ToolUIContext): Boolean =
+    context.content?.jsonObjectOrNull?.get("urls")?.jsonArrayOrNull == null
+
+internal fun shouldFallbackGetScreenTimePreview(context: ToolUIContext): Boolean =
+    context.content?.jsonObjectOrNull?.get("apps")?.jsonArrayOrNull.isNullOrEmpty()
 
 object CalendarQueryToolUI : ToolUIRenderer {
     override val toolName: String = "calendar_query"
@@ -637,8 +644,8 @@ object CalendarCreateToolUI : ToolUIRenderer {
 }
 
 @Composable
-private fun ScreenTimePreview(content: JsonElement, apps: List<JsonElement>) {
-    val totalMinutes = content.jsonObjectOrNull?.get("total_minutes")
+private fun ScreenTimePreview(content: JsonObject, apps: List<JsonElement>) {
+    val totalMinutes = content["total_minutes"]
         ?.jsonPrimitiveOrNull?.longOrNull ?: 0
     val maxAppMs = apps.maxOfOrNull { it.appMs() }?.takeIf { it > 0 } ?: 1L
     LazyColumn(
@@ -745,15 +752,15 @@ private fun formatMinutes(minutes: Long): String {
 @Composable
 private fun SearchWebPreview(
     arguments: JsonElement,
-    content: JsonElement,
+    content: JsonObject,
 ) {
     val context = LocalContext.current
-    val items = content.jsonObject["items"]?.jsonArray ?: emptyList()
+    val items = content["items"]?.jsonArrayOrNull ?: emptyList()
     val answer = content.getStringContent("answer")
     val query = arguments.getStringContent("query") ?: ""
     val parameters = arguments.jsonObjectOrNull?.entries?.filter { it.key != "query" }.orEmpty()
-    val images = content.jsonObject["images"]?.jsonArray
-        ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+    val images = content["images"]?.jsonArrayOrNull
+        ?.mapNotNull { it.jsonPrimitiveOrNull?.contentOrNull }
         ?.filter { it.isNotBlank() }
         ?: emptyList()
 
@@ -909,8 +916,8 @@ private fun SearchWebPreview(
 }
 
 @Composable
-private fun ScrapeWebPreview(content: JsonElement) {
-    val urls = content.jsonObject["urls"]?.jsonArray ?: emptyList()
+private fun ScrapeWebPreview(content: JsonObject) {
+    val urls = content["urls"]?.jsonArrayOrNull ?: emptyList()
 
     LazyColumn(
         modifier = Modifier
@@ -928,20 +935,20 @@ private fun ScrapeWebPreview(content: JsonElement) {
         }
 
         items(urls) { url ->
-            val urlObject = url.jsonObject
+            val urlObject = url.jsonObjectOrNull ?: return@items
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = urlObject["url"]?.jsonPrimitive?.content ?: "",
+                    text = urlObject["url"]?.jsonPrimitiveOrNull?.contentOrNull ?: "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Card {
                     MarkdownBlock(
-                        content = urlObject["content"]?.jsonPrimitive?.content ?: "",
+                        content = urlObject["content"]?.jsonPrimitiveOrNull?.contentOrNull ?: "",
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(8.dp)

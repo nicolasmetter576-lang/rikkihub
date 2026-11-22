@@ -12,12 +12,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -31,11 +34,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.MinusSign
@@ -43,6 +53,7 @@ import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.rikkihub.AppScope
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.datastore.DisplaySetting
+import me.rerere.rikkihub.data.datastore.EditorColorPair
 import me.rerere.rikkihub.data.datastore.EditorFontIds
 import me.rerere.rikkihub.data.datastore.EditorTypography
 import me.rerere.rikkihub.data.datastore.SettingsStore
@@ -51,11 +62,13 @@ import me.rerere.rikkihub.data.fonts.DownloadableFont
 import me.rerere.rikkihub.data.fonts.DownloadableFonts
 import me.rerere.rikkihub.data.fonts.FontDownloadAlreadyRunningException
 import me.rerere.rikkihub.data.fonts.FontDownloadService
+import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import me.rerere.rikkihub.ui.components.ui.Select
 import me.rerere.rikkihub.ui.context.LocalSettings
+import me.rerere.rikkihub.ui.pages.setting.ColorPickerRow
+import me.rerere.rikkihub.ui.theme.LocalDarkMode
 import me.rerere.rikkihub.ui.theme.rememberEditorFontFamily
 import org.koin.compose.koinInject
-import kotlin.math.roundToInt
 
 /** Base text style of the workspace editor and preview, from the App typography. */
 @Composable
@@ -63,13 +76,69 @@ internal fun rememberWorkspaceEditorTextStyle(base: TextStyle): TextStyle {
     val display = LocalSettings.current.displaySetting
     val typography = display.appEditorTypography
     val family = rememberEditorFontFamily(typography.font, display)
-    return remember(base, typography, family) {
+    val color = editorTextColor(base.color, typography)
+    return remember(base, typography, family, color) {
         base.copy(
             fontFamily = family,
             fontSize = typography.fontSize.sp,
             letterSpacing = typography.letterSpacing.em,
             lineHeight = (typography.fontSize * typography.lineHeight).sp,
+            color = color,
         )
+    }
+}
+
+/**
+ * The chosen text color of [typography] for the current theme, else [base] (else the current content
+ * color), blended toward the surface by its text brightness. The content color is black outside a
+ * Surface/Scaffold, so callers sit in one (or pass a color) for dark themes.
+ */
+@Composable
+internal fun editorTextColor(base: Color, typography: EditorTypography): Color {
+    val text = typography.textColor.current() ?: base.takeOrElse { LocalContentColor.current }
+    val brightness = typography.textBrightness
+    return if (brightness >= 1f) text else lerp(MaterialTheme.colorScheme.surface, text, brightness)
+}
+
+/** The color of this pair for the current theme (light or dark); null follows the theme. */
+@Composable
+internal fun EditorColorPair.current(): Color? = of(LocalDarkMode.current)?.let { Color(it.toInt()) }
+
+/** Color of quoted text in workspace prose, or unspecified while that highlight is off. */
+@Composable
+internal fun workspaceQuotedTextColor(): Color {
+    val typography = LocalSettings.current.displaySetting.appEditorTypography
+    if (!typography.quoteHighlight) return Color.Unspecified
+    return typography.quoteColor.current() ?: MaterialTheme.colorScheme.tertiary
+}
+
+/**
+ * One color per theme for [pair]: light / dark tabs (the current theme selected first), each following
+ * the theme or picked with HSL sliders, starting from [fallback] of that theme.
+ */
+@Composable
+private fun EditorColorPairPicker(pair: EditorColorPair, fallback: (dark: Boolean) -> Color, onChange: (EditorColorPair) -> Unit) {
+    val currentDark = LocalDarkMode.current
+    var dark by remember { mutableStateOf(currentDark) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val tabs = listOf(false to R.string.editor_typography_color_light, true to R.string.editor_typography_color_dark)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            tabs.forEachIndexed { index, (value, label) ->
+                SegmentedButton(
+                    selected = dark == value,
+                    onClick = { dark = value },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = tabs.size),
+                ) { Text(stringResource(label)) }
+            }
+        }
+        val argb = pair.of(dark)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.editor_typography_color_follow), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Switch(checked = argb == null, onCheckedChange = { follow ->
+                onChange(pair.with(dark, if (follow) null else fallback(dark).toArgb().toLong() and 0xFFFFFFFFL))
+            })
+        }
+        if (argb != null) ColorPickerRow(Color(argb.toInt())) { onChange(pair.with(dark, it.toArgb().toLong() and 0xFFFFFFFFL)) }
     }
 }
 
@@ -214,18 +283,54 @@ fun EditorTypographyControls(
             format = { "%.2f×".format(it) },
             onChange = { onChange(typography.copy(lineHeight = it)) },
         )
+        TypographyStepper(
+            label = stringResource(R.string.editor_typography_text_brightness),
+            value = typography.textBrightness,
+            range = EditorTypography.MIN_TEXT_BRIGHTNESS..1f,
+            step = 0.05f,
+            format = { "${(it * 100).roundToInt()}%" },
+            onChange = { onChange(typography.copy(textBrightness = it)) },
+        )
+        Text(stringResource(R.string.editor_typography_text_color), style = MaterialTheme.typography.bodyMedium)
+        EditorColorPairPicker(
+            pair = typography.textColor,
+            fallback = { dark -> if (dark) Color(0xFFE3E2E9) else Color(0xFF1A1B20) },
+            onChange = { onChange(typography.copy(textColor = it)) },
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.editor_typography_quote_color), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.editor_typography_quote_color_desc), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = typography.quoteHighlight, onCheckedChange = { onChange(typography.copy(quoteHighlight = it)) },
+                modifier = Modifier.padding(start = 12.dp))
+        }
+        val tertiary = MaterialTheme.colorScheme.tertiary
+        if (typography.quoteHighlight) EditorColorPairPicker(
+            pair = typography.quoteColor,
+            fallback = { tertiary },
+            onChange = { onChange(typography.copy(quoteColor = it)) },
+        )
         val family = rememberEditorFontFamily(typography.font, display)
+        val quoted = typography.quoteColor.current() ?: tertiary
+        val sample = stringResource(R.string.editor_typography_preview) + "\n" + stringResource(R.string.editor_typography_preview_quote)
         Text(
-            stringResource(R.string.editor_typography_preview),
+            remember(sample, typography.quoteHighlight, quoted) {
+                AnnotatedString.Builder(sample).apply {
+                    if (typography.quoteHighlight) workspaceQuotedSpans(sample).forEach { addStyle(SpanStyle(color = quoted), it.start, it.end) }
+                }.toAnnotatedString()
+            },
             style = MaterialTheme.typography.bodySmall.copy(
                 fontFamily = family,
                 fontSize = typography.fontSize.sp,
                 letterSpacing = typography.letterSpacing.em,
                 lineHeight = (typography.fontSize * typography.lineHeight).sp,
+                color = editorTextColor(Color.Unspecified, typography),
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
                 .padding(12.dp),
         )
         TextButton(onClick = { onChange(default) }, enabled = typography != default, modifier = Modifier.align(Alignment.End)) {
@@ -252,7 +357,11 @@ internal fun rememberAppEditorTypographyWriter(): (EditorTypography) -> Unit {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun WorkspaceEditorTypographySheet(onDismiss: () -> Unit) {
+internal fun WorkspaceEditorTypographySheet(
+    onDismiss: () -> Unit,
+    topRows: (@Composable () -> Unit)? = null,
+    extraRows: @Composable () -> Unit = {},
+) {
     val display = LocalSettings.current.displaySetting
     val write = rememberAppEditorTypographyWriter()
     var typography by remember { mutableStateOf(display.appEditorTypography) }
@@ -266,6 +375,10 @@ internal fun WorkspaceEditorTypographySheet(onDismiss: () -> Unit) {
                 .widthIn(max = 640.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            topRows?.let { rows ->
+                rows()
+                HorizontalDivider()
+            }
             Text(stringResource(R.string.editor_typography_title), style = MaterialTheme.typography.titleMedium)
             EditorTypographyControls(
                 typography = typography,
@@ -276,6 +389,7 @@ internal fun WorkspaceEditorTypographySheet(onDismiss: () -> Unit) {
                     write(next)
                 },
             )
+            extraRows()
             HorizontalDivider()
             WorkspaceEditorAutoPairRow()
             HorizontalDivider()
@@ -308,22 +422,76 @@ private fun WorkspaceEditorToolbarSettingRows() {
 
 /** The App editor's 自动补全成对符号 switch, also on 设置-偏好设置-工作区; written on top of the latest settings. */
 @Composable
-private fun WorkspaceEditorAutoPairRow() {
+private fun WorkspaceEditorAutoPairRow() = DisplaySwitchRow(
+    title = stringResource(R.string.setting_workspace_editor_auto_pair),
+    description = stringResource(R.string.setting_workspace_editor_auto_pair_desc),
+    checked = LocalSettings.current.displaySetting.workspaceEditorAutoPair,
+) { display, value -> display.copy(workspaceEditorAutoPair = value) }
+
+/** Reading mode's 翻页方式 selector, also on 设置-偏好设置-工作区; written on top of the latest settings. */
+@Composable
+internal fun WorkspaceReaderModeRow() {
     val settingsStore = koinInject<SettingsStore>()
     val appScope = koinInject<AppScope>()
-    val checked = LocalSettings.current.displaySetting.workspaceEditorAutoPair
+    val verticalScroll = LocalSettings.current.displaySetting.workspaceReaderVerticalScroll
+    Column(Modifier.padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.setting_workspace_reader_mode), style = MaterialTheme.typography.bodyMedium)
+        Text(
+            stringResource(R.string.setting_workspace_reader_mode_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        WorkspaceReaderModeSelector(verticalScroll) { next ->
+            appScope.launch {
+                settingsStore.update { it.copy(displaySetting = it.displaySetting.copy(workspaceReaderVerticalScroll = next)) }
+            }
+        }
+    }
+}
+
+/** Horizontal pages / Vertical scroll for reading mode, shared between Aa sheet and Workspace preferences. */
+@Composable
+internal fun WorkspaceReaderModeSelector(verticalScroll: Boolean, onChange: (Boolean) -> Unit) {
+    val options = listOf(
+        false to R.string.setting_workspace_reader_mode_horizontal,
+        true to R.string.setting_workspace_reader_mode_vertical,
+    )
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (value, label) ->
+            SegmentedButton(
+                selected = verticalScroll == value,
+                onClick = { onChange(value) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+            ) { Text(stringResource(label)) }
+        }
+    }
+}
+
+/** Reading mode's 音量键翻页 switch, also on 设置-偏好设置-工作区; written on top of the latest settings. */
+@Composable
+internal fun WorkspaceReaderVolumeKeysRow() = DisplaySwitchRow(
+    title = stringResource(R.string.setting_workspace_reader_volume_keys),
+    description = stringResource(R.string.setting_workspace_reader_volume_keys_desc),
+    checked = LocalSettings.current.displaySetting.workspaceReaderVolumeKeys,
+) { display, value -> display.copy(workspaceReaderVolumeKeys = value) }
+
+@Composable
+private fun DisplaySwitchRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    update: (DisplaySetting, Boolean) -> DisplaySetting,
+) {
+    val settingsStore = koinInject<SettingsStore>()
+    val appScope = koinInject<AppScope>()
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
         Column(Modifier.weight(1f)) {
-            Text(stringResource(R.string.setting_workspace_editor_auto_pair), style = MaterialTheme.typography.bodyMedium)
-            Text(
-                stringResource(R.string.setting_workspace_editor_auto_pair_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = checked, onCheckedChange = { value ->
             appScope.launch {
-                settingsStore.update { it.copy(displaySetting = it.displaySetting.copy(workspaceEditorAutoPair = value)) }
+                settingsStore.update { it.copy(displaySetting = update(it.displaySetting, value)) }
             }
         }, modifier = Modifier.padding(start = 12.dp))
     }

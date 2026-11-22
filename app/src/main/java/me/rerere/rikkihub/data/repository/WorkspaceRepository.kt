@@ -42,6 +42,7 @@ import me.rerere.workspace.WorkspaceDeviceMountSpec
 import me.rerere.workspace.WorkspacePathInfo
 import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.workspace.WorkspaceStorageArea
+import me.rerere.workspace.WorkspaceTransferItemResult
 import me.rerere.workspace.WorkspaceTransferMode
 import me.rerere.workspace.WorkspaceTransferProgress
 import me.rerere.workspace.WorkspaceTransferResult
@@ -838,6 +839,32 @@ class WorkspaceRepository(
         manager.transferFiles(source.root, paths, target.root, targetDir, mode, onProgress)
     }
 
+    /** Built-in file manager import: copies [paths] of the host folder [sourceRoot] into [area]/[targetDir]. */
+    suspend fun importHostFiles(
+        id: String,
+        area: WorkspaceStorageArea,
+        sourceRoot: File,
+        paths: List<String>,
+        targetDir: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit = {},
+    ): WorkspaceTransferResult = withContext(Dispatchers.IO) {
+        val workspace = requireWorkspace(id)
+        manager.importFromHost(sourceRoot, paths, workspace.root, area, targetDir, onProgress)
+    }
+
+    /** Built-in file manager import of a whole folder (a workspace folder of the library) as [name]. */
+    suspend fun importHostFolder(
+        id: String,
+        area: WorkspaceStorageArea,
+        sourceDir: File,
+        name: String,
+        targetDir: String,
+        onProgress: (WorkspaceTransferProgress) -> Unit = {},
+    ): WorkspaceTransferItemResult = withContext(Dispatchers.IO) {
+        val workspace = requireWorkspace(id)
+        manager.importFolderFromHost(sourceDir, name, workspace.root, area, targetDir, onProgress)
+    }
+
     suspend fun executeCommand(
         id: String,
         command: String,
@@ -922,6 +949,18 @@ class WorkspaceRepository(
                 shellCompatibilityMode = workspace.shellCompatibilityMode))
         }
 
+    /** Starts a long-lived program on plain pipes inside the workspace rootfs ([filesScope]: confined like model shells). */
+    suspend fun openSubprocess(
+        workspaceId: String,
+        request: me.rerere.workspace.WorkspaceSubprocessRequest,
+        filesScope: String? = null,
+    ): me.rerere.workspace.WorkspaceSubprocess =
+        withContext(Dispatchers.IO) {
+            val workspace = requireWorkspace(workspaceId)
+            manager.openSubprocess(workspace.root, request.copy(mounts = agentMounts(workspace, filesScope),
+                shellCompatibilityMode = workspace.shellCompatibilityMode))
+        }
+
     /**
      * Shell and distribution of a READY workspace's rootfs for the system prompt; null otherwise.
      * Two small host-side file reads, no PRoot.
@@ -958,7 +997,7 @@ class WorkspaceRepository(
             settings.copy(
                 assistants = settings.assistants.map { assistant ->
                     if (assistant.workspaceId?.toString() == workspaceId) {
-                        assistant.copy(workspaceId = null)
+                        assistant.withWorkspace(null)
                     } else {
                         assistant
                     }

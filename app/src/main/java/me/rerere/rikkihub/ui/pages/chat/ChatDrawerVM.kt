@@ -1,6 +1,7 @@
 package me.rerere.rikkihub.ui.pages.chat
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -23,10 +24,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkihub.R
+import me.rerere.rikkihub.data.character.CharacterListing
+import me.rerere.rikkihub.data.character.observeListing
+import me.rerere.rikkihub.data.character.setFavorite
 import me.rerere.rikkihub.data.datastore.ConversationSortOrder
 import me.rerere.rikkihub.data.datastore.SettingsStore
+import me.rerere.rikkihub.data.model.CharacterSummary
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.data.model.Folder
+import me.rerere.rikkihub.data.repository.CharacterRepository
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.data.repository.FolderRepository
 import me.rerere.rikkihub.data.ai.MemoryConsolidationScheduler
@@ -38,11 +44,14 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.uuid.Uuid
 
+private const val TAG = "ChatDrawerVM"
+
 class ChatDrawerVM(
     private val context: Application,
     private val settingsStore: SettingsStore,
     conversationRepo: ConversationRepository,
     private val folderRepo: FolderRepository,
+    private val characterRepo: CharacterRepository,
     private val chatService: ChatService,
     private val memoryConsolidationScheduler: MemoryConsolidationScheduler,
     private val savedStateHandle: SavedStateHandle,
@@ -99,6 +108,27 @@ class ChatDrawerVM(
                 }
             }
             .cachedIn(viewModelScope)
+
+    // 头像条：收藏的角色（最多 CharacterListing.QUICK_LIMIT 个），没有收藏就是空，条也不显示
+    val favouriteCharacters: StateFlow<List<CharacterSummary>> = characterRepo.observeSummaries()
+        .map { CharacterListing.favourites(it) }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 角色选择层：搜索词和结果。选择层关着时没人订阅，就不查；停掉后旧结果不留（replayExpirationMillis = 0），
+    // 重开时从最新的数据排一次顺序，不会拿着关闭前的旧列表排
+    val characterQuery = MutableStateFlow("")
+    val characters: StateFlow<List<CharacterSummary>?> = characterRepo.observeListing(characterQuery)
+        .map<_, List<CharacterSummary>?> { it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000, replayExpirationMillis = 0), null)
+
+    fun setCharacterFavourite(id: Uuid, fav: Boolean) {
+        viewModelScope.launch {
+            // 角色被别处删掉了就算了，列表会自己刷新
+            runCatching { characterRepo.setFavorite(id, fav) }
+                .onFailure { Log.w(TAG, "setCharacterFavourite failed", it) }
+        }
+    }
 
     val scrollIndex: Int get() = savedStateHandle["scrollIndex"] ?: 0
     val scrollOffset: Int get() = savedStateHandle["scrollOffset"] ?: 0

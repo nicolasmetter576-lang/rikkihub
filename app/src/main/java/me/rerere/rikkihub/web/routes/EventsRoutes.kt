@@ -7,9 +7,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.serialization.Serializable
+import me.rerere.rikkihub.data.cli.AcpSessionManager
 import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.data.repository.FolderRepository
@@ -43,6 +46,9 @@ fun Route.eventsRoutes(
     settingsStore: SettingsStore,
     workspaceRepository: WorkspaceRepository,
     subagentPresetRepository: SubagentPresetRepository? = null,
+    /** Creator conversation ids whose proposals changed; pushed as the `creator_proposals` event. */
+    creatorProposalChanges: kotlinx.coroutines.flow.Flow<String>? = null,
+    acpSessionManager: AcpSessionManager? = null,
 ) {
     sse("/events") {
         heartbeat {
@@ -52,8 +58,7 @@ fun Route.eventsRoutes(
         // Projected settings snapshot; StateFlow emits the current value
         // immediately on connect. NEVER serialize the raw Settings — it
         // contains live credentials (provider keys, MCP oauth, proxy/webdav
-        // passwords). The projection masks secrets to "+Configured flags and
-        // hides creator-domain resources (see WebSettingsProjection).
+        // passwords). The projection masks secrets to "+Configured flags (see WebSettingsProjection).
         val settingsEvents = settingsStore.settingsFlow.map { settings ->
             EventPayload(
                 event = "settings",
@@ -128,11 +133,59 @@ fun Route.eventsRoutes(
         val presetEvents = subagentPresetRepository?.libraryFlow()?.map {
             EventPayload(event = "subagent_presets_update", json = "{\"timestamp\":${System.currentTimeMillis()}}")
         } ?: emptyFlow()
-        merge(settingsEvents, conversationListEvents, folderEvents, workspaceEvents, presetEvents).collect { payload ->
+        val creatorEvents = creatorProposalChanges?.map { conversationId ->
+            EventPayload(event = "creator_proposals", json = buildString { append("{\"conversationId\":\""); append(conversationId); append("\"}") })
+        } ?: emptyFlow()
+        val cliRuntimeEvents = acpSessionManager?.state
+            ?.flatMapLatest { processState ->
+                if (processState == null) {
+                    flowOf(
+                        EventPayload(
+                            event = "cli_runtime",
+                            json = JsonInstant.encodeToString(CliRuntimeSseEvent(active = false))
+                        )
+                    )
+                } else {
+                    processState.runtime.map { runtime ->
+                        EventPayload(
+                            event = "cli_runtime",
+                            json = JsonInstant.encodeToString(
+                                CliRuntimeSseEvent(
+                                    active = true,
+                                    conversationId = processState.conversationId.toString(),
+                                    agentId = processState.agentId,
+                                    busy = processState.busy,
+                                    currentModelId = runtime.currentModelId,
+                                    currentModeId = runtime.currentModeId,
+                                    usedTokens = runtime.usedTokens,
+                                    contextTokens = runtime.contextTokens,
+                                    title = runtime.title,
+                                )
+                            )
+                        )
+                    }
+                }
+            }
+            ?.distinctUntilChanged()
+            ?: emptyFlow()
+        merge(settingsEvents, conversationListEvents, folderEvents, workspaceEvents, presetEvents, creatorEvents, cliRuntimeEvents).collect { payload ->
             send(data = payload.json, event = payload.event)
         }
     }
 }
+
+@Serializable
+private data class CliRuntimeSseEvent(
+    val active: Boolean,
+    val conversationId: String? = null,
+    val agentId: String? = null,
+    val busy: Boolean = false,
+    val currentModelId: String? = null,
+    val currentModeId: String? = null,
+    val usedTokens: Long? = null,
+    val contextTokens: Long? = null,
+    val title: String? = null,
+)
 
 private data class EventPayload(
     val event: String,

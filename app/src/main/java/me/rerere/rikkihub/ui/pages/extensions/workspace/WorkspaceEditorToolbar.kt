@@ -47,6 +47,7 @@ import me.rerere.rikkihub.ui.context.LocalToaster
 internal enum class WorkspaceEditorToolbarItem(val id: String, @StringRes val label: Int, val command: WorkspaceMarkdownCommand? = null) {
     TUIQIAO("tuiqiao", R.string.tuiqiao_title),
     ZAIZAO("zaizao", R.string.zaizao_title),
+    QUBAGU("qubagu", R.string.qubagu_toolbar),
     FIND("find", R.string.workspace_editor_find),
     FORMAT("format", R.string.workspace_editor_format),
     HEADING("heading", R.string.workspace_editor_heading, WorkspaceMarkdownCommand.HEADING),
@@ -73,8 +74,8 @@ internal fun workspaceEditorToolbarOrder(stored: List<String>): List<WorkspaceEd
     return ordered + WorkspaceEditorToolbarItem.entries.filterNot { it in ordered }
 }
 
-/** Buttons per row in multi-row mode; 15 puts every button of a Markdown file on one row. */
-internal val WORKSPACE_TOOLBAR_PER_ROW = 3..15
+/** Buttons per row in multi-row mode; 16 puts every button of a Markdown file on one row. */
+internal val WORKSPACE_TOOLBAR_PER_ROW = 3..16
 
 /**
  * Multi-row mode cuts the buttons in order into rows of [perRow] (clamped to [WORKSPACE_TOOLBAR_PER_ROW]),
@@ -89,8 +90,9 @@ internal fun workspaceEditorToolbarRows(
 
 /**
  * What the open file offers. Markdown buttons need [markdown]; 排版 needs a [formatKind] (Markdown and
- * plain text only); 推敲/再造 show when their callback is set (same rule as the selection menu); Find,
- * Undo and Redo are always there.
+ * plain text only); 推敲/再造 show when their callback is set (same rule as the selection menu); 八股 when
+ * [qubagu] is set; Find, Undo and Redo are always there. While 八股 marks are shown the text is read-only and
+ * every button that would change it is greyed out (Find and 八股 itself stay).
  */
 internal class WorkspaceEditorToolbarActions(
     val markdown: Boolean,
@@ -98,11 +100,15 @@ internal class WorkspaceEditorToolbarActions(
     val onTuiqiao: ((start: Int, end: Int) -> Unit)? = null,
     val onZaizao: ((start: Int, end: Int) -> Unit)? = null,
     val onFind: () -> Unit = {},
-)
+    val qubagu: WorkspaceEditorQubagu? = null,
+) {
+    val locked: Boolean get() = qubagu?.active == true
+}
 
 internal fun WorkspaceEditorToolbarItem.availableFor(actions: WorkspaceEditorToolbarActions): Boolean = when (this) {
     WorkspaceEditorToolbarItem.TUIQIAO -> actions.onTuiqiao != null
     WorkspaceEditorToolbarItem.ZAIZAO -> actions.onZaizao != null
+    WorkspaceEditorToolbarItem.QUBAGU -> actions.qubagu != null
     WorkspaceEditorToolbarItem.FORMAT -> actions.formatKind != null
     WorkspaceEditorToolbarItem.FIND, WorkspaceEditorToolbarItem.UNDO, WorkspaceEditorToolbarItem.REDO -> true
     else -> actions.markdown
@@ -159,23 +165,30 @@ private fun WorkspaceEditorToolbarButton(
     onEdited: () -> Unit,
 ) {
     val label = stringResource(item.label)
+    val unlocked = !actions.locked
     when (item) {
-        WorkspaceEditorToolbarItem.UNDO -> WorkspaceEditorToolbarTextButton(onClick = { state.undoState.undo(); onEdited() }, size, enabled = state.undoState.canUndo, fill = fill) { ToolbarLabel(label, fill) }
+        WorkspaceEditorToolbarItem.UNDO -> WorkspaceEditorToolbarTextButton(onClick = { state.undoState.undo(); onEdited() }, size, enabled = unlocked && state.undoState.canUndo, fill = fill) { ToolbarLabel(label, fill) }
 
-        WorkspaceEditorToolbarItem.REDO -> WorkspaceEditorToolbarTextButton(onClick = { state.undoState.redo(); onEdited() }, size, enabled = state.undoState.canRedo, fill = fill) { ToolbarLabel(label, fill) }
+        WorkspaceEditorToolbarItem.REDO -> WorkspaceEditorToolbarTextButton(onClick = { state.undoState.redo(); onEdited() }, size, enabled = unlocked && state.undoState.canRedo, fill = fill) { ToolbarLabel(label, fill) }
+
+        WorkspaceEditorToolbarItem.QUBAGU -> actions.qubagu?.let { qubagu ->
+            WorkspaceEditorToolbarTextButton(onClick = qubagu.onToggle, size, enabled = !qubagu.scanning, fill = fill, checked = qubagu.active) {
+                ToolbarLabel(if (qubagu.scanning) stringResource(R.string.qubagu_toolbar_scanning) else label, fill)
+            }
+        }
 
         WorkspaceEditorToolbarItem.TUIQIAO, WorkspaceEditorToolbarItem.ZAIZAO -> {
             // Selection only (user decision): the button is grey until text is selected.
             val action = if (item == WorkspaceEditorToolbarItem.TUIQIAO) actions.onTuiqiao else actions.onZaizao
             val selection = state.selection
-            WorkspaceEditorToolbarTextButton(onClick = { action?.invoke(selection.min, selection.max) }, size, enabled = action != null && !selection.collapsed, fill = fill) {
+            WorkspaceEditorToolbarTextButton(onClick = { action?.invoke(selection.min, selection.max) }, size, enabled = unlocked && action != null && !selection.collapsed, fill = fill) {
                 ToolbarLabel(label, fill)
             }
         }
 
         WorkspaceEditorToolbarItem.FIND -> WorkspaceEditorToolbarTextButton(onClick = actions.onFind, size, fill = fill) { ToolbarLabel(label, fill) }
 
-        WorkspaceEditorToolbarItem.FORMAT -> actions.formatKind?.let { WorkspaceEditorFormatButton(state, it, label, size, fill, onEdited) }
+        WorkspaceEditorToolbarItem.FORMAT -> actions.formatKind?.let { WorkspaceEditorFormatButton(state, it, label, size, fill, unlocked, onEdited) }
 
         else -> WorkspaceEditorToolbarTextButton(onClick = {
             val selection = state.selection
@@ -185,7 +198,7 @@ private fun WorkspaceEditorToolbarButton(
                 this.selection = TextRange(edit.selectionStart, edit.selectionEnd)
             }
             onEdited()
-        }, size, fill = fill) { ToolbarLabel(label, fill) }
+        }, size, enabled = unlocked, fill = fill) { ToolbarLabel(label, fill) }
     }
 }
 
@@ -197,6 +210,7 @@ private fun WorkspaceEditorFormatButton(
     label: String,
     size: WorkspaceEditorToolbarSize,
     fill: Boolean,
+    enabled: Boolean,
     onEdited: () -> Unit,
 ) {
     val toaster = LocalToaster.current
@@ -205,7 +219,7 @@ private fun WorkspaceEditorFormatButton(
     val unchangedMessage = stringResource(R.string.workspace_editor_format_unchanged)
     // A plain button like the others (no dropdown arrow): the menu opens below it.
     Box {
-        WorkspaceEditorToolbarTextButton(onClick = { expanded = true }, size, fill = fill) { ToolbarLabel(label, fill) }
+        WorkspaceEditorToolbarTextButton(onClick = { expanded = true }, size, enabled = enabled, fill = fill) { ToolbarLabel(label, fill) }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             val selection = state.selection
             val scope = if (selection.collapsed) stringResource(R.string.workspace_editor_format_scope_all) else {

@@ -1,79 +1,70 @@
 package me.rerere.rikkihub.ui.pages.assistant.detail
 
-import android.text.format.DateUtils
 import androidx.annotation.StringRes
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Add01
-import me.rerere.hugeicons.stroke.ArrowRight01
-import me.rerere.hugeicons.stroke.Brain02
-import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.Settings03
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import me.rerere.rikkihub.ui.components.ui.AlertDialog
-import androidx.compose.material3.ContainedLoadingIndicator
-import me.rerere.rikkihub.ui.components.ui.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.ArrowRight01
+import me.rerere.hugeicons.stroke.Brain02
+import me.rerere.hugeicons.stroke.FolderTransfer
+import me.rerere.hugeicons.stroke.Globe02
+import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.Screen
-import me.rerere.rikkihub.data.ai.MemoryConsolidationStatus
 import me.rerere.rikkihub.data.model.Assistant
-import me.rerere.rikkihub.data.model.MemoryFile
-import me.rerere.rikkihub.data.model.groupByDirectory
-import me.rerere.rikkihub.data.model.memoryTitleOf
-import kotlinx.coroutines.launch
+import me.rerere.rikkihub.data.repository.MemoryMigrationPreview
 import me.rerere.rikkihub.ui.components.nav.BackButton
+import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import me.rerere.rikkihub.ui.components.ui.CardGroup
-import me.rerere.rikkihub.ui.components.ui.ItemAction
-import me.rerere.rikkihub.ui.components.ui.ItemActionMenu
+import me.rerere.rikkihub.ui.components.ui.FilledTonalButton
 import me.rerere.rikkihub.ui.components.ui.PagerTab
 import me.rerere.rikkihub.ui.components.ui.PagerTabs
 import me.rerere.rikkihub.ui.components.ui.switchItem
+import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.context.LocalSettings
-import me.rerere.rikkihub.ui.pages.memory.resultText
+import me.rerere.rikkihub.ui.context.LocalToaster
+import me.rerere.rikkihub.ui.pages.memory.MemoryEmptyState
+import me.rerere.rikkihub.ui.pages.memory.MemoryFileListContent
+import me.rerere.rikkihub.ui.pages.memory.MemoryMigrationDialog
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import me.rerere.rikkihub.ui.theme.CustomColors
-import me.rerere.rikkihub.ui.components.ui.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 // 记忆文件放第一页：从侧边栏的整理入口进来时能直接看到整理状态
 private enum class MemoryTab(
@@ -97,17 +88,44 @@ fun AssistantMemoryPage(id: String) {
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
     val consolidation by vm.memoryConsolidation.collectAsStateWithLifecycle()
+    val privateMemoryCount by vm.privateMemoryCount.collectAsStateWithLifecycle()
+    val globalMemoryCount by vm.globalMemoryCount.collectAsStateWithLifecycle()
+    val globalMemoryAssistantCount by vm.globalMemoryAssistantCount.collectAsStateWithLifecycle()
+    val globalMemoryDreamRunning by vm.globalMemoryDreamRunning.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val settings = LocalSettings.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val toaster = LocalToaster.current
+    val context = LocalContext.current
     val pagerState = rememberPagerState { MemoryTab.entries.size }
     val scope = rememberCoroutineScope()
 
+    var showMigrateDialog by remember { mutableStateOf(false) }
+    var migrationPreview by remember { mutableStateOf<MemoryMigrationPreview?>(null) }
+    var previewLoading by remember { mutableStateOf(false) }
+    var migrating by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showMigrateDialog) {
+        if (!showMigrateDialog) return@LaunchedEffect
+        previewLoading = true
+        migrationPreview = null
+        migrationPreview = runCatching { vm.previewMigrateToGlobal() }.getOrNull()
+        previewLoading = false
+    }
+
+    val isGlobal = assistant.useGlobalMemory
+
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.assistant_page_tab_memory))
+                },
+                subtitle = {
+                    Text(
+                        stringResource(
+                            if (isGlobal) R.string.memory_scope_global_label else R.string.memory_scope_assistant_label
+                        )
+                    )
                 },
                 navigationIcon = {
                     BackButton()
@@ -119,11 +137,10 @@ fun AssistantMemoryPage(id: String) {
                         }
                     }
                 },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         Column(
@@ -135,7 +152,7 @@ fun AssistantMemoryPage(id: String) {
                 pagerState = pagerState,
                 tabs = MemoryTab.entries,
                 modifier = Modifier.padding(bottom = 4.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
+                contentPadding = PaddingValues(horizontal = AppSpacing.sm),
             )
 
             HorizontalPager(
@@ -145,33 +162,213 @@ fun AssistantMemoryPage(id: String) {
                     .weight(1f),
             ) { page ->
                 when (MemoryTab.entries[page]) {
-                    MemoryTab.FILES -> MemoryFilesTab(
+                    MemoryTab.FILES -> MemoryFileListContent(
                         memories = memories,
                         consolidation = consolidation.takeIf { assistant.enableMemory },
                         autoDream = assistant.autoConsolidateMemory && settings.memoryDream.autoDream,
+                        canBackfill = assistant.enableMemory,
                         onOrganizeMemory = { vm.organizeMemory() },
+                        onCancelDream = { vm.cancelDream() },
+                        onCountBackfill = { vm.countBackfillCandidates(it) },
+                        onBackfill = { vm.backfillMemory(it) },
                         onOpenMemory = { path -> navController.navigate(Screen.MemoryFile(vm.memoryId, path)) },
                         onDeleteMemory = { vm.deleteMemory(it) },
-                        onOpenSettings = {
-                            scope.launch { pagerState.animateScrollToPage(MemoryTab.SETTINGS.ordinal) }
+                        deleteWarning = if (isGlobal) stringResource(R.string.memory_global_delete_warning) else null,
+                        headerContent = {
+                            MemoryScopeBanner(
+                                isGlobal = isGlobal,
+                                privateMemoryCount = privateMemoryCount,
+                                globalMemoryAssistantCount = globalMemoryAssistantCount,
+                                onMigrateToGlobal = { showMigrateDialog = true },
+                            )
+                        },
+                        emptyStateContent = {
+                            val openSettings = {
+                                scope.launch { pagerState.animateScrollToPage(MemoryTab.SETTINGS.ordinal) }
+                                Unit
+                            }
+                            when {
+                                !assistant.enableMemory -> MemoryEmptyState(
+                                    description = stringResource(R.string.assistant_page_memory_empty_disabled_hint),
+                                    secondaryActionLabel = stringResource(R.string.settings),
+                                    onSecondaryAction = openSettings,
+                                )
+
+                                isGlobal && privateMemoryCount > 0 -> MemoryEmptyState(
+                                    description = stringResource(
+                                        R.string.memory_global_empty_with_private_hint,
+                                        privateMemoryCount,
+                                    ),
+                                    primaryActionLabel = stringResource(R.string.memory_migrate_to_global_button),
+                                    onPrimaryAction = { showMigrateDialog = true },
+                                    secondaryActionLabel = stringResource(R.string.settings),
+                                    onSecondaryAction = openSettings,
+                                )
+
+                                isGlobal -> MemoryEmptyState(
+                                    description = stringResource(R.string.global_memory_empty_hint),
+                                )
+
+                                else -> MemoryEmptyState(
+                                    description = stringResource(R.string.assistant_page_memory_empty_hint),
+                                )
+                            }
                         },
                     )
 
                     MemoryTab.SETTINGS -> MemorySettingsTab(
                         assistant = assistant,
-                        onUpdateAssistant = { vm.update(it) },
+                        privateMemoryCount = privateMemoryCount,
+                        globalMemoryCount = globalMemoryCount,
+                        onUpdateAssistant = { updated ->
+                            val switchedGlobal = updated.useGlobalMemory != assistant.useGlobalMemory
+                            vm.update(updated)
+                            if (switchedGlobal) {
+                                val message = when {
+                                    updated.useGlobalMemory && privateMemoryCount > 0 -> context.getString(
+                                        R.string.memory_switched_to_global_preserved_toast,
+                                        privateMemoryCount,
+                                    )
+
+                                    updated.useGlobalMemory -> context.getString(R.string.memory_switched_to_global_toast)
+                                    else -> context.getString(R.string.memory_switched_to_assistant_toast)
+                                }
+                                toaster.show(message = message, type = ToastType.Info)
+                            }
+                        },
+                        onMigrateToGlobal = { showMigrateDialog = true },
+                        onOpenGlobalMemory = { navController.navigate(Screen.GlobalMemory) },
                         onOpenDreamSettings = { navController.navigate(Screen.SettingMemoryDream) },
                     )
                 }
             }
         }
     }
+
+    if (showMigrateDialog) {
+        val displayName = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) }
+        MemoryMigrationDialog(
+            sourceName = displayName,
+            preview = migrationPreview,
+            loading = previewLoading,
+            migrating = migrating,
+            dreamRunning = globalMemoryDreamRunning,
+            showSyncMarksOption = true,
+            onDismiss = {
+                showMigrateDialog = false
+                migrationPreview = null
+            },
+            onConfirm = { strategy, syncMarks ->
+                migrating = true
+                scope.launch {
+                    val outcome = runCatching { vm.migrateToGlobal(strategy, syncMarks) }
+                    migrating = false
+                    showMigrateDialog = false
+                    migrationPreview = null
+                    outcome.onSuccess { result ->
+                        val msg = buildString {
+                            append(
+                                context.getString(
+                                    R.string.memory_migrate_result,
+                                    result.copied,
+                                    result.merged,
+                                    result.overwritten,
+                                    result.skipped,
+                                )
+                            )
+                            if (result.failedOversized.isNotEmpty()) {
+                                append("\n")
+                                append(
+                                    context.getString(
+                                        R.string.memory_migrate_result_oversized,
+                                        result.failedOversized.joinToString(", "),
+                                    )
+                                )
+                            }
+                        }
+                        toaster.show(
+                            message = msg,
+                            type = if (result.failedOversized.isEmpty()) ToastType.Success else ToastType.Warning,
+                        )
+                    }.onFailure { error ->
+                        toaster.show(
+                            message = error.message ?: context.getString(R.string.memory_migrate_failed),
+                            type = ToastType.Error,
+                        )
+                    }
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun MemoryScopeBanner(
+    isGlobal: Boolean,
+    privateMemoryCount: Int,
+    globalMemoryAssistantCount: Int,
+    onMigrateToGlobal: () -> Unit,
+) {
+    CardGroup {
+        item(
+            leadingContent = {
+                Icon(
+                    imageVector = if (isGlobal) HugeIcons.Globe02 else HugeIcons.Brain02,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            },
+            headlineContent = {
+                Text(
+                    stringResource(
+                        if (isGlobal) R.string.memory_scope_global_label else R.string.memory_scope_assistant_label
+                    )
+                )
+            },
+            supportingContent = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        if (isGlobal) {
+                            stringResource(R.string.memory_scope_global_hint, globalMemoryAssistantCount)
+                        } else {
+                            stringResource(R.string.memory_scope_assistant_hint)
+                        }
+                    )
+                    if (isGlobal && privateMemoryCount > 0) {
+                        Text(
+                            text = stringResource(R.string.memory_private_preserved_notice, privateMemoryCount),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            },
+            trailingContent = if (privateMemoryCount > 0) {
+                {
+                    if (isGlobal) {
+                        FilledTonalButton(onClick = onMigrateToGlobal) {
+                            Text(stringResource(R.string.memory_migrate_short_action))
+                        }
+                    } else {
+                        TextButton(onClick = onMigrateToGlobal) {
+                            Text(stringResource(R.string.memory_migrate_short_action))
+                        }
+                    }
+                }
+            } else {
+                null
+            },
+        )
+    }
 }
 
 @Composable
 private fun MemorySettingsTab(
     assistant: Assistant,
+    privateMemoryCount: Int,
+    globalMemoryCount: Int,
     onUpdateAssistant: (Assistant) -> Unit,
+    onMigrateToGlobal: () -> Unit,
+    onOpenGlobalMemory: () -> Unit,
     onOpenDreamSettings: () -> Unit,
 ) {
     var showTimeReminderIntervalDialog by remember(assistant.id) { mutableStateOf(false) }
@@ -218,7 +415,7 @@ private fun MemorySettingsTab(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = AppSpacing.sm, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         CardGroup {
@@ -246,6 +443,35 @@ private fun MemorySettingsTab(
                 enabled = assistant.enableMemory,
                 supportingContent = { Text(stringResource(R.string.assistant_page_global_memory_desc)) },
                 headlineContent = { Text(stringResource(R.string.assistant_page_global_memory)) },
+            )
+            if (privateMemoryCount > 0) {
+                item(
+                    onClick = onMigrateToGlobal,
+                    leadingContent = { Icon(HugeIcons.FolderTransfer, contentDescription = null) },
+                    headlineContent = { Text(stringResource(R.string.memory_migrate_to_global_button)) },
+                    supportingContent = {
+                        Text(
+                            stringResource(
+                                if (assistant.useGlobalMemory) {
+                                    R.string.memory_private_preserved_notice
+                                } else {
+                                    R.string.memory_migrate_from_private_desc
+                                },
+                                privateMemoryCount,
+                            )
+                        )
+                    },
+                    trailingContent = { Icon(HugeIcons.ArrowRight01, contentDescription = null) },
+                )
+            }
+            item(
+                onClick = onOpenGlobalMemory,
+                leadingContent = { Icon(HugeIcons.Globe02, contentDescription = null) },
+                headlineContent = { Text(stringResource(R.string.global_memory_manage_entry)) },
+                supportingContent = {
+                    Text(stringResource(R.string.memory_file_count_summary, globalMemoryCount))
+                },
+                trailingContent = { Icon(HugeIcons.ArrowRight01, contentDescription = null) },
             )
             switchItem(
                 checked = assistant.autoConsolidateMemory,
@@ -316,246 +542,3 @@ private fun MemorySettingsTab(
         }
     }
 }
-
-@Composable
-private fun MemoryFilesTab(
-    memories: List<MemoryFile>,
-    // 为 null 时不显示整理入口
-    consolidation: MemoryConsolidationStatus?,
-    // 助手和做梦设置都开着自动整理
-    autoDream: Boolean,
-    onOrganizeMemory: () -> Unit,
-    onOpenMemory: (path: String) -> Unit,
-    onDeleteMemory: (MemoryFile) -> Unit,
-    onOpenSettings: () -> Unit,
-) {
-    var pendingDeleteMemory by remember { mutableStateOf<MemoryFile?>(null) }
-    val memoryGroups = remember(memories) { memories.groupByDirectory() }
-
-    // 空列表不滚动，占位才能在剩余空间里居中
-    if (memoryGroups.isEmpty()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (consolidation != null) {
-                MemoryConsolidationSection(
-                    status = consolidation,
-                    autoDream = autoDream,
-                    onOrganize = onOrganizeMemory,
-                )
-            }
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                MemoryEmptyState(
-                    description = stringResource(
-                        if (consolidation != null) {
-                            R.string.assistant_page_memory_empty_hint
-                        } else {
-                            R.string.assistant_page_memory_empty_disabled_hint
-                        }
-                    ),
-                    showSettings = consolidation == null,
-                    onOpenSettings = onOpenSettings,
-                )
-            }
-        }
-        return
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        if (consolidation != null) {
-            MemoryConsolidationSection(
-                status = consolidation,
-                autoDream = autoDream,
-                onOrganize = onOrganizeMemory,
-            )
-        }
-
-        memoryGroups.fastForEach { (directory, files) ->
-            CardGroup(
-                title = { Text(memorySectionTitle(directory)) },
-            ) {
-                files.fastForEach { memory ->
-                    item(
-                        onClick = { onOpenMemory(memory.path) },
-                        trailingContent = {
-                            ItemActionMenu(
-                                actions = listOf(
-                                    ItemAction(
-                                        text = stringResource(R.string.delete),
-                                        icon = HugeIcons.Delete01,
-                                        destructive = true,
-                                        onClick = { pendingDeleteMemory = memory },
-                                    ),
-                                )
-                            )
-                        },
-                        headlineContent = {
-                            Text(
-                                text = memory.title,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        supportingContent = {
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                if (memory.description.isNotEmpty()) {
-                                    Text(
-                                        text = memory.description,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Text(
-                                    text = stringResource(
-                                        R.string.assistant_page_memory_updated_at,
-                                        relativeTimeOf(memory.updatedAt),
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline,
-                                )
-                            }
-                        },
-                    )
-                }
-            }
-        }
-    }
-
-    RikkaConfirmDialog(
-        show = pendingDeleteMemory != null,
-        title = stringResource(R.string.confirm_delete),
-        confirmText = stringResource(R.string.confirm),
-        dismissText = stringResource(R.string.cancel),
-        onConfirm = {
-            pendingDeleteMemory?.let(onDeleteMemory)
-            pendingDeleteMemory = null
-        },
-        onDismiss = { pendingDeleteMemory = null },
-        text = {
-            Text(
-                text = pendingDeleteMemory?.path.orEmpty(),
-                maxLines = 8,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    )
-}
-
-@Composable
-private fun MemoryEmptyState(
-    description: String,
-    showSettings: Boolean,
-    onOpenSettings: () -> Unit,
-) {
-    Column(
-        modifier = Modifier.padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            imageVector = HugeIcons.Brain02,
-            contentDescription = null,
-            modifier = Modifier.size(40.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = stringResource(R.string.assistant_page_memory_empty),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.outline,
-            textAlign = TextAlign.Center,
-        )
-        if (showSettings) {
-            TextButton(onClick = onOpenSettings) {
-                Text(stringResource(R.string.settings))
-            }
-        }
-    }
-}
-
-/** 后台整理的状态和手动入口 */
-@Composable
-private fun MemoryConsolidationSection(
-    status: MemoryConsolidationStatus,
-    autoDream: Boolean,
-    onOrganize: () -> Unit,
-) {
-    val lastRun = status.lastRun
-    CardGroup {
-        item(
-            headlineContent = { Text(stringResource(R.string.memory_dream_title)) },
-            supportingContent = { Text(memoryConsolidationSummary(status, autoDream)) },
-            trailingContent = {
-                if (status.running) {
-                    ContainedLoadingIndicator(modifier = Modifier.size(32.dp))
-                } else {
-                    FilledTonalButton(onClick = onOrganize) {
-                        Text(
-                            stringResource(
-                                if (lastRun?.error != null) {
-                                    R.string.assistant_page_memory_dream_retry
-                                } else {
-                                    R.string.assistant_page_memory_dream_now
-                                }
-                            )
-                        )
-                    }
-                }
-            },
-        )
-    }
-}
-
-@Composable
-private fun memoryConsolidationSummary(status: MemoryConsolidationStatus, autoDream: Boolean): String {
-    val lastRun = status.lastRun
-    return when {
-        status.running -> stringResource(R.string.memory_dreaming)
-        lastRun?.error != null -> lastRun.resultText()
-        else -> listOfNotNull(
-            status.pendingTurns.takeIf { it > 0 }?.let {
-                stringResource(R.string.assistant_page_memory_dream_pending, it)
-            },
-            lastRun?.let { "${relativeTimeOf(it.finishedAt)}: ${it.resultText()} (${durationTextOf(it.duration)})" },
-        ).joinToString("\n").ifEmpty {
-            stringResource(
-                if (autoDream) R.string.assistant_page_memory_dream_hint else R.string.assistant_page_memory_dream_manual_hint
-            )
-        }
-    }
-}
-
-// 按整秒显示成 "42s"、"1m 5s"
-private fun durationTextOf(duration: Duration): String = duration.inWholeSeconds.coerceAtLeast(1).seconds.toString()
-
-// 根目录下是 profile 和 preferences，都是关于用户本人的；记忆格式约定的几个目录有译名，其余的从目录名推
-@Composable
-private fun memorySectionTitle(directory: String): String = when (directory) {
-    "/" -> stringResource(R.string.assistant_page_memory_section_you)
-    "/topics" -> stringResource(R.string.assistant_page_memory_section_topics)
-    "/areas" -> stringResource(R.string.assistant_page_memory_section_areas)
-    "/people" -> stringResource(R.string.assistant_page_memory_section_people)
-    else -> memoryTitleOf(directory.removePrefix("/"))
-}
-
-// 一周内显示"41 分钟前"这样的相对时间，更早的显示日期
-private fun relativeTimeOf(time: Long): String = DateUtils.getRelativeTimeSpanString(
-    time,
-    System.currentTimeMillis(),
-    DateUtils.MINUTE_IN_MILLIS,
-    DateUtils.FORMAT_ABBREV_MONTH,
-).toString()

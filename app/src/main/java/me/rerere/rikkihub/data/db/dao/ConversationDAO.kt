@@ -82,8 +82,8 @@ interface ConversationDAO {
             "create_at=:createAt, update_at=:updateAt, suggestions=:chatSuggestions, is_pinned=:isPinned, " +
             "custom_system_prompt=:customSystemPrompt, mode_injection_ids=:modeInjectionIds, " +
             "lorebook_ids=:lorebookIds, workspace_cwd=:workspaceCwd, workspace_cwd_scoped=:workspaceCwdScoped, " +
-            "folder_id=:folderId, " +
-            "revision=revision+1 " +
+            "folder_id=:folderId, tavern_metadata=:tavernMetadata, character_id=:characterId, " +
+            "cli_session=:cliSession, compression=:compression, revision=revision+1 " +
             "WHERE id=:id AND revision=:expectedRevision AND generation=:expectedGeneration AND deleted_at IS NULL"
     )
     suspend fun updateCas(
@@ -103,6 +103,10 @@ interface ConversationDAO {
         workspaceCwd: String,
         workspaceCwdScoped: Boolean,
         folderId: String,
+        tavernMetadata: String,
+        characterId: String,
+        cliSession: String,
+        compression: String,
     ): Int
 
     /** 软删除（tombstone）：同事务置 deleted_at、generation+1（防 ABA）、revision+1。 */
@@ -161,11 +165,20 @@ interface ConversationDAO {
     @Query("UPDATE conversationentity SET custom_system_prompt = :customSystemPrompt, revision=revision+1 WHERE id = :id AND deleted_at IS NULL")
     suspend fun updateCustomSystemPrompt(id: String, customSystemPrompt: String)
 
+    @Query("UPDATE conversationentity SET compression = :compression, revision=revision+1 WHERE id = :id AND deleted_at IS NULL")
+    suspend fun updateCompression(id: String, compression: String)
+
     @Query("UPDATE conversationentity SET workspace_cwd = :workspaceCwd, revision=revision+1 WHERE id = :id AND deleted_at IS NULL")
     suspend fun updateWorkspaceCwd(id: String, workspaceCwd: String)
 
     @Query("UPDATE conversationentity SET workspace_cwd_scoped = :scoped, revision=revision+1 WHERE id = :id AND deleted_at IS NULL")
     suspend fun updateWorkspaceCwdScoped(id: String, scoped: Boolean)
+
+    @Query("UPDATE conversationentity SET tavern_metadata = :tavernMetadata, revision=revision+1 WHERE id = :id AND deleted_at IS NULL")
+    suspend fun updateTavernMetadata(id: String, tavernMetadata: String)
+
+    @Query("UPDATE conversationentity SET cli_session = :cliSession, revision=revision+1 WHERE id = :id AND deleted_at IS NULL")
+    suspend fun updateCliSession(id: String, cliSession: String)
 
     @Query("UPDATE conversationentity SET folder_id = '', revision=revision+1 WHERE folder_id = :folderId AND deleted_at IS NULL")
     suspend fun clearFolder(folderId: String)

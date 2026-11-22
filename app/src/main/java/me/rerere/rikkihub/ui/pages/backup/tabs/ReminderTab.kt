@@ -25,6 +25,7 @@ import me.rerere.rikkihub.ui.components.ui.CardGroup
 import me.rerere.rikkihub.ui.pages.backup.BackupVM
 import me.rerere.rikkihub.utils.toLocalDateTime
 import java.time.Instant
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun ReminderTab(vm: BackupVM) {
@@ -39,7 +40,7 @@ fun ReminderTab(vm: BackupVM) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+            .padding(AppSpacing.sm)
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {

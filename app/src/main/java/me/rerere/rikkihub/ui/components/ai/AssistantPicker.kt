@@ -7,20 +7,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.NavigationDrawerItem
@@ -35,13 +27,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Edit03
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.Screen
@@ -56,6 +46,8 @@ import kotlin.uuid.Uuid
 fun AssistantPicker(
     settings: Settings,
     onSelectAssistant: (Assistant) -> Unit,
+    onReorderAssistants: (movedId: Uuid, targetId: Uuid) -> Unit,
+    onUpdateCardAppearance: (assistantId: Uuid, note: String, cardWide: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     onClickSetting: () -> Unit,
 ) {
@@ -101,6 +93,8 @@ fun AssistantPicker(
                 showPicker = false
                 state.setSelectAssistant(assistant)
             },
+            onReorderAssistants = onReorderAssistants,
+            onUpdateCardAppearance = onUpdateCardAppearance,
             onDismiss = {
                 showPicker = false
             }
@@ -113,48 +107,43 @@ private fun AssistantPickerSheet(
     settings: Settings,
     currentAssistant: Assistant,
     onAssistantSelected: (Assistant) -> Unit,
+    onReorderAssistants: (movedId: Uuid, targetId: Uuid) -> Unit,
+    onUpdateCardAppearance: (assistantId: Uuid, note: String, cardWide: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
     val scope = rememberCoroutineScope()
-    val defaultAssistantName = stringResource(R.string.assistant_page_default_assistant)
 
     // 标签过滤状态
     var selectedTagIds by remember { mutableStateOf(emptySet<Uuid>()) }
+    var isDraggingAny by remember { mutableStateOf(false) }
+    var editingSlot by remember { mutableStateOf<Pair<Uuid, Boolean>?>(null) }
 
-    // 根据选中的标签过滤助手
-    val filteredAssistants = remember(settings.assistants, selectedTagIds) {
-        if (selectedTagIds.isEmpty()) {
-            settings.assistants
-        } else {
-            settings.assistants.filter { assistant ->
-                assistant.tags.any { tagId -> tagId in selectedTagIds }
-            }
+    // 停用的助手不列（正在用的除外），再按选中的标签过滤
+    val filteredAssistants = remember(settings.assistants, currentAssistant.id, selectedTagIds) {
+        settings.assistants.filter { assistant ->
+            (assistant.enabled || assistant.id == currentAssistant.id) &&
+                (selectedTagIds.isEmpty() || assistant.tags.any { tagId -> tagId in selectedTagIds })
         }
     }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        // 拖动排序期间禁用下拉手势，避免向下拖卡片时把抽屉关掉
+        sheetGesturesEnabled = !isDraggingAny,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.8f)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = stringResource(R.string.assistant_page_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
             // 标签过滤器
             if (settings.assistantTags.isNotEmpty()) {
                 LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(settings.assistantTags, key = { tag -> tag.id }) { tag ->
                         FilterChip(
@@ -171,77 +160,57 @@ private fun AssistantPickerSheet(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // 助手列表
-            val navController = LocalNavController.current
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(filteredAssistants, key = { it.id }) { assistant ->
-                    val checked = assistant.id == currentAssistant.id
-                    Card(
-                        onClick = { onAssistantSelected(assistant) },
-                        modifier = Modifier.animateItem(),
-                        shape = MaterialTheme.shapes.large,
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                            contentColor = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                        ),
-                    ) {
-                        AssistantItem(
-                            assistant = assistant,
-                            defaultAssistantName = defaultAssistantName,
-                            onEdit = {
-                                scope.launch {
-                                    sheetState.hide()
-                                    onDismiss()
-                                    navController.navigate(Screen.AssistantDetail(assistant.id.toString()))
-                                }
-                            }
-                        )
-                    }
-                }
-            }
+            // 双栏助手网格（无筛选时长按拖拽排序）
+            AssistantCardGrid(
+                assistants = filteredAssistants,
+                selectedAssistantId = currentAssistant.id,
+                dragEnabled = selectedTagIds.isEmpty(),
+                showDisabledBadge = false,
+                onClickAssistant = onAssistantSelected,
+                onOpenMenu = { slot ->
+                    editingSlot = slot.assistant.id to slot.autoExpanded
+                },
+                onReorderAssistants = onReorderAssistants,
+                onDraggingChange = { isDraggingAny = it },
+                contentPadding = PaddingValues(bottom = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                cardContainerColor = { _, selected ->
+                    if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                },
+                cardContentColor = { _, selected ->
+                    if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                },
+            )
         }
     }
-}
 
-@Composable
-private fun AssistantItem(
-    assistant: Assistant,
-    defaultAssistantName: String,
-    onEdit: () -> Unit
-) {
-    ListItem(
-        headlineContent = {
-            Text(
-                text = assistant.name.ifEmpty { defaultAssistantName },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+    val navController = LocalNavController.current
+    editingSlot?.let { (assistantId, autoExpanded) ->
+        val target = settings.assistants.find { it.id == assistantId }
+        if (target != null) {
+            AssistantCardConfigDialog(
+                assistant = target,
+                autoExpanded = autoExpanded,
+                onDismiss = { editingSlot = null },
+                onSave = { note, cardWide ->
+                    onUpdateCardAppearance(target.id, note, cardWide)
+                    editingSlot = null
+                },
+                onOpenDetail = {
+                    editingSlot = null
+                    scope.launch {
+                        sheetState.hide()
+                        onDismiss()
+                        navController.navigate(Screen.AssistantDetail(target.id.toString()))
+                    }
+                },
             )
-        },
-        leadingContent = {
-            UIAvatar(
-                name = assistant.name.ifEmpty { defaultAssistantName },
-                value = assistant.avatar,
-                modifier = Modifier.size(32.dp)
-            )
-        },
-        trailingContent = {
-            IconButton(
-                onClick = {
-                    onEdit()
-                }
-            ) {
-                Icon(
-                    imageVector = HugeIcons.Edit03,
-                    contentDescription = null
-                )
-            }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-    )
+        } else {
+            editingSlot = null
+        }
+    }
 }

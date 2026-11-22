@@ -23,7 +23,6 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.stream.ToolStreamProtocolException
 import me.rerere.ai.ui.UIMessage
-import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.json
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
@@ -175,7 +174,7 @@ class ChatCompletionsRequestToolPreflightTest {
     fun `custom body narrowing and reordering tools is accepted`() = runBlocking {
         FakeEndpoint().use { endpoint ->
             endpoint.enqueueSse(sseText("ok"))
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             api.streamText(
                 provider(endpoint.port),
                 listOf(UIMessage.user("hi")),
@@ -200,7 +199,7 @@ class ChatCompletionsRequestToolPreflightTest {
     fun `custom body reordering tools keeps both entries`() = runBlocking {
         FakeEndpoint().use { endpoint ->
             endpoint.enqueueSse(sseText("ok"))
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             api.streamText(
                 provider(endpoint.port),
                 listOf(UIMessage.user("hi")),
@@ -227,7 +226,7 @@ class ChatCompletionsRequestToolPreflightTest {
     fun `empty wire tool table via override is accepted`() = runBlocking {
         FakeEndpoint().use { endpoint ->
             endpoint.enqueueSse(sseText("ok"))
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             api.streamText(
                 provider(endpoint.port),
                 listOf(UIMessage.user("hi")),
@@ -247,7 +246,7 @@ class ChatCompletionsRequestToolPreflightTest {
     fun `plain text request without tools is accepted`() = runBlocking {
         FakeEndpoint().use { endpoint ->
             endpoint.enqueueSse(sseText("ok"))
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             api.streamText(
                 provider(endpoint.port),
                 listOf(UIMessage.user("hi")),
@@ -264,7 +263,7 @@ class ChatCompletionsRequestToolPreflightTest {
         // 预检针对顶层 wire `tools`；`extra.tools` 只是嵌套 payload，不误伤。
         FakeEndpoint().use { endpoint ->
             endpoint.enqueueSse(sseText("ok"))
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             api.streamText(
                 provider(endpoint.port),
                 listOf(UIMessage.user("hi")),
@@ -285,7 +284,7 @@ class ChatCompletionsRequestToolPreflightTest {
         for (mode in listOf("auto", "none", "required")) {
             FakeEndpoint().use { endpoint ->
                 endpoint.enqueueSse(sseText("ok"))
-                val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+                val api = ChatCompletionsAPI(OkHttpClient())
                 api.streamText(
                     provider(endpoint.port),
                     listOf(UIMessage.user("hi")),
@@ -303,7 +302,7 @@ class ChatCompletionsRequestToolPreflightTest {
     fun `named tool_choice referencing final wire tool is accepted`() = runBlocking {
         FakeEndpoint().use { endpoint ->
             endpoint.enqueueSse(sseText("ok"))
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             api.streamText(
                 provider(endpoint.port),
                 listOf(UIMessage.user("hi")),
@@ -327,7 +326,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `custom body injecting unknown tool fails before send`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             val e = assertPreflightFails(
                 endpoint, api,
                 params(
@@ -353,7 +352,7 @@ class ChatCompletionsRequestToolPreflightTest {
             })
         }
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             assertPreflightFails(
                 endpoint, api,
                 params(
@@ -371,7 +370,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `custom body wire table with duplicate names fails before send`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             assertPreflightFails(
                 endpoint, api,
                 params(
@@ -392,7 +391,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `duplicate registered tool names fail instead of picking the first`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             assertPreflightFails(
                 endpoint, api,
                 params(tools = listOf(tool("dup"), tool("dup"))),
@@ -405,7 +404,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `named tool_choice referencing narrowed-out tool fails before send`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             assertPreflightFails(
                 endpoint, api,
                 params(
@@ -427,7 +426,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `invalid tool_choice mode fails before send`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             assertPreflightFails(
                 endpoint, api,
                 params(
@@ -443,7 +442,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `legacy functions override fails before send`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             assertPreflightFails(
                 endpoint, api,
                 params(
@@ -459,7 +458,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `legacy function_call override fails before send`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             assertPreflightFails(
                 endpoint, api,
                 params(
@@ -477,7 +476,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `non array tools override fails before send`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             assertPreflightFails(
                 endpoint, api,
                 params(
@@ -495,7 +494,7 @@ class ChatCompletionsRequestToolPreflightTest {
         FakeEndpoint().use { endpoint ->
             endpoint.enqueueSse(sseText("ok"))
             val calls = AtomicInteger(0)
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             api.streamText(
                 provider(endpoint.port),
                 listOf(UIMessage.user("hi")),
@@ -514,7 +513,7 @@ class ChatCompletionsRequestToolPreflightTest {
     @Test
     fun `non streaming request shares the same preflight`() = runBlocking {
         FakeEndpoint().use { endpoint ->
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             try {
                 api.generateText(
                     provider(endpoint.port),
@@ -538,7 +537,7 @@ class ChatCompletionsRequestToolPreflightTest {
     fun `non streaming request sends after preflight passes`() = runBlocking {
         FakeEndpoint().use { endpoint ->
             endpoint.enqueueJson(nonStreamText("done"))
-            val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+            val api = ChatCompletionsAPI(OkHttpClient())
             val result = api.generateText(
                 provider(endpoint.port),
                 listOf(UIMessage.user("hi")),

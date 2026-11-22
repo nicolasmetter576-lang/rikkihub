@@ -205,6 +205,32 @@ class WebDavClient(
         }
     }
 
+    suspend fun move(fromPath: String, toPath: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val fromUrl = config.buildUrl(fromPath)
+            val toUrl = config.buildUrl(toPath)
+            Log.d(TAG, "MOVE: $fromUrl -> $toUrl")
+
+            val response: HttpResponse = httpClient.request(fromUrl) {
+                method = HttpMethod("MOVE")
+                basicAuth(config.username, config.password)
+                headers {
+                    append("Destination", toUrl)
+                    append("Overwrite", "T")
+                }
+            }
+
+            if (!response.status.isSuccess()) {
+                val errorBody = response.bodyAsText()
+                Log.e(TAG, "move failed: ${response.status} - $errorBody")
+                throw WebDavException("Failed to move: ${response.status}", response.status.value, errorBody)
+            }
+
+            Log.d(TAG, "move success: $fromPath -> $toPath")
+            Unit
+        }
+    }
+
     suspend fun head(path: String): Result<WebDavResourceInfo> = withContext(Dispatchers.IO) {
         runCatching {
             val url = config.buildUrl(path)

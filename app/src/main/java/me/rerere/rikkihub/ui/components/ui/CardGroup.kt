@@ -1,30 +1,38 @@
 package me.rerere.rikkihub.ui.components.ui
 
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import androidx.compose.foundation.layout.heightIn
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
@@ -50,9 +58,7 @@ import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.ui.theme.LocalAmoledStrong
 import me.rerere.rikkihub.ui.theme.amoledOutline
 
-private val CardGroupCorner = 20.dp
-private val CardGroupItemSpacing = 2.dp
-private val CardGroupInnerCorner = 4.dp
+internal val CardGroupCorner = 12.dp
 
 private data class CardGroupItem(
     val onClick: (() -> Unit)?,
@@ -65,6 +71,7 @@ private data class CardGroupItem(
     val colors: ListItemColors?,
     // 不为空时是表单项，标题行下方接这块内容
     val formContent: (@Composable ColumnScope.() -> Unit)? = null,
+    val searchKey: Int? = null,
 )
 
 @DslMarker
@@ -80,6 +87,8 @@ interface CardGroupScope {
         leadingContent: (@Composable () -> Unit)? = null,
         trailingContent: (@Composable () -> Unit)? = null,
         colors: ListItemColors? = null,
+        // 设置搜索用：这一项标题的字符串资源，搜索跳过来时滚到它并闪一下
+        searchKey: Int? = null,
         headlineContent: @Composable () -> Unit,
     )
 
@@ -90,6 +99,7 @@ interface CardGroupScope {
         supportingContent: (@Composable () -> Unit)? = null,
         leadingContent: (@Composable () -> Unit)? = null,
         trailingContent: (@Composable () -> Unit)? = null,
+        searchKey: Int? = null,
         content: @Composable ColumnScope.() -> Unit,
     )
 }
@@ -105,6 +115,7 @@ private class CardGroupScopeImpl : CardGroupScope {
         leadingContent: (@Composable () -> Unit)?,
         trailingContent: (@Composable () -> Unit)?,
         colors: ListItemColors?,
+        searchKey: Int?,
         headlineContent: @Composable () -> Unit,
     ) {
         items.add(
@@ -117,6 +128,7 @@ private class CardGroupScopeImpl : CardGroupScope {
                 leadingContent = leadingContent,
                 trailingContent = trailingContent,
                 colors = colors,
+                searchKey = searchKey,
             )
         )
     }
@@ -127,6 +139,7 @@ private class CardGroupScopeImpl : CardGroupScope {
         supportingContent: (@Composable () -> Unit)?,
         leadingContent: (@Composable () -> Unit)?,
         trailingContent: (@Composable () -> Unit)?,
+        searchKey: Int?,
         content: @Composable ColumnScope.() -> Unit,
     ) {
         items.add(
@@ -140,6 +153,7 @@ private class CardGroupScopeImpl : CardGroupScope {
                 trailingContent = trailingContent,
                 colors = null,
                 formContent = content,
+                searchKey = searchKey,
             )
         )
     }
@@ -153,6 +167,7 @@ fun CardGroupScope.switchItem(
     enabled: Boolean = true,
     supportingContent: (@Composable () -> Unit)? = null,
     leadingContent: (@Composable () -> Unit)? = null,
+    searchKey: Int? = null,
     headlineContent: @Composable () -> Unit,
 ) = item(
     onClick = if (enabled) {
@@ -164,15 +179,34 @@ fun CardGroupScope.switchItem(
     trailingContent = {
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     },
+    searchKey = searchKey,
     headlineContent = headlineContent,
 )
 
-// 分组里第 index 项的形状，给不方便走 CardGroup 的列表（比如可拖拽排序的）用
+// 列表里第 index 项的形状（首项上角、末项下角圆角，其余直角）：给不方便走 CardGroup 的长列表用，项与项之间放 CardGroupDivider
 fun cardGroupItemShape(index: Int, count: Int): Shape {
-    val top = if (index == 0) CardGroupCorner else CardGroupInnerCorner
-    val bottom = if (index == count - 1) CardGroupCorner else CardGroupInnerCorner
+    val top = if (index == 0) CardGroupCorner else 0.dp
+    val bottom = if (index == count - 1) CardGroupCorner else 0.dp
     return RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
 }
+
+/** 卡片组里相邻两项之间的分隔线：项与项紧贴不留空隙，只用这条细线分开 */
+@Composable
+fun CardGroupDivider(modifier: Modifier = Modifier) {
+    HorizontalDivider(
+        modifier = modifier.padding(horizontal = AppSpacing.sm),
+        thickness = CardGroupDividerThickness,
+        color = cardGroupDividerColor(),
+    )
+}
+
+internal val CardGroupDividerThickness = 0.6.dp
+
+// 普通模式各项是浅色底，线淡一些；AMOLED 强劲模式底色纯黑，用全不透明的轮廓色
+@Composable
+internal fun cardGroupDividerColor(): Color =
+    if (LocalAmoledStrong.current) MaterialTheme.colorScheme.outlineVariant
+    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
 
 // 列表项开头带圆形底色的图标
 @Composable
@@ -231,23 +265,22 @@ fun CardGroupValue(
 private fun CardGroupFormItem(
     item: CardGroupItem,
     formContent: @Composable ColumnScope.() -> Unit,
-    count: Int,
-    index: Int,
 ) {
     Surface(
-        modifier = item.modifier.fillMaxWidth(),
-        shape = cardGroupItemShape(index, count),
+        modifier = item.modifier
+            .fillMaxWidth()
+            .settingSearchReveal(item.searchKey),
         color = CustomColors.listItemColors.containerColor,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = AppSpacing.sm, vertical = AppSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         ) {
             if (item.headlineContent != null || item.leadingContent != null || item.trailingContent != null) {
                 Row(
                     // 和 ListItem 一致：带说明文字时，两侧内容靠上对齐
                     verticalAlignment = if (item.supportingContent != null) Alignment.Top else Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                 ) {
                     item.leadingContent?.invoke()
                     Column(
@@ -261,7 +294,7 @@ private fun CardGroupFormItem(
                             CompositionLocalProvider(
                                 LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant
                             ) {
-                                ProvideTextStyle(MaterialTheme.typography.bodyMedium, supporting)
+                                ProvideTextStyle(MaterialTheme.typography.bodySmall, supporting)
                             }
                         }
                     }
@@ -274,53 +307,114 @@ private fun CardGroupFormItem(
 }
 
 @Composable
-private fun CardGroupListItem(
-    item: CardGroupItem,
-    count: Int,
-    index: Int,
-) {
-    val isFirst = index == 0
-    val isLast = index == count - 1
-
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val topCorner by animateDpAsState(
-        targetValue = if (isPressed || count == 1 || isFirst) CardGroupCorner else CardGroupInnerCorner,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-    )
-    val bottomCorner by animateDpAsState(
-        targetValue = if (isPressed || count == 1 || isLast) CardGroupCorner else CardGroupInnerCorner,
-        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
-    )
-
-    ListItem(
+private fun CardGroupListItem(item: CardGroupItem) {
+    CompactListItem(
         headlineContent = item.headlineContent ?: {},
         modifier = item.modifier
-            .fillMaxWidth()
-            .clip(
-                RoundedCornerShape(
-                    topStart = topCorner,
-                    topEnd = topCorner,
-                    bottomStart = bottomCorner,
-                    bottomEnd = bottomCorner,
-                )
-            )
-            .then(
-                if (item.onClick != null) {
-                    Modifier.clickable(
-                        interactionSource = interactionSource,
-                        indication = LocalIndication.current,
-                        onClick = item.onClick,
-                    )
-                } else Modifier
-            ),
+            .settingSearchReveal(item.searchKey)
+            .then(if (item.onClick != null) Modifier.clickable(onClick = item.onClick) else Modifier),
         overlineContent = item.overlineContent,
         supportingContent = item.supportingContent,
         leadingContent = item.leadingContent,
         trailingContent = item.trailingContent,
         colors = item.colors ?: CustomColors.listItemColors,
     )
+}
+
+/**
+ * 参数同 M3 ListItem，但更紧凑：单行约 48dp、左右 12dp（M3 单行 56dp、两行 72dp、左右 16dp）。
+ * 点击由调用方在 modifier 上加。
+ */
+@Composable
+fun CompactListItem(
+    headlineContent: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    overlineContent: (@Composable () -> Unit)? = null,
+    supportingContent: (@Composable () -> Unit)? = null,
+    leadingContent: (@Composable () -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null,
+    colors: ListItemColors = ListItemDefaults.colors(),
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(colors.containerColor)
+            .heightIn(min = 48.dp)
+            // 带说明文字的两行项上下各 10dp（约 62dp，原 M3 为 72dp）
+            .padding(horizontal = AppSpacing.sm, vertical = if (supportingContent != null) 10.dp else AppSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+    ) {
+        leadingContent?.let { leading ->
+            CompositionLocalProvider(LocalContentColor provides colors.leadingContentColor, content = leading)
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            overlineContent?.let { overline ->
+                CompositionLocalProvider(LocalContentColor provides colors.overlineContentColor) {
+                    ProvideTextStyle(MaterialTheme.typography.labelSmall, overline)
+                }
+            }
+            CompositionLocalProvider(LocalContentColor provides colors.contentColor) {
+                ProvideTextStyle(MaterialTheme.typography.bodyLarge, headlineContent)
+            }
+            supportingContent?.let { supporting ->
+                CompositionLocalProvider(LocalContentColor provides colors.supportingContentColor) {
+                    ProvideTextStyle(MaterialTheme.typography.bodySmall, supporting)
+                }
+            }
+        }
+        trailingContent?.let { trailing ->
+            CompositionLocalProvider(LocalContentColor provides colors.trailingContentColor) {
+                ProvideTextStyle(MaterialTheme.typography.bodyMedium, trailing)
+            }
+        }
+    }
+}
+
+/** 设置搜索要跳到的项（标题的字符串资源）：目标页里 searchKey 相同的项滚到可见处、闪一下，随即清空 */
+object SettingSearchTarget {
+    var key by mutableStateOf<Int?>(null)
+}
+
+@Composable
+private fun Modifier.settingSearchReveal(searchKey: Int?): Modifier {
+    if (searchKey == null) return this
+    val requester = remember { BringIntoViewRequester() }
+    val flash = remember { Animatable(0f) }
+    val color = MaterialTheme.colorScheme.primary
+    LaunchedEffect(SettingSearchTarget.key) {
+        if (SettingSearchTarget.key != searchKey) return@LaunchedEffect
+        SettingSearchTarget.key = null
+        requester.bringIntoView()
+        flash.snapTo(0.16f)
+        delay(1000)
+        flash.animateTo(0f, tween(900))
+    }
+    return bringIntoViewRequester(requester).drawWithContent {
+        drawContent()
+        if (flash.value > 0f) drawRect(color.copy(alpha = flash.value))
+    }
+}
+
+/**
+ * 设置页列表用的状态：从设置搜索跳过来、目标项还没排进屏幕时，一项一项往下翻直到它出现
+ * （它出现后自己滚到可见处并清空目标）；翻到底还没有就放弃。
+ */
+@Composable
+fun rememberSettingSearchListState(): LazyListState {
+    val state = rememberLazyListState()
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        while (SettingSearchTarget.key != null && state.canScrollForward) {
+            state.scrollToItem(state.firstVisibleItemIndex + 1)
+            withFrameNanos { }
+        }
+        SettingSearchTarget.key = null
+    }
+    return state
 }
 
 @Composable
@@ -342,27 +436,22 @@ fun CardGroup(
                 }
             }
         }
-        val count = scope.items.size
-        // AMOLED 强劲模式下各项底色和页面同为纯黑：整组描一圈边，项与项之间用细分隔线代替空隙
-        val strong = LocalAmoledStrong.current
-        Column(modifier = Modifier.amoledOutline(RoundedCornerShape(CardGroupCorner))) {
+        // 整组一张卡：外圈圆角裁出，项与项紧贴、中间一条细分隔线；AMOLED 强劲模式下再描一圈边
+        val shape = RoundedCornerShape(CardGroupCorner)
+        Column(
+            modifier = Modifier
+                .clip(shape)
+                .background(CustomColors.listItemColors.containerColor)
+                .amoledOutline(shape)
+        ) {
             scope.items.fastForEachIndexed { index, item ->
                 val formContent = item.formContent
                 if (formContent != null) {
-                    CardGroupFormItem(item = item, formContent = formContent, count = count, index = index)
+                    CardGroupFormItem(item = item, formContent = formContent)
                 } else {
-                    CardGroupListItem(item = item, count = count, index = index)
+                    CardGroupListItem(item = item)
                 }
-                if (index != count - 1) {
-                    if (strong) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.height(CardGroupItemSpacing))
-                    }
-                }
+                if (index != scope.items.lastIndex) CardGroupDivider()
             }
         }
     }
@@ -373,11 +462,12 @@ fun CardGroup(
 private fun CardGroupPreview() {
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text("Card Group")
                 },
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         containerColor = CustomColors.topBarColors.containerColor,

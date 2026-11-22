@@ -124,14 +124,16 @@ internal fun PermissionRationaleDialog(
                     ) {
                         OutlinedButton(
                             onClick = onCancel,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(stringResource(R.string.cancel))
                         }
 
                         Button(
                             onClick = onProceed, // 这里会跳转到设置
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(stringResource(R.string.permission_go_to_settings))
                         }
@@ -144,14 +146,16 @@ internal fun PermissionRationaleDialog(
                     ) {
                         OutlinedButton(
                             onClick = onCancel,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(stringResource(R.string.cancel))
                         }
 
                         Button(
                             onClick = onProceed,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             Text(stringResource(R.string.confirm))
                         }

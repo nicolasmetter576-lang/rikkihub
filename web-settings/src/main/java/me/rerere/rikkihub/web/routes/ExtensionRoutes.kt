@@ -12,8 +12,6 @@ import kotlinx.serialization.json.JsonObject
 import me.rerere.rikkihub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.datastore.SettingsStore
-import me.rerere.rikkihub.data.model.Lorebook
-import me.rerere.rikkihub.data.model.PromptInjection
 import me.rerere.rikkihub.data.model.QuickMessage
 import me.rerere.rikkihub.web.NotFoundException
 import me.rerere.rikkihub.web.projectMcpServerForWeb
@@ -33,42 +31,6 @@ fun Route.extensionRoutes(settingsStore: SettingsStore) {
             settings.copy(
                 assistants = settings.assistants.map { assistant ->
                     assistant.copy(quickMessageIds = assistant.quickMessageIds - id)
-                }
-            )
-        },
-    )
-
-    crudRoutes<PromptInjection.ModeInjection>(
-        path = "/mode-injections",
-        idParam = "modeInjectionId",
-        notFoundMessage = "Mode injection not found",
-        settingsStore = settingsStore,
-        getList = { it.modeInjections },
-        withList = { settings, list -> settings.copy(modeInjections = list) },
-        idOf = { it.id },
-        copyWithId = { item, id -> item.copy(id = id) },
-        onDelete = { settings, id ->
-            settings.copy(
-                assistants = settings.assistants.map { assistant ->
-                    assistant.copy(modeInjectionIds = assistant.modeInjectionIds - id)
-                }
-            )
-        },
-    )
-
-    crudRoutes<Lorebook>(
-        path = "/lorebooks",
-        idParam = "lorebookId",
-        notFoundMessage = "Lorebook not found",
-        settingsStore = settingsStore,
-        getList = { it.lorebooks },
-        withList = { settings, list -> settings.copy(lorebooks = list) },
-        idOf = { it.id },
-        copyWithId = { item, id -> item.copy(id = id) },
-        onDelete = { settings, id ->
-            settings.copy(
-                assistants = settings.assistants.map { assistant ->
-                    assistant.copy(lorebookIds = assistant.lorebookIds - id)
                 }
             )
         },

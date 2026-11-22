@@ -1,7 +1,11 @@
 package me.rerere.rikkihub.ui.pages.translator
 
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import android.content.ClipData
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowDataTransferVertical
+import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Clipboard
 import me.rerere.hugeicons.stroke.LanguageCircle
 import androidx.compose.animation.AnimatedVisibility
@@ -10,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,6 +28,8 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import me.rerere.rikkihub.ui.components.ui.FilledTonalButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -55,6 +62,7 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.ui.components.ai.ModelSelector
 import me.rerere.rikkihub.ui.components.nav.BackButton
+import androidx.compose.ui.platform.LocalContext
 import me.rerere.rikkihub.ui.context.LocalToaster
 import me.rerere.rikkihub.utils.getText
 import org.koin.androidx.compose.koinViewModel
@@ -76,12 +84,13 @@ fun TranslatorPage(vm: TranslatorVM = koinViewModel()) {
     val history = vm.history.collectAsLazyPagingItems()
     val clipboard = LocalClipboard.current
     val toaster = LocalToaster.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     // 处理错误
     LaunchedEffect(Unit) {
         vm.errorFlow.collect { error ->
-            toaster.show(error.message ?: "错误", type = ToastType.Error)
+            toaster.show(error.message ?: context.getString(R.string.error_unknown), type = ToastType.Error)
         }
     }
 
@@ -104,7 +113,8 @@ fun TranslatorPage(vm: TranslatorVM = koinViewModel()) {
                         type = ModelType.CHAT,
                         onlyIcon = true,
                     )
-                }
+                },
+                expandedHeight = AppTopBarHeight,
             )
         },
         bottomBar = {
@@ -127,7 +137,7 @@ fun TranslatorPage(vm: TranslatorVM = koinViewModel()) {
             modifier = Modifier
                 .padding(paddingValues)
                 .fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 输入区域
@@ -147,17 +157,36 @@ fun TranslatorPage(vm: TranslatorVM = koinViewModel()) {
                         textStyle = MaterialTheme.typography.headlineSmall,
                     )
 
-                    FilledTonalButton(
-                        onClick = {
-                            scope.launch {
-                                clipboard.getClipEntry()?.clipData?.getText()?.let {
-                                    vm.updateInputText(it)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        FilledTonalButton(
+                            onClick = {
+                                scope.launch {
+                                    clipboard.getClipEntry()?.clipData?.getText()?.let {
+                                        vm.updateInputText(it)
+                                    }
                                 }
                             }
+                        ) {
+                            Icon(HugeIcons.Clipboard, null)
+                            Text(stringResource(R.string.translator_page_paste), modifier = Modifier.padding(start = 4.dp))
                         }
-                    ) {
-                        Icon(HugeIcons.Clipboard, null)
-                        Text(stringResource(R.string.translator_page_paste), modifier = Modifier.padding(start = 4.dp))
+                        AnimatedVisibility(inputText.isNotEmpty()) {
+                            IconButton(onClick = { vm.updateInputText("") }) {
+                                Icon(HugeIcons.Cancel01, contentDescription = stringResource(R.string.translator_page_clear_input))
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = stringResource(
+                                R.string.translator_page_char_count,
+                                inputText.codePointCount(0, inputText.length),
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
@@ -193,21 +222,30 @@ fun TranslatorPage(vm: TranslatorVM = koinViewModel()) {
                     }
 
                     AnimatedVisibility(translatedText.isNotBlank()) {
-                        FilledTonalButton(
-                            onClick = {
-                                scope.launch {
-                                    clipboard.setClipEntry(
-                                        ClipEntry(
-                                            ClipData.newPlainText(
-                                                null, translatedText
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(
+                                onClick = {
+                                    scope.launch {
+                                        clipboard.setClipEntry(
+                                            ClipEntry(
+                                                ClipData.newPlainText(
+                                                    null, translatedText
+                                                )
                                             )
                                         )
-                                    )
+                                    }
                                 }
+                            ) {
+                                Icon(HugeIcons.Clipboard, null)
+                                Text(stringResource(R.string.copy), modifier = Modifier.padding(start = 4.dp))
                             }
-                        ) {
-                            Icon(HugeIcons.Clipboard, null)
-                            Text(stringResource(R.string.copy), modifier = Modifier.padding(start = 4.dp))
+                            OutlinedButton(onClick = vm::useResultAsInput, shape = MaterialTheme.shapes.medium) {
+                                Icon(HugeIcons.ArrowDataTransferVertical, null)
+                                Text(
+                                    stringResource(R.string.translator_page_use_as_input),
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                            }
                         }
                     }
                 }

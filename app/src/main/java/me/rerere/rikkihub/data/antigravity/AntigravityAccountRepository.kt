@@ -118,6 +118,15 @@ class AntigravityAccountRepository internal constructor(
         updated
     }
 
+    /** 只重新拉取额度（用量统计的自动刷新用）：token 未到期就不刷新，失败不改账户状态。 */
+    suspend fun refreshQuotas(accountId: String) = mutex.withLock {
+        val account = state.accounts.firstOrNull { it.id == accountId } ?: return@withLock
+        if (!account.enabled || account.status == AntigravityTokenStatus.INVALID) return@withLock
+        val ready = ensureReadyLocked(account)
+        val catalog = api.fetchAvailableModels(ready.accessToken, ready.projectId)
+        replaceAccount(ready.id) { it.withQuotas(catalog) }
+    }
+
     suspend fun refreshAll() {
         var lastError: Throwable? = null
         accounts.value.forEach { account ->

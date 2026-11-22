@@ -20,16 +20,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.files.FilesManager
 import me.rerere.rikkihub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkihub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkihub.ui.components.ui.permission.rememberPermissionState
+import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.context.LocalToaster
+import me.rerere.rikkihub.ui.pages.files.FileManagerPicks
+import me.rerere.rikkihub.Screen
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import me.rerere.rikkihub.ui.hooks.ChatInputState
-import me.rerere.rikkihub.utils.isAllowedFileType
 import org.koin.compose.koinInject
 import java.io.File
 import java.io.IOException
@@ -51,9 +53,20 @@ internal data class ChatAttachmentPickerActions(
 internal fun rememberChatAttachmentPickerActions(
     inputState: ChatInputState,
     setting: Settings,
+    /** Stable per chat: files picked in the file manager come back under this key. */
+    fileManagerRequest: String,
     onAttachmentAdded: () -> Unit,
 ): ChatAttachmentPickerActions {
     val context = LocalContext.current
+    val navController = LocalNavController.current
+    val fileManagerPicks: FileManagerPicks = koinInject()
+    LifecycleResumeEffect(fileManagerRequest) {
+        fileManagerPicks.take(fileManagerRequest)?.let { parts ->
+            inputState.messageContent += parts
+            onAttachmentAdded()
+        }
+        onPauseOrDispose {}
+    }
     val resources = LocalResources.current
     val toaster = LocalToaster.current
     val filesManager: FilesManager = koinInject()
@@ -177,55 +190,6 @@ internal fun rememberChatAttachmentPickerActions(
             }
         }
 
-    val filePickerLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-            if (uris.isNotEmpty()) {
-                scope.launch(Dispatchers.IO) {
-                    val documents = mutableListOf<UIMessagePart.Document>()
-                    val readFailedNames = mutableListOf<String>()
-                    val unsupportedNames = mutableListOf<String>()
-                    for (uri in uris) {
-                        val fileName = filesManager.getFileNameFromUri(uri) ?: "file"
-                        val mime = filesManager.getFileMimeType(uri) ?: "text/plain"
-                        if (isAllowedFileType(fileName, mime)) {
-                            val localUri = filesManager.createChatFilesByContents(listOf(uri)).firstOrNull()
-                            if (localUri != null) {
-                                documents.add(
-                                    UIMessagePart.Document(
-                                        url = localUri.toString(),
-                                        fileName = fileName,
-                                        mime = mime
-                                    )
-                                )
-                            } else {
-                                readFailedNames.add(fileName)
-                            }
-                        } else {
-                            unsupportedNames.add(fileName)
-                        }
-                    }
-                    withContext(Dispatchers.Main) {
-                        unsupportedNames.forEach { fileName ->
-                            toaster.show(
-                                resources.getString(R.string.chat_input_unsupported_file_type, fileName),
-                                type = ToastType.Error
-                            )
-                        }
-                        readFailedNames.forEach { fileName ->
-                            toaster.show(
-                                resources.getString(R.string.chat_input_file_read_failed, fileName),
-                                type = ToastType.Error
-                            )
-                        }
-                        if (documents.isNotEmpty()) {
-                            inputState.addFiles(documents)
-                            onAttachmentAdded()
-                        }
-                    }
-                }
-            }
-        }
-
     var showSketch by remember { mutableStateOf(false) }
     if (showSketch) {
         SketchDialog(
@@ -245,7 +209,7 @@ internal fun rememberChatAttachmentPickerActions(
         onPickImage = { imagePickerLauncher.launch("image/*") },
         onPickVideo = { videoPickerLauncher.launch("video/*") },
         onPickAudio = { audioPickerLauncher.launch("audio/*") },
-        onPickFile = { filePickerLauncher.launch(arrayOf("*/*")) },
+        onPickFile = { navController.navigate(Screen.FileManager(pickRequest = fileManagerRequest)) },
         onSketch = { showSketch = true },
     )
 }

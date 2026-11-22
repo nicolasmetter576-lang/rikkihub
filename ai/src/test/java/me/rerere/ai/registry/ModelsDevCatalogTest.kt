@@ -91,6 +91,21 @@ class ModelsDevCatalogTest {
     }
 
     @Test
+    fun `optional reference prices preserve old capabilities and explicit free values`() {
+        val catalog = catalog(""""old":[13,8000],"priced":[13,8000,2.5,10,1.25],"free":[4,8000,0,0,null],
+            "bad":[4,8000,{},1],"negative":[4,8000,-1,1],"large":[4,8000,1e99,1]""")
+        assertNull(catalog.find("old")!!.referencePrice)
+        assertEquals(catalog.find("old")!!.abilities, catalog.find("priced")!!.abilities)
+        assertEquals(2.5, catalog.find("priced")!!.referencePrice!!.input!!, 0.0)
+        assertEquals(1.25, catalog.find("priced")!!.referencePrice!!.cachedInput!!, 0.0)
+        assertEquals(0.0, catalog.find("free")!!.referencePrice!!.input!!, 0.0)
+        for (id in listOf("bad", "negative", "large")) {
+            assertNotNull(catalog.find(id))
+            assertNull(catalog.find(id)!!.referencePrice)
+        }
+    }
+
+    @Test
     fun `streams decode as utf8`() {
         val catalog = ModelsDevCatalog.decode(""" {"version":1,"entries":{"模型-1":[4,0]}} """.trim().byteInputStream())
         assertTrue(catalog.find("模型-1")!!.abilities.contains(ModelAbility.TOOL))

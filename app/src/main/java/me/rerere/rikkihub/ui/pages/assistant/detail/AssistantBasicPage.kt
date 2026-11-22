@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.assistant.detail
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,14 +17,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,25 +32,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkihub.R
+import me.rerere.rikkihub.data.cli.CliAgent
 import me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkihub.data.model.Assistant
+import me.rerere.rikkihub.ui.components.ai.AssistantCardConfigDialog
 import me.rerere.rikkihub.ui.components.ai.ModelSelector
+import me.rerere.rikkihub.ui.components.ai.assistantCardSummary
 import me.rerere.rikkihub.ui.components.ai.ReasoningButton
 import me.rerere.rikkihub.ui.components.nav.BackButton
 import me.rerere.rikkihub.ui.components.ui.FormItem
 import me.rerere.rikkihub.ui.components.ui.Select
 import me.rerere.rikkihub.ui.components.ui.TagsInput
+import me.rerere.rikkihub.ui.context.LocalSettings
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.toFixed
 import org.koin.androidx.compose.koinViewModel
@@ -56,6 +62,7 @@ import org.koin.core.parameter.parametersOf
 import kotlin.math.roundToInt
 import kotlin.uuid.Uuid
 import me.rerere.rikkihub.data.model.Tag as DataTag
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 @Composable
 fun AssistantBasicPage(id: String) {
@@ -68,22 +75,20 @@ fun AssistantBasicPage(id: String) {
     val providers by vm.providers.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
     val workspaces by vm.workspaces.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.assistant_page_tab_basic))
                 },
                 navigationIcon = {
                     BackButton()
                 },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         AssistantBasicContent(
@@ -112,7 +117,7 @@ internal fun AssistantBasicContent(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = AppSpacing.sm)
             .padding(innerPadding)
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -120,6 +125,24 @@ internal fun AssistantBasicContent(
         Card(
             colors = CustomColors.cardColorsOnSurfaceContainer
         ) {
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_enabled))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_enabled_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.enabled,
+                        onCheckedChange = { onUpdate(assistant.copy(enabled = it)) }
+                    )
+                }
+            )
+
+            HorizontalDivider()
+
             FormItem(
                 label = {
                     Text(stringResource(R.string.assistant_page_tags))
@@ -159,9 +182,7 @@ internal fun AssistantBasicContent(
                         selectedOption = selectedWorkspace,
                         onOptionSelected = { workspace ->
                             onUpdate(
-                                assistant.copy(
-                                    workspaceId = workspace?.id?.let { Uuid.parse(it) }
-                                )
+                                assistant.withWorkspace(workspace?.id?.let { Uuid.parse(it) })
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -170,6 +191,27 @@ internal fun AssistantBasicContent(
                         },
                     )
                 }
+            }
+
+            val defaultCliId = assistant.defaultCliAgentId
+            if (defaultCliId != null && assistant.workspaceId != null) {
+                val settings = LocalSettings.current
+                val agentName = remember(defaultCliId, settings.customCliAgents) {
+                    CliAgent.find(settings, defaultCliId)?.name ?: defaultCliId
+                }
+                HorizontalDivider()
+                FormItem(
+                    modifier = Modifier.padding(8.dp),
+                    label = { Text(stringResource(R.string.cli_title)) },
+                    description = { Text(agentName) },
+                    tail = {
+                        TextButton(
+                            onClick = { onUpdate(assistant.copy(defaultCliAgentId = null)) },
+                        ) {
+                            Text(stringResource(R.string.cli_assistant_default_clear))
+                        }
+                    },
+                )
             }
 
             HorizontalDivider()
@@ -195,6 +237,38 @@ internal fun AssistantBasicContent(
                     )
                 }
             )
+
+            HorizontalDivider()
+
+            var showCardConfigDialog by remember { mutableStateOf(false) }
+            val summary = assistantCardSummary(assistant)
+                .ifEmpty { stringResource(R.string.assistant_page_card_note_placeholder) }
+            FormItem(
+                modifier = Modifier
+                    .clickable { showCardConfigDialog = true }
+                    .padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_card_settings))
+                },
+                description = {
+                    Text(
+                        text = summary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            )
+            if (showCardConfigDialog) {
+                AssistantCardConfigDialog(
+                    assistant = assistant,
+                    autoExpanded = false,
+                    onDismiss = { showCardConfigDialog = false },
+                    onSave = { note, cardWide ->
+                        onUpdate(assistant.copy(cardNote = note, cardWide = cardWide))
+                        showCardConfigDialog = false
+                    },
+                )
+            }
         }
 
         Card(
@@ -233,6 +307,22 @@ internal fun AssistantBasicContent(
                                 )
                             )
                         }
+                    )
+                }
+            )
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_message_title))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_message_title_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.enableMessageTitle,
+                        onCheckedChange = { onUpdate(assistant.copy(enableMessageTitle = it)) }
                     )
                 }
             )
@@ -441,6 +531,8 @@ internal fun AssistantBasicContent(
                     )
                 }
             }
+            HorizontalDivider()
+            SamplingExtras(assistant = assistant, onUpdate = onUpdate)
             HorizontalDivider()
             FormItem(
                 modifier = Modifier.padding(8.dp),

@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.components.ui.rememberSettingSearchListState
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -23,7 +25,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -34,7 +36,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -56,6 +57,7 @@ import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceEditorToolbarIt
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceEditorToolbarSize
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceEditorToolbarSizeSelector
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceEditorToolbarPositionSelector
+import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceReaderModeSelector
 import me.rerere.rikkihub.ui.pages.extensions.workspace.workspaceEditorToolbarOrder
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WORKSPACE_TOOLBAR_PER_ROW
 import me.rerere.rikkihub.ui.theme.CustomColors
@@ -68,7 +70,6 @@ import sh.calvin.reorderable.ReorderableColumn
 fun SettingPreferencesWorkspacePage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     fun updateDisplaySetting(setting: DisplaySetting) {
         val previous = displaySetting
@@ -78,24 +79,24 @@ fun SettingPreferencesWorkspacePage(vm: SettingVM = koinViewModel()) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.setting_page_preferences_workspace)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { contentPadding ->
         LazyColumn(
+            state = rememberSettingSearchListState(),
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding + PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.editor_typography_title)) },
                 ) {
                     item(
@@ -110,13 +111,14 @@ fun SettingPreferencesWorkspacePage(vm: SettingVM = koinViewModel()) {
                                 )
                             }
                         },
+                        searchKey = R.string.editor_typography_settings_desc,
                     )
                 }
             }
 
             item {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.setting_workspace_editor_input)) },
                 ) {
                     item(
@@ -128,13 +130,46 @@ fun SettingPreferencesWorkspacePage(vm: SettingVM = koinViewModel()) {
                                 onCheckedChange = { updateDisplaySetting(displaySetting.copy(workspaceEditorAutoPair = it)) },
                             )
                         },
+                        searchKey = R.string.setting_workspace_editor_auto_pair,
                     )
                 }
             }
 
             item {
                 CardGroup(
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
+                    title = { Text(stringResource(R.string.setting_workspace_reader)) },
+                ) {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_workspace_reader_mode)) },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(stringResource(R.string.setting_workspace_reader_mode_desc))
+                                WorkspaceReaderModeSelector(
+                                    verticalScroll = displaySetting.workspaceReaderVerticalScroll,
+                                    onChange = { updateDisplaySetting(displaySetting.copy(workspaceReaderVerticalScroll = it)) },
+                                )
+                            }
+                        },
+                        searchKey = R.string.setting_workspace_reader_mode,
+                    )
+                    item(
+                        headlineContent = { Text(stringResource(R.string.setting_workspace_reader_volume_keys)) },
+                        supportingContent = { Text(stringResource(R.string.setting_workspace_reader_volume_keys_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = displaySetting.workspaceReaderVolumeKeys,
+                                onCheckedChange = { updateDisplaySetting(displaySetting.copy(workspaceReaderVolumeKeys = it)) },
+                            )
+                        },
+                        searchKey = R.string.setting_workspace_reader_volume_keys,
+                    )
+                }
+            }
+
+            item {
+                CardGroup(
+                    modifier = Modifier.padding(horizontal = AppSpacing.xxs),
                     title = { Text(stringResource(R.string.setting_workspace_editor_toolbar)) },
                 ) {
                     item(
@@ -148,6 +183,7 @@ fun SettingPreferencesWorkspacePage(vm: SettingVM = koinViewModel()) {
                                 )
                             }
                         },
+                        searchKey = R.string.setting_workspace_editor_toolbar_position,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_workspace_editor_toolbar_layout)) },
@@ -164,6 +200,7 @@ fun SettingPreferencesWorkspacePage(vm: SettingVM = koinViewModel()) {
                                 )
                             }
                         },
+                        searchKey = R.string.setting_workspace_editor_toolbar_layout,
                     )
                     item(
                         headlineContent = { Text(stringResource(R.string.setting_workspace_editor_toolbar_size)) },
@@ -176,6 +213,7 @@ fun SettingPreferencesWorkspacePage(vm: SettingVM = koinViewModel()) {
                                 )
                             }
                         },
+                        searchKey = R.string.setting_workspace_editor_toolbar_size,
                     )
                 }
             }

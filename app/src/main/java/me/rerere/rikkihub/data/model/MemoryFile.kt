@@ -15,12 +15,12 @@ data class MemoryFile(
 ) {
     val version: String by lazy { memoryVersionOf(content) }
 
-    private val frontmatter by lazy { SkillFrontmatterParser.parse(content) }
+    internal val parsedFrontmatter by lazy { SkillFrontmatterParser.parse(content) }
 
     /** frontmatter 里的一句话描述，用于清单 */
-    val description: String get() = frontmatter["description"]?.trim().orEmpty()
+    val description: String get() = parsedFrontmatter["description"]?.trim().orEmpty()
 
-    val aliases: List<String> get() = frontmatter.getList("aliases")
+    val aliases: List<String> get() = parsedFrontmatter.getList("aliases")
 
     /** 去掉 frontmatter 后的正文 */
     val body: String get() = SkillFrontmatterParser.extractBody(content)
@@ -32,7 +32,7 @@ data class MemoryFile(
      * 编辑页里的正文。frontmatter 读不出来时（比如某个值里有没加引号的冒号）整段原文都算正文：
      * 那一段在各个输入框里都看不到，不留在正文里的话一保存就被悄悄换掉了。
      */
-    val editableBody: String get() = if (frontmatter.toMap().isEmpty()) content else body
+    val editableBody: String get() = if (parsedFrontmatter.toMap().isEmpty()) content else body
 
     /** 所在目录，根目录下的文件是 "/" */
     val directory: String get() = path.substringBeforeLast('/').ifEmpty { "/" }
@@ -41,7 +41,7 @@ data class MemoryFile(
     val name: String get() = path.substringAfterLast('/').removeSuffix(".md")
 
     /** 界面上显示的标题：frontmatter 里的 title，没写时从文件名推出来（frontend-tooling 显示成 Frontend Tooling） */
-    val title: String get() = frontmatter["title"]?.trim()?.ifEmpty { null } ?: memoryTitleOf(name)
+    val title: String get() = parsedFrontmatter["title"]?.trim()?.ifEmpty { null } ?: memoryTitleOf(name)
 
     /**
      * 用编辑页分开填的各项拼出新的文件内容。
@@ -53,7 +53,7 @@ data class MemoryFile(
         title.toSingleLine().takeIf { it.isNotEmpty() }?.let { values["title"] = it }
         description.toSingleLine().takeIf { it.isNotEmpty() }?.let { values["description"] = it }
         aliases.takeIf { it.isNotEmpty() }?.let { values["aliases"] = it }
-        frontmatter.toMap().forEach { (key, value) -> if (key !in editableKeys) values[key] = value }
+        parsedFrontmatter.toMap().forEach { (key, value) -> if (key !in editableKeys) values[key] = value }
         return SkillFrontmatterParser.compose(values, body)
     }
 
@@ -115,3 +115,92 @@ private fun memoryVersionOf(content: String): String =
         .digest(content.toByteArray())
         .joinToString("") { "%02x".format(it) }
         .take(12)
+
+internal data class MemoryFileMergeOutcome(
+    val content: String,
+    val changed: Boolean,
+    val bytes: Int,
+    val exceedsLimit: Boolean,
+)
+
+private val bulletLineRegex = Regex("""^\s*[-*+]\s+.*""")
+private val multiBlankLinesRegex = Regex("""\n{3,}""")
+
+/**
+ * 将同路径的 [source] 结构化合并进 [target]：
+ * - 合并 YAML frontmatter（保留目标既有字段，补齐空标题/描述，aliases 去重并集，保留未知自定义键）；
+ * - 对正文中的逐字重复列表项去重后追加新增内容；
+ * - 任一方无合法 frontmatter 时保留原始文本，不静默丢弃不可解析的头部。
+ */
+internal fun mergeMemoryFiles(target: MemoryFile, source: MemoryFile): MemoryFileMergeOutcome {
+    val targetBytes = target.content.toByteArray().size
+    if (target.version == source.version) {
+        return MemoryFileMergeOutcome(target.content, changed = false, bytes = targetBytes, exceedsLimit = false)
+    }
+
+    val targetFm = target.parsedFrontmatter.toMap()
+    val sourceFm = source.parsedFrontmatter.toMap()
+
+    val (finalContent, changed) = if (targetFm.isEmpty() && sourceFm.isEmpty()) {
+        val (mergedBody, bodyChanged) = mergeMemoryBodies(target.content, source.content)
+        if (bodyChanged) "$mergedBody\n" to true else target.content to false
+    } else {
+        val targetBody = if (targetFm.isEmpty()) target.content else target.body
+        val sourceBody = if (sourceFm.isEmpty()) source.content else source.body
+        val (mergedBody, bodyChanged) = mergeMemoryBodies(targetBody, sourceBody)
+
+        val targetExplicitTitle = (targetFm["title"] as? String)?.trim()?.ifEmpty { null }
+        val sourceExplicitTitle = (sourceFm["title"] as? String)?.trim()?.ifEmpty { null }
+        val mergedTitle = targetExplicitTitle ?: sourceExplicitTitle
+        val mergedDescription = target.description.ifEmpty { source.description }
+        val mergedAliases = (target.aliases + source.aliases).distinct()
+        val extraFromSource = sourceFm.filterKeys { it !in editableKeys && it !in targetFm }
+
+        val fmChanged = (targetFm.isEmpty() && sourceFm.isNotEmpty()) ||
+            (targetExplicitTitle == null && sourceExplicitTitle != null) ||
+            (target.description.isEmpty() && source.description.isNotEmpty()) ||
+            mergedAliases.size > target.aliases.size ||
+            extraFromSource.isNotEmpty()
+
+        if (!bodyChanged && !fmChanged) {
+            target.content to false
+        } else {
+            val values = linkedMapOf<String, Any?>("name" to target.name)
+            mergedTitle?.toSingleLine()?.takeIf { it.isNotEmpty() }?.let { values["title"] = it }
+            mergedDescription.toSingleLine().takeIf { it.isNotEmpty() }?.let { values["description"] = it }
+            mergedAliases.takeIf { it.isNotEmpty() }?.let { values["aliases"] = it }
+            targetFm.forEach { (k, v) -> if (k !in editableKeys) values[k] = v }
+            extraFromSource.forEach { (k, v) -> values[k] = v }
+            SkillFrontmatterParser.compose(values, mergedBody) to true
+        }
+    }
+
+    val bytes = finalContent.toByteArray().size
+    val exceedsLimit = changed && !MemoryFile.fitsLimit(bytes, targetBytes)
+    return MemoryFileMergeOutcome(finalContent, changed = changed, bytes = bytes, exceedsLimit = exceedsLimit)
+}
+
+private fun mergeMemoryBodies(targetRaw: String, sourceRaw: String): Pair<String, Boolean> {
+    val targetClean = targetRaw.replace("\r\n", "\n").trim()
+    val sourceClean = sourceRaw.replace("\r\n", "\n").trim()
+    if (sourceClean.isEmpty()) return targetClean to false
+    if (targetClean.isEmpty()) return sourceClean to true
+
+    val targetLines = targetClean.lines()
+    val targetLineSet = targetLines.map { it.trim() }.toSet()
+    val targetBullets = targetLines.filter { bulletLineRegex.matches(it) }.map { it.trim() }.toSet()
+
+    val sourceLines = sourceClean.lines()
+    val sourceHasContentLines = sourceLines.any { val t = it.trim(); t.isNotEmpty() && !t.startsWith("#") }
+    val filtered = sourceLines.filterNot { bulletLineRegex.matches(it) && it.trim() in targetBullets }
+    val collapsed = filtered.joinToString("\n").replace(multiBlankLinesRegex, "\n\n").trim()
+
+    if (collapsed.isEmpty()) return targetClean to false
+    val keptHasContentLines = collapsed.lines().any { val t = it.trim(); t.isNotEmpty() && !t.startsWith("#") }
+    if (sourceHasContentLines && !keptHasContentLines) return targetClean to false
+    if (!sourceHasContentLines && collapsed.lines().all { it.trim().isEmpty() || it.trim() in targetLineSet }) {
+        return targetClean to false
+    }
+
+    return "$targetClean\n\n$collapsed" to true
+}

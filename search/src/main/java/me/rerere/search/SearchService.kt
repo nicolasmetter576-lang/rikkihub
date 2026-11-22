@@ -6,19 +6,26 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import me.rerere.ai.core.InputSchema
-import me.rerere.ai.util.KeyRoulette
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.internal.closeQuietly
 import okio.IOException
+import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 import kotlin.uuid.Uuid
@@ -81,13 +88,13 @@ interface SearchService<T : SearchServiceOptions> {
             .build()
 
         @Volatile
-        internal var keyRoulette: KeyRoulette = KeyRoulette.default()
+        internal var keyRoulette: SearchKeyRoulette = SearchKeyRoulette.default()
 
         fun init(client: OkHttpClient, context: Context? = null) {
             httpClient = client.newBuilder()
                 .callTimeout(60, TimeUnit.SECONDS)
                 .build()
-            keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
+            keyRoulette = if (context != null) SearchKeyRoulette.lru(context) else SearchKeyRoulette.default()
         }
 
         internal val json by lazy {
@@ -411,5 +418,105 @@ internal fun DescriptionLink(
     val uriHandler = LocalUriHandler.current
     TextButton(onClick = { uriHandler.openUri(url) }) {
         label()
+    }
+}
+
+internal interface SearchKeyRoulette {
+    fun next(keys: String, providerId: String = ""): String
+
+    companion object {
+        fun default(): SearchKeyRoulette = DefaultSearchKeyRoulette()
+        fun lru(context: Context): SearchKeyRoulette = LruSearchKeyRoulette(context)
+    }
+}
+
+private val SEARCH_SPLIT_KEY_REGEX = "[\\s,]+".toRegex()
+
+private fun splitSearchKeys(keys: String): List<String> = keys
+    .split(SEARCH_SPLIT_KEY_REGEX)
+    .map { it.trim() }
+    .filter { it.isNotBlank() }
+    .distinct()
+
+private class DefaultSearchKeyRoulette : SearchKeyRoulette {
+    override fun next(keys: String, providerId: String): String {
+        val list = splitSearchKeys(keys)
+        return if (list.isNotEmpty()) list.random() else keys
+    }
+}
+
+private const val SEARCH_LRU_CACHE_FILE = "lru_key_roulette.json"
+private const val SEARCH_EXPIRE_DURATION_MS = 24 * 60 * 60 * 1000L
+private const val SEARCH_PERSIST_DEBOUNCE_MS = 2_000L
+
+private object SearchLruFileLock
+private var searchSharedCache: MutableMap<String, MutableMap<String, Long>>? = null
+private var searchSharedCacheDir: File? = null
+private var searchDirty = false
+private var searchPersistJob: Job? = null
+private val searchPersistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+private class LruSearchKeyRoulette(
+    private val context: Context,
+) : SearchKeyRoulette {
+    override fun next(keys: String, providerId: String): String {
+        val list = splitSearchKeys(keys)
+        if (list.isEmpty()) return keys
+
+        synchronized(SearchLruFileLock) {
+            val now = System.currentTimeMillis()
+            val allCache = ensureLoaded()
+            val providerCache = (allCache[providerId] ?: emptyMap())
+                .filter { (k, lastUsed) -> k in list && now - lastUsed < SEARCH_EXPIRE_DURATION_MS }
+                .toMutableMap()
+
+            val selected = list.firstOrNull { it !in providerCache }
+                ?: providerCache.minByOrNull { it.value }!!.key
+
+            providerCache[selected] = now
+            allCache[providerId] = providerCache
+            allCache.entries.removeIf { (id, cache) ->
+                id != providerId && cache.values.all { now - it >= SEARCH_EXPIRE_DURATION_MS }
+            }
+
+            searchDirty = true
+            schedulePersistLocked()
+            return selected
+        }
+    }
+
+    private fun ensureLoaded(): MutableMap<String, MutableMap<String, Long>> {
+        searchSharedCache?.let { return it }
+        val loaded = loadCache().mapValuesTo(mutableMapOf()) { (_, v) -> v.toMutableMap() }
+        searchSharedCache = loaded
+        searchSharedCacheDir = context.cacheDir
+        return loaded
+    }
+
+    private fun schedulePersistLocked() {
+        if (searchPersistJob?.isActive == true) return
+        searchPersistJob = searchPersistScope.launch {
+            delay(SEARCH_PERSIST_DEBOUNCE_MS)
+            synchronized(SearchLruFileLock) {
+                if (!searchDirty) return@launch
+                searchDirty = false
+                searchSharedCache?.let { saveCache(it) }
+            }
+        }
+    }
+
+    private fun loadCache(): Map<String, Map<String, Long>> = try {
+        val file = File(context.cacheDir, SEARCH_LRU_CACHE_FILE)
+        if (!file.exists()) emptyMap() else Json.decodeFromString(file.readText())
+    } catch (_: Exception) {
+        emptyMap()
+    }
+
+    private fun saveCache(cache: Map<String, Map<String, Long>>) {
+        try {
+            val dir = searchSharedCacheDir ?: context.cacheDir
+            File(dir, SEARCH_LRU_CACHE_FILE).writeText(Json.encodeToString(cache))
+        } catch (_: Exception) {
+        }
     }
 }

@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,24 +15,21 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +84,11 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
 import me.rerere.rikkihub.utils.moveByKey
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
 
 private enum class MediaTab(
     override val icon: ImageVector,
@@ -104,11 +106,10 @@ fun SettingMediaPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val pagerState = rememberPagerState { MediaTab.entries.size }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.setting_page_media))
                 },
@@ -128,11 +129,10 @@ fun SettingMediaPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors
+                colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         Column(
@@ -145,7 +145,7 @@ fun SettingMediaPage(vm: SettingVM = koinViewModel()) {
                 pagerState = pagerState,
                 tabs = MediaTab.entries,
                 modifier = Modifier.padding(bottom = 4.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
+                contentPadding = PaddingValues(horizontal = AppSpacing.sm),
             )
 
             HorizontalPager(
@@ -198,11 +198,10 @@ private fun MediaProviderList(
     } else {
         LazyColumn(
             modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(start = AppSpacing.sm, top = 8.dp, end = AppSpacing.sm, bottom = AppSpacing.sm),
             state = lazyListState
         ) {
-            items(settings.mediaGenerationProviders, key = { it.id }) { provider ->
+            itemsIndexed(settings.mediaGenerationProviders, key = { _, provider -> provider.id }) { index, provider ->
                 ReorderableItem(
                     state = reorderableState,
                     key = provider.id
@@ -212,6 +211,8 @@ private fun MediaProviderList(
                             .fillMaxWidth()
                             .then(longPressReorder(isDragging)),
                         provider = provider,
+                        shape = cardGroupItemShape(index, settings.mediaGenerationProviders.size),
+                        divider = index > 0,
                         onEdit = { onEdit(provider) },
                         onDelete = { deleteTarget = provider }
                     )
@@ -244,6 +245,8 @@ private fun MediaProviderList(
 @Composable
 private fun MediaProviderItem(
     provider: MediaGenerationProviderSetting,
+    shape: Shape,
+    divider: Boolean,
     modifier: Modifier = Modifier,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -253,12 +256,13 @@ private fun MediaProviderItem(
     Card(
         onClick = onEdit,
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = shape,
         colors = CardDefaults.cardColors(containerColor = CustomColors.listItemColors.containerColor)
     ) {
+        if (divider) CardGroupDivider()
         Row(
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 4.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(start = AppSpacing.sm, top = AppSpacing.sm, end = 4.dp, bottom = AppSpacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AutoAIIcon(

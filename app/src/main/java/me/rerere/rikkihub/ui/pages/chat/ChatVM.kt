@@ -21,7 +21,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.ai.claudelife.CacheWarmStatus
@@ -40,6 +43,8 @@ import me.rerere.rikkihub.data.model.Avatar
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.data.model.MessageNode
 import me.rerere.rikkihub.data.model.NodeFavoriteTarget
+import me.rerere.rikkihub.data.ai.tavern.ActiveCharacter
+import me.rerere.rikkihub.data.repository.CharacterRepository
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.data.repository.FavoriteRepository
 import me.rerere.rikkihub.service.ChatError
@@ -48,6 +53,8 @@ import me.rerere.rikkihub.service.BUSY_REASON_COMPRESSING
 import me.rerere.rikkihub.service.CompressOrigin
 import me.rerere.rikkihub.service.CompressRequest
 import me.rerere.rikkihub.service.CompressState
+import me.rerere.rikkihub.service.CompressSuggestion
+import me.rerere.rikkihub.data.ai.ConversationCompressionOverride
 import me.rerere.rikkihub.data.mutation.ConversationBusyException
 import me.rerere.rikkihub.ui.hooks.writeStringPreference
 import me.rerere.rikkihub.ui.hooks.ChatInputState
@@ -58,6 +65,8 @@ private const val TAG = "ChatVM"
 
 class ChatVM(
     id: String,
+    /** 新会话要聊的角色；会话已经存在时不起作用。 */
+    private val characterId: Uuid? = null,
     private val context: Application,
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
@@ -66,6 +75,7 @@ class ChatVM(
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
     private val promptPolishHandler: PromptPolishHandler,
+    private val characterRepository: CharacterRepository,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -124,6 +134,13 @@ class ChatVM(
         }
     }
 
+    /** 加号抽屉开关：去八股总开关（所有助手、所有会话），只改这一个字段。 */
+    fun setQubaguEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsStore.tryUpdate { settings -> settings.copy(qubagu = settings.qubagu.copy(enabled = enabled)) }
+        }
+    }
+
     val conversationJobs = chatService
         .getConversationJobs()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -134,7 +151,7 @@ class ChatVM(
 
         // 初始化对话
         viewModelScope.launch {
-            chatService.initializeConversation(_conversationId)
+            chatService.initializeConversation(_conversationId, characterId)
         }
 
         // 记住对话ID, 方便下次启动恢复
@@ -152,6 +169,16 @@ class ChatVM(
     // 用户设置
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Eagerly, Settings.dummy())
+
+    /** 这个会话聊的角色（含生效的角色书、卡内正则是否放行）；角色或设置变了就重新解析。 */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val activeCharacter: StateFlow<ActiveCharacter?> = combine(
+        conversation.map { it.characterId }.distinctUntilChanged(),
+        settingsStore.settingsFlow,
+        characterRepository.observeSummaries(),
+    ) { id, s, _ -> id to s }
+        .mapLatest { (id, s) -> ActiveCharacter.resolve(characterRepository, s, id) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // 网络搜索(每个助手独立)
     val enableWebSearch = settings.map {
@@ -243,26 +270,40 @@ class ChatVM(
         chatService.sendMessage(_conversationId, content, answer)
     }
 
-    fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
+    fun handleMessageEdit(
+        parts: List<UIMessagePart>,
+        messageId: Uuid,
+        revokeAffectedCheckpoints: Boolean = false,
+    ) {
         if (parts.isEmptyInputMessage()) return
         analytics.logEvent("ai_edit_message", null)
 
         viewModelScope.launch {
-            chatService.editMessage(_conversationId, messageId, parts)
+            chatService.editMessage(_conversationId, messageId, parts, revokeAffectedCheckpoints)
         }
     }
 
     /** Background compression shared with the web; survives leaving this page. */
     val compressState: StateFlow<CompressState?> = chatService.compressStateFlow(_conversationId)
 
-    fun startCompression(additionalPrompt: String, keepRecent: Int = 0) {
+    val compressSuggestion: StateFlow<CompressSuggestion?> = chatService.compressSuggestionFlow(_conversationId)
+
+    fun startCompression(request: CompressRequest) {
+        // 「先看再采用」的开关记住上次的选择
+        if (settings.value.compression.reviewBeforeApply != request.review) {
+            updateSettings { it.copy(compression = it.compression.copy(reviewBeforeApply = request.review)) }
+        }
+        launchCompression { chatService.startCompression(_conversationId, request, CompressOrigin.APP) }
+    }
+
+    fun compressAndRetry(conversationId: Uuid) {
+        launchCompression { chatService.compressAndRetry(conversationId, CompressOrigin.APP) }
+    }
+
+    private fun launchCompression(start: suspend () -> Unit) {
         viewModelScope.launch {
             try {
-                chatService.startCompression(
-                    _conversationId,
-                    CompressRequest(additionalPrompt, keepRecent),
-                    CompressOrigin.APP,
-                )
+                start()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -273,6 +314,18 @@ class ChatVM(
                 )
             }
         }
+    }
+
+    fun resolveCompressionReview(summary: String?) {
+        chatService.resolveCompressionReview(_conversationId, summary)
+    }
+
+    fun dismissCompressSuggestion() {
+        chatService.dismissCompressSuggestion(_conversationId)
+    }
+
+    fun updateCompressionOverride(override: ConversationCompressionOverride?) {
+        viewModelScope.launch { chatService.updateConversationCompression(_conversationId, override) }
     }
 
     fun cancelCompression() {
@@ -304,15 +357,36 @@ class ChatVM(
         return chatService.forkConversationAtMessage(_conversationId, message.id)
     }
 
-    fun deleteMessage(message: UIMessage) {
+    fun deleteMessage(message: UIMessage, revokeAffectedCheckpoints: Boolean = false) {
         viewModelScope.launch {
-            chatService.deleteMessage(_conversationId, message)
+            chatService.deleteMessage(_conversationId, message, revokeAffectedCheckpoints)
         }
     }
 
+    fun clearContext(onSuccess: () -> Unit = {}) {
+        launchCompression {
+            chatService.clearContext(_conversationId)
+            onSuccess()
+        }
+    }
+
+    fun revokeCheckpoints(
+        checkpointNodeId: Uuid,
+        cascadeLater: Boolean,
+        onSuccess: () -> Unit = {},
+    ) {
+        launchCompression {
+            chatService.revokeCheckpoints(_conversationId, checkpointNodeId, cascadeLater)
+            onSuccess()
+        }
+    }
+
+    suspend fun loadContextUsageBreakdown(draftParts: List<UIMessagePart>) =
+        chatService.contextUsageBreakdown(_conversationId, draftParts)
+
     fun showDeleteBlockedWhileGeneratingError() {
         chatService.addError(
-            error = IllegalStateException("请先停止生成再删除消息"),
+            error = IllegalStateException(context.getString(R.string.chat_delete_blocked_while_generating)),
             conversationId = _conversationId,
             title = context.getString(R.string.error_title_operation)
         )
@@ -346,6 +420,87 @@ class ChatVM(
     fun stopGeneration() {
         viewModelScope.launch {
             chatService.stopGeneration(_conversationId)
+        }
+    }
+
+    // ---- 工作区 CLI ----
+
+    val cliProcessState get() = chatService.cliProcessState
+
+    /**
+     * Picks the conversation's CLI (null = ordinary chat). An empty chat switches in place; a chat
+     * with messages keeps its history as it is and the choice opens a new chat, whose id is returned.
+     */
+    fun selectCli(agentId: String?): Uuid? {
+        val current = conversation.value
+        if (current.messageNodes.isEmpty()) {
+            viewModelScope.launch { chatService.setConversationCli(_conversationId, agentId) }
+            return null
+        }
+        val newId = Uuid.random()
+        chatService.prepareNewCliConversation(newId, agentId?.let {
+            me.rerere.rikkihub.data.cli.ConversationCliSession(
+                agentId = it,
+                permissionMode = current.cliSession?.permissionMode ?: me.rerere.rikkihub.data.cli.CliPermissionMode.ASK,
+            )
+        })
+        return newId
+    }
+
+    fun setCliPermissionMode(mode: me.rerere.rikkihub.data.cli.CliPermissionMode) {
+        viewModelScope.launch { chatService.setCliPermissionMode(_conversationId, mode) }
+    }
+
+    fun exitCliToOrdinaryChat() {
+        viewModelScope.launch { chatService.exitCliToOrdinaryChat(_conversationId) }
+    }
+
+    fun setCliConfigOption(configId: String, value: String) {
+        viewModelScope.launch {
+            runCatching { chatService.setCliConfigOption(_conversationId, configId, value) }
+                .onFailure { chatService.addError(it, _conversationId) }
+        }
+    }
+
+    fun setCliModel(modelId: String) {
+        viewModelScope.launch {
+            runCatching { chatService.setCliModel(_conversationId, modelId) }.onFailure { chatService.addError(it, _conversationId) }
+        }
+    }
+
+    fun setCliMode(modeId: String) {
+        viewModelScope.launch {
+            runCatching { chatService.setCliMode(_conversationId, modeId) }.onFailure { chatService.addError(it, _conversationId) }
+        }
+    }
+
+    fun restartCliSession() {
+        viewModelScope.launch { chatService.restartCliSession(_conversationId) }
+    }
+
+    fun cliStderrTail(): String? = chatService.cliStderrTail(_conversationId)
+
+    fun runCliShellCommand(command: String) {
+        viewModelScope.launch {
+            runCatching { chatService.runCliShellCommand(_conversationId, command) }
+                .onFailure { chatService.addError(it, _conversationId, title = context.getString(me.rerere.rikkihub.R.string.error_title_cli)) }
+        }
+    }
+
+    /** Makes the conversation's CLI setting the default for new chats of its assistant (null agent = off). */
+    fun setCliAssistantDefault(enabled: Boolean) {
+        val cli = conversation.value.cliSession
+        val assistantId = conversation.value.assistantId
+        viewModelScope.launch {
+            settingsStore.update { settings ->
+                settings.copy(assistants = settings.assistants.map { assistant ->
+                    if (assistant.id != assistantId) assistant
+                    else assistant.copy(
+                        defaultCliAgentId = if (enabled) cli?.agentId else null,
+                        defaultCliPermissionMode = cli?.permissionMode ?: assistant.defaultCliPermissionMode,
+                    )
+                })
+            }
         }
     }
 
@@ -403,6 +558,20 @@ class ChatVM(
 
     fun clearTranslationField(messageId: Uuid) {
         chatService.clearTranslationField(_conversationId, messageId)
+    }
+
+    val qubaguRefining: StateFlow<Set<Uuid>> get() = chatService.qubaguRefining
+
+    fun setQubaguApplied(messageId: Uuid, part: Int?, edit: Int?, applied: Boolean) {
+        viewModelScope.launch { chatService.setQubaguApplied(_conversationId, messageId, part, edit, applied) }
+    }
+
+    fun scanWithQubagu(messageId: Uuid) {
+        viewModelScope.launch { chatService.cleanMessageWithQubagu(_conversationId, messageId) }
+    }
+
+    fun refineWithQubagu(messageId: Uuid) {
+        chatService.launchQubaguRefine(_conversationId, messageId)
     }
 
     fun updateConversation(newConversation: Conversation) {

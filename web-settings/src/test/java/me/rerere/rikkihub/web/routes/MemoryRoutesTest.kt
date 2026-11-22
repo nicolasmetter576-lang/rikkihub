@@ -8,6 +8,7 @@ import me.rerere.rikkihub.data.ai.MemoryDreamConfig
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.repository.FakeMemoryDAO
+import me.rerere.rikkihub.data.repository.MemoryConflictStrategy
 import me.rerere.rikkihub.data.repository.MemoryRepository
 import me.rerere.rikkihub.data.repository.memoryId
 import me.rerere.rikkihub.web.BadRequestException
@@ -139,5 +140,39 @@ class MemoryRoutesTest {
 
         val changed = mergeAssistant(existing, incoming.copy(autoConsolidateMemory = true), presentKeys = setOf("autoConsolidateMemory"))
         assertTrue(changed.autoConsolidateMemory)
+    }
+
+    @Test
+    fun `migration strategy and backfill day parameters are validated`() {
+        assertEquals(MemoryConflictStrategy.MERGE, parseConflictStrategy(null))
+        assertEquals(MemoryConflictStrategy.MERGE, parseConflictStrategy("MERGE"))
+        assertEquals(MemoryConflictStrategy.SKIP, parseConflictStrategy("skip"))
+        assertEquals(MemoryConflictStrategy.OVERWRITE, parseConflictStrategy("overwrite"))
+        assertThrows(BadRequestException::class.java) { parseConflictStrategy("invalid") }
+
+        assertEquals(30, parseBackfillDays(null))
+        assertEquals(7, parseBackfillDays("7"))
+        assertThrows(BadRequestException::class.java) { parseBackfillDays("0") }
+        assertThrows(BadRequestException::class.java) { parseBackfillDays("999") }
+        assertThrows(BadRequestException::class.java) { parseBackfillDays("abc") }
+    }
+
+    @Test
+    fun `executeMigrationToGlobal migrates private files safely without touching source`() = runBlocking {
+        val repo = MemoryRepository(FakeMemoryDAO())
+        repo.writeFile(own.id.toString(), "/profile.md", "- [stated] Name is Lin\n", MemoryRepository.NEW_FILE_VERSION)
+        repo.writeFile(MemoryRepository.GLOBAL_MEMORY_ID, "/profile.md", "- [stated] Lives in Hangzhou\n", MemoryRepository.NEW_FILE_VERSION)
+
+        val result = executeMigrationToGlobal(
+            assistant = own,
+            request = MemoryMigrationRequest(strategy = "merge", syncMarks = false),
+            memoryRepo = repo,
+            scheduler = null,
+        )
+        assertEquals(1, result.merged)
+        val merged = repo.getFile(MemoryRepository.GLOBAL_MEMORY_ID, "/profile.md")!!.content
+        assertTrue(merged.contains("Name is Lin"))
+        assertTrue(merged.contains("Lives in Hangzhou"))
+        assertEquals("- [stated] Name is Lin\n", repo.getFile(own.id.toString(), "/profile.md")?.content)
     }
 }

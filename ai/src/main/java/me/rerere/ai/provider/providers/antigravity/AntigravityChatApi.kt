@@ -313,10 +313,12 @@ class AntigravityChatApi(
                 } catch (e: Throwable) {
                     Log.e(TAG, "Failed to handle stream event", e)
                     close(e)
+                    eventSource.cancel()
                 }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                if (isClosedForSend) return
                 val error = if (response != null && !response.isSuccessful) {
                     antigravityHttpError(
                         response.code,
@@ -330,8 +332,12 @@ class AntigravityChatApi(
             }
 
             override fun onClosed(eventSource: EventSource) {
-                send(decoder.onClosed())
-                close()
+                try {
+                    send(decoder.onClosed())
+                    close()
+                } catch (e: Throwable) {
+                    close(e)
+                }
             }
         }
 
@@ -411,6 +417,10 @@ internal fun unwrapAntigravityEvent(data: String, toolSchemas: Map<String, JsonE
         throw antigravityHttpError(code, data, null)
     }
     var inner = obj["response"] as? JsonObject ?: obj
+    (inner["error"] as? JsonObject)?.let { error ->
+        val code = (error["code"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()?.takeIf { it in 400..599 } ?: 502
+        throw antigravityHttpError(code, inner.toString(), null)
+    }
     if (inner["candidates"] == null && inner["usageMetadata"] == null && inner["promptFeedback"] == null) return null
     if (!toolSchemas.isNullOrEmpty()) inner = stripPlaceholdersInCandidates(inner, toolSchemas)
     return inner.toString()

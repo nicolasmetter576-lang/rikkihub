@@ -39,13 +39,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import me.rerere.ai.provider.Model
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Idea01
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.model.Assistant
-import me.rerere.rikkihub.data.model.AssistantAffectScope
-import me.rerere.rikkihub.data.model.replaceRegexes
 import me.rerere.rikkihub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkihub.ui.components.ui.ChainOfThoughtScope
 import me.rerere.rikkihub.ui.context.LocalSettings
@@ -128,6 +127,7 @@ private fun ReasoningContent(
     scrollState: ScrollState,
     fadeHeight: Float,
     loading: Boolean,
+    isCliSession: Boolean = LocalIsCliSession.current,
 ) {
     val isPreview = expandState == ReasoningCardState.Preview
     val fontSizeRatio = LocalSettings.current.displaySetting.fontSizeRatio
@@ -173,11 +173,11 @@ private fun ReasoningContent(
     ) {
         val reasoningContent = @Composable {
             MarkdownBlock(
-                content = reasoning.reasoning.replaceRegexes(
-                    assistant = assistant,
-                    scope = AssistantAffectScope.ASSISTANT,
-                    visual = true,
-                ),
+                content = if (isCliSession) {
+                    reasoning.reasoning
+                } else {
+                    rememberRegexedText(reasoning.reasoning, MessageRole.ASSISTANT, LocalSettings.current, assistant, isReasoning = true)
+                },
                 style = reasoningTextStyle,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -201,6 +201,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
     assistant: Assistant?,
     fadeHeight: Float = 64f,
     collapsedAdaptiveWidth: Boolean = false,
+    isCliSession: Boolean = LocalIsCliSession.current,
 ) {
     val (state, loading) = rememberReasoningState(reasoning)
     val thinkingTitle = reasoning.reasoning.extractThinkingTitle()
@@ -253,6 +254,7 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
                 scrollState = state.scrollState,
                 fadeHeight = fadeHeight,
                 loading = loading,
+                isCliSession = isCliSession,
             )
         },
     )

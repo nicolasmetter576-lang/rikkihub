@@ -8,6 +8,39 @@ import me.rerere.rikkihub.data.db.dao.MemoryDAO
 import me.rerere.rikkihub.data.db.entity.MemoryFileEntity
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.MemoryFile
+import me.rerere.rikkihub.data.model.mergeMemoryFiles
+
+enum class MemoryConflictStrategy {
+    SKIP,
+    MERGE,
+    OVERWRITE,
+}
+
+data class MemoryMigrationConflict(
+    val path: String,
+    val title: String,
+    val sourceBytes: Int,
+    val targetBytes: Int,
+    val mergedBytes: Int,
+    val mergeExceedsLimit: Boolean,
+)
+
+data class MemoryMigrationPreview(
+    val sourceCount: Int,
+    val newPaths: List<String>,
+    val identicalPaths: List<String>,
+    val conflicts: List<MemoryMigrationConflict>,
+) {
+    val hasActionableChanges: Boolean get() = newPaths.isNotEmpty() || conflicts.isNotEmpty()
+}
+
+data class MemoryMigrationResult(
+    val copied: Int,
+    val merged: Int,
+    val overwritten: Int,
+    val skipped: Int,
+    val failedOversized: List<String> = emptyList(),
+)
 
 sealed interface MemoryWriteResult {
     /** [file] 为 null 表示文件已被删除 */
@@ -36,6 +69,12 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
 
     fun getFilesFlow(assistantId: String): Flow<List<MemoryFile>> =
         memoryDAO.getFilesOfAssistantFlow(assistantId).map { entities -> entities.map { it.toMemoryFile() } }
+
+    fun getFileCountFlow(assistantId: String): Flow<Int> =
+        memoryDAO.getFileCountFlow(assistantId)
+
+    fun getFileCountsByAssistantFlow(): Flow<Map<String, Int>> =
+        memoryDAO.getFileCountsByAssistantFlow().map { rows -> rows.associate { it.assistantId to it.count } }
 
     suspend fun getFiles(assistantId: String): List<MemoryFile> =
         memoryDAO.getFilesOfAssistant(assistantId).map { it.toMemoryFile() }
@@ -103,10 +142,127 @@ class MemoryRepository(private val memoryDAO: MemoryDAO) {
         memoryDAO.deleteFilesOfAssistant(assistantId)
     }
 
-    suspend fun copyFiles(fromAssistantId: String, toAssistantId: String) {
-        val files = memoryDAO.getFilesOfAssistant(fromAssistantId)
-        if (files.isEmpty()) return
-        memoryDAO.upsertFiles(files.map { it.copy(assistantId = toAssistantId) })
+    /** 预检从 [fromMemoryId] 复制/合并到 [toMemoryId] 的变更与冲突，不改动任何数据 */
+    suspend fun previewMigration(fromMemoryId: String, toMemoryId: String): MemoryMigrationPreview {
+        require(fromMemoryId != toMemoryId) { "Source and target memory stores must differ" }
+        val sourceFiles = getFiles(fromMemoryId)
+        if (sourceFiles.isEmpty()) {
+            return MemoryMigrationPreview(0, emptyList(), emptyList(), emptyList())
+        }
+        val targetByPath = getFiles(toMemoryId).associateBy { it.path }
+        val newPaths = mutableListOf<String>()
+        val identicalPaths = mutableListOf<String>()
+        val conflicts = mutableListOf<MemoryMigrationConflict>()
+
+        sourceFiles.forEach { source ->
+            val target = targetByPath[source.path]
+            when {
+                target == null -> newPaths += source.path
+                target.version == source.version -> identicalPaths += source.path
+                else -> {
+                    val outcome = mergeMemoryFiles(target, source)
+                    if (!outcome.changed) {
+                        identicalPaths += source.path
+                    } else {
+                        conflicts += MemoryMigrationConflict(
+                            path = source.path,
+                            title = target.title,
+                            sourceBytes = source.content.toByteArray().size,
+                            targetBytes = target.content.toByteArray().size,
+                            mergedBytes = outcome.bytes,
+                            mergeExceedsLimit = outcome.exceedsLimit,
+                        )
+                    }
+                }
+            }
+        }
+        return MemoryMigrationPreview(
+            sourceCount = sourceFiles.size,
+            newPaths = newPaths,
+            identicalPaths = identicalPaths,
+            conflicts = conflicts,
+        )
+    }
+
+    /**
+     * 安全迁移 [fromMemoryId] 中的记忆文件到 [toMemoryId]：
+     * - 持有 [writeLock]，避免与后台做梦或主对话写入竞态；
+     * - 永不修改或删除源库文件；
+     * - 同名冲突严格按 [strategy] 处理，合并超 48KB 的文件拒绝写入并回报 [MemoryMigrationResult.failedOversized]。
+     */
+    suspend fun migrateFiles(
+        fromMemoryId: String,
+        toMemoryId: String,
+        strategy: MemoryConflictStrategy,
+    ): MemoryMigrationResult = writeLock.withLock {
+        require(fromMemoryId != toMemoryId) { "Source and target memory stores must differ" }
+        val sourceFiles = getFiles(fromMemoryId)
+        if (sourceFiles.isEmpty()) {
+            return MemoryMigrationResult(copied = 0, merged = 0, overwritten = 0, skipped = 0)
+        }
+        val targetByPath = getFiles(toMemoryId).associateBy { it.path }
+        val now = System.currentTimeMillis()
+        val toUpsert = mutableListOf<MemoryFileEntity>()
+        var copied = 0
+        var merged = 0
+        var overwritten = 0
+        var skipped = 0
+        val failedOversized = mutableListOf<String>()
+
+        sourceFiles.forEach { source ->
+            val target = targetByPath[source.path]
+            if (target == null) {
+                toUpsert += MemoryFileEntity(
+                    assistantId = toMemoryId,
+                    path = source.path,
+                    content = source.content,
+                    updatedAt = now,
+                )
+                copied++
+            } else if (target.version == source.version) {
+                skipped++
+            } else {
+                when (strategy) {
+                    MemoryConflictStrategy.SKIP -> skipped++
+                    MemoryConflictStrategy.OVERWRITE -> {
+                        toUpsert += MemoryFileEntity(
+                            assistantId = toMemoryId,
+                            path = source.path,
+                            content = source.content,
+                            updatedAt = now,
+                        )
+                        overwritten++
+                    }
+
+                    MemoryConflictStrategy.MERGE -> {
+                        val outcome = mergeMemoryFiles(target, source)
+                        when {
+                            !outcome.changed -> skipped++
+                            outcome.exceedsLimit -> failedOversized += source.path
+                            else -> {
+                                toUpsert += MemoryFileEntity(
+                                    assistantId = toMemoryId,
+                                    path = source.path,
+                                    content = outcome.content,
+                                    updatedAt = now,
+                                )
+                                merged++
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (toUpsert.isNotEmpty()) {
+            memoryDAO.upsertFiles(toUpsert)
+        }
+        MemoryMigrationResult(
+            copied = copied,
+            merged = merged,
+            overwritten = overwritten,
+            skipped = skipped,
+            failedOversized = failedOversized,
+        )
     }
 
     private sealed interface Edit {

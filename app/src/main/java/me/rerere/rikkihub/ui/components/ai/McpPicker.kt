@@ -21,7 +21,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +54,7 @@ import me.rerere.rikkihub.ui.components.ui.Tag
 import me.rerere.rikkihub.ui.components.ui.TagType
 import me.rerere.rikkihub.ui.components.ui.ToggleSurface
 import org.koin.compose.koinInject
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
 
 @Composable
 fun McpPickerButton(
@@ -175,7 +175,7 @@ fun McpPickerListItem(
         it.commonOptions.enable && assistant.mcpServers.contains(it.id)
     }
 
-    ListItem(
+    CompactListItem(
         leadingContent = {
             if (loading) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))

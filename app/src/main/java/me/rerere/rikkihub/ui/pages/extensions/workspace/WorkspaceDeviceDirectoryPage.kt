@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.extensions.workspace
 
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -141,6 +143,7 @@ fun WorkspaceDeviceDirectoryPage(workspaceId: String) {
                     }
                 },
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         containerColor = CustomColors.topBarColors.containerColor,
@@ -149,7 +152,7 @@ fun WorkspaceDeviceDirectoryPage(workspaceId: String) {
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
@@ -273,7 +276,7 @@ private fun DeviceDirectoryRiskCard() {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -302,7 +305,7 @@ private fun DeviceDirectoryNotice(text: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
         )
     }
 }
@@ -317,7 +320,7 @@ private fun DeviceDirectoryPermissionCard(storage: WorkspaceDeviceStorage, onFai
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
@@ -341,6 +344,7 @@ private fun DeviceDirectoryPermissionCard(storage: WorkspaceDeviceStorage, onFai
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(stringResource(R.string.workspace_device_grant_access))
             }
@@ -366,7 +370,7 @@ private fun DeviceMountCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(AppSpacing.sm),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(

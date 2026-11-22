@@ -2,17 +2,27 @@ package me.rerere.rikkihub.di
 
 import android.content.Context
 import android.os.Environment
+import me.rerere.rikkihub.data.character.imageBytesToPng
 import me.rerere.rikkihub.data.files.FileFolders
+import me.rerere.rikkihub.data.files.FileManagerService
+import me.rerere.rikkihub.ui.pages.files.FileManagerPicks
 import me.rerere.rikkihub.data.files.FilesManager
 import me.rerere.rikkihub.data.files.SkillManager
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.data.repository.FavoriteRepository
 import me.rerere.rikkihub.data.repository.FolderRepository
+import me.rerere.rikkihub.data.repository.CharacterRepository
 import me.rerere.rikkihub.data.repository.TranslationHistoryRepository
 import me.rerere.rikkihub.data.repository.FilesRepository
 import me.rerere.rikkihub.data.repository.GenMediaRepository
 import me.rerere.rikkihub.data.repository.MemoryRepository
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import me.rerere.rikkihub.AppScope
+import me.rerere.rikkihub.data.files.FileManagerWorkspace
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
+import me.rerere.rikkihub.data.workspace.WorkspaceUrlOpener
 import me.rerere.rikkihub.data.repository.SubagentPresetRepository
 import me.rerere.workspace.LocalWorkspaceBackend
 import me.rerere.workspace.ProotShellRunner
@@ -21,6 +31,7 @@ import me.rerere.workspace.WorkspaceBackend
 import me.rerere.workspace.WorkspaceBindMount
 import me.rerere.workspace.WorkspaceDeviceDirectoryGuard
 import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.WorkspaceUrlHandoff
 import org.koin.dsl.module
 import java.io.File
 import me.rerere.rikkihub.data.repository.MediaCreationRepository
@@ -55,7 +66,29 @@ val repositoryModule = module {
     }
 
     single {
+        CharacterRepository(dao = get(), root = java.io.File(get<Context>().filesDir, FileFolders.CHARACTERS))
+    }
+
+    single {
+        val settingsStore = get<me.rerere.rikkihub.data.datastore.SettingsStore>()
+        me.rerere.rikkihub.data.character.CharacterService(
+            repository = get(),
+            readSettings = { settingsStore.settingsFlow.value },
+            updateSettings = { transform -> settingsStore.update(transform) },
+            toPng = ::imageBytesToPng,
+        )
+    }
+
+    single {
         MediaCreationRepository(context = get(), database = get(), dao = get(), json = get())
+    }
+
+    single {
+        val context: Context = get()
+        WorkspaceUrlOpener(
+            context = context,
+            dir = File(context.noBackupFilesDir.canonicalFile, "workspace_open_url").apply { mkdirs() },
+        )
     }
 
     single {
@@ -89,6 +122,11 @@ val repositoryModule = module {
                 WorkspaceBindMount(
                     source = File(filesRoot, FileFolders.UPLOAD).apply { mkdirs() },
                     target = "/upload",
+                ),
+                // xdg-open inside the rootfs drops links here; WorkspaceUrlOpener opens them
+                WorkspaceBindMount(
+                    source = get<WorkspaceUrlOpener>().dir,
+                    target = WorkspaceUrlHandoff.GUEST_DIR,
                 ),
             ),
         )
@@ -124,6 +162,18 @@ val repositoryModule = module {
         FilesManager(get(), get(), get(),
             retentionDao = get<me.rerere.rikkihub.data.db.AppDatabase>().attachmentRetentionDao())
     }
+
+    single {
+        val manager = get<WorkspaceManager>()
+        // The library lists the workspaces (folder per workspace = its files area); kept warm so the
+        // service can read it on any thread without touching the database.
+        val workspaces = get<WorkspaceRepository>().listFlow()
+            .map { list -> list.map { FileManagerWorkspace(it.name, manager.filesDir(it.root), it.updatedAt) } }
+            .stateIn(get<AppScope>(), SharingStarted.Eagerly, emptyList())
+        FileManagerService.create(context = get(), filesManager = get(), workspaces = { workspaces.value })
+    }
+
+    single { FileManagerPicks() }
 
     single {
         SkillManager(get(), get())

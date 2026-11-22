@@ -467,9 +467,8 @@ private fun ComposerChip(
     FilledTonalButton(
         onClick = onClick,
         // 按下时圆角收紧
-        shapes = ButtonDefaults.shapes(),
         modifier = modifier,
-        contentPadding = ButtonDefaults.contentPaddingFor(ButtonDefaults.MinHeight, hasStartIcon = true),
+        contentPadding = ButtonDefaults.contentPaddingFor(ButtonDefaults.MinHeight, hasStartIcon = true)
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
         Spacer(Modifier.width(ButtonDefaults.IconSpacing))
@@ -696,19 +695,19 @@ private fun AssetPickerSheet(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             maxItemsInEachRow = 2,
         ) {
-            OutlinedButton(onClick = onPickImages, modifier = Modifier.weight(1f)) {
+            OutlinedButton(onClick = onPickImages, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.medium) {
                 Icon(HugeIcons.Image02, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(8.dp))
                 Text(stringResource(R.string.media_creation_page_gallery_image))
             }
             if (acceptsVideo) {
-                OutlinedButton(onClick = onPickVideo, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onPickVideo, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.medium) {
                     Icon(HugeIcons.Video01, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
                     Text(stringResource(R.string.media_creation_page_gallery_video))
                 }
             }
-            OutlinedButton(onClick = onSketch, modifier = Modifier.weight(1f)) {
+            OutlinedButton(onClick = onSketch, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.medium) {
                 Icon(HugeIcons.PaintBoard, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(8.dp))
                 Text(stringResource(R.string.sketch))

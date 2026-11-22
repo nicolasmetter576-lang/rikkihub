@@ -140,6 +140,23 @@ class WorkspacePendingToolReconcilerTest {
     }
 
     @Test
+    fun `a call that had started is closed as outcome unknown, not as never executed`() {
+        val started = toolPart("workspace_shell", "{\"command\":\"make\"}")
+            .copy(startedAt = kotlin.time.Instant.fromEpochMilliseconds(1_000))
+        val waiting = toolPart("workspace_shell", toolCallId = "call-2")
+        val conversation = conversationWith(listOf(assistantWith(started, waiting)))
+        val result = conversation.patchWorkspacePendingToolCalls(judge(sessionWorkspace = null))
+        assertEquals(2, result.patchedParts)
+        val parts = result.conversation.messageNodes.last().messages[0].parts.map { it as UIMessagePart.Tool }
+        val startedOutput = outputJson(parts[0])!!
+        assertEquals("outcome_unknown", startedOutput["status"]?.jsonPrimitive?.content)
+        assertEquals("true", startedOutput["started"]?.jsonPrimitive?.content)
+        assertEquals(WORKSPACE_UNAVAILABLE_REASON, startedOutput["reason"]?.jsonPrimitive?.content)
+        assertFalse(startedOutput["error"]!!.jsonPrimitive.content.contains("never executed"))
+        assertEquals("unavailable", statusOf(parts[1]))
+    }
+
+    @Test
     fun `renamed enabled tool via override stays ready under its current name`() {
         val overrides = mapOf(BuiltinToolIds.WORKSPACE_SHELL to ToolOverride(name = "my_shell"))
         val conversation = conversationWith(listOf(assistantWith(toolPart("my_shell"))))

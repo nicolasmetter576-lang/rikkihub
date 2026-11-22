@@ -1,0 +1,5136 @@
+[
+    {
+        "config": "default",
+        "text": "她站在窗边，瞳孔猛地一缩，没有说话。\n她站在窗边，瞳孔地震，没有说话。\n“攥得指节泛白！”她说。\n她站在窗边，指甲深深嵌进掌心，没有说话。\n她站在窗边，上下艰难地滚动了一下，没有说话。\n“一股电流顺着脊背窜上天灵盖！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "瞳孔猛地一缩",
+                "a": "眸光微闪",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 25,
+                "b": "瞳孔地震",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 55,
+                "b": "指甲深深嵌进掌心",
+                "a": "五指悄然收拢",
+                "r": "pack:phys_knuckles_white"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，呼吸猛地一滞，没有说话。\n她站在窗边，倒吸一口凉气，没有说话。\n“胃袋一阵失重！”她说。\n她站在窗边，心脏漏跳了一拍，没有说话。\n她站在窗边，眼底划过一抹复杂神色，没有说话。\n“下颌线绷得笔直！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "呼吸猛地一滞",
+                "a": "微微一怔",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 25,
+                "b": "倒吸一口凉气",
+                "a": "胸口微闷",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 57,
+                "b": "心脏漏跳了一拍",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 77,
+                "b": "眼底划过一抹复杂",
+                "a": "目光沉了沉",
+                "r": "pack:phys_eyes_complex_emotion"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，咬肌微微鼓起，没有说话。\n她站在窗边，全身的血液在这一刻倒流，没有说话。\n“纤长的睫毛像受惊的蝶翼般微微颤抖！”她说。\n她站在窗边，耳根瞬间红得像要滴出血来，没有说话。\n她站在窗边，shivers down her spine，没有说话。\n“breath hitches！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 25,
+                "b": "全身的血液在这一刻倒流",
+                "a": "整个人僵在原地",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 97,
+                "b": "shivers down her spine",
+                "a": "held still",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "瞳孔猛地一缩，瞳孔地震，攥得指节泛白，指甲深深嵌进掌心，上下艰难地滚动了一下，一股电流顺着脊背窜上天灵盖，呼吸猛地一滞，倒吸一口凉气，胃袋一阵失重，心脏漏跳了一拍，眼底划过一抹复杂神色，下颌线绷得笔直，咬肌微微鼓起，全身的血液在这一刻倒流，纤长的睫毛像受惊的蝶翼般微微颤抖，耳根瞬间红得像要滴出血来，shivers down her spine，breath hitches。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "瞳孔猛地一缩",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 7,
+                "b": "瞳孔地震",
+                "a": "神情微变",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 12,
+                "b": "攥得指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 19,
+                "b": "指甲深深嵌进掌心",
+                "a": "指腹用力抵着掌心",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 39,
+                "b": "一股电流顺着脊背窜上天灵盖",
+                "a": "身体微僵",
+                "r": "pack:phys_spine_chill"
+            },
+            {
+                "s": 53,
+                "b": "呼吸猛地一滞",
+                "a": "气息乱了一瞬",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 60,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 67,
+                "b": "胃袋一阵失重",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 74,
+                "b": "心脏漏跳了一拍",
+                "a": "心跳快了几分",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 82,
+                "b": "眼底划过一抹复杂",
+                "a": "目光闪了闪",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 93,
+                "b": "下颌线绷得笔直",
+                "a": "闭紧嘴没有吭声",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 101,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 108,
+                "b": "全身的血液在这一刻倒流",
+                "a": "指尖一阵发凉",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 120,
+                "b": "纤长的睫毛像受惊的蝶翼般微微颤抖",
+                "a": "视线微微低垂",
+                "r": "pack:phys_eyelash_butterfly"
+            },
+            {
+                "s": 150,
+                "b": "shivers down her spine",
+                "a": "steadied",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，带着三分凉薄、七分漫不经心，没有说话。\n她站在窗边，像一颗石子投入平静的湖心泛起涟漪，没有说话。\n“空气瞬间粘稠得能拧出水来！”她说。\n她站在窗边，一股凛冽的雪松混合着烟草的气息，没有说话。\n她站在窗边，唇角扬起一抹似笑非笑的弧度，没有说话。\n“声音低沉得像被砂纸打磨过！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "带着几分凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 33,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "让人心头微动",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 80,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "一缕淡淡的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 108,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇角微扬",
+                "r": "pack:sens_lip_arc"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，那双不见底的眸子像幽暗的寒潭，没有说话。\n她站在窗边，像一根羽毛轻轻搔过心尖，没有说话。\n“那双修长分明的大手！”她说。\n她站在窗边，像一只受惊的小鹿般四处乱撞，没有说话。\n她站在窗边，带着一股不容置疑的上位者威压，没有说话。\n“barely above a whisper！”她说。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "眸子像幽暗的寒潭",
+                "a": "目光沉静如水",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 34,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 73,
+                "b": "像一只受惊的小鹿",
+                "a": "带着几分紧张和无助",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 99,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "语气笃定而强势",
+                "r": "pack:sens_undeniable_majesty"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，eyes sparkling with mischief，没有说话。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "eyes sparkling with mischief",
+                "a": "with a faint smile",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "带着三分凉薄、七分漫不经心，像一颗石子投入平静的湖心泛起涟漪，空气瞬间粘稠得能拧出水来，一股凛冽的雪松混合着烟草的气息，唇角扬起一抹似笑非笑的弧度，声音低沉得像被砂纸打磨过，那双不见底的眸子像幽暗的寒潭，像一根羽毛轻轻搔过心尖，那双修长分明的大手，像一只受惊的小鹿般四处乱撞，带着一股不容置疑的上位者威压，barely above a whisper，eyes sparkling with mischief。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "隐约透出凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 15,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "在心间留下浅浅的痕迹",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 31,
+                "b": "空气瞬间粘稠得能拧出水来",
+                "a": "四周一时安静下来",
+                "r": "pack:sens_air_solid"
+            },
+            {
+                "s": 44,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "令人安心的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 60,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇边露出一丝笑意",
+                "r": "pack:sens_lip_arc"
+            },
+            {
+                "s": 93,
+                "b": "眸子像幽暗的寒潭",
+                "a": "静静地注视着前方",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 103,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "让人心里有些发痒",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 124,
+                "b": "像一只受惊的小鹿",
+                "a": "神情有些慌乱",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 138,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "话里透着一股执拗",
+                "r": "pack:sens_undeniable_majesty"
+            },
+            {
+                "s": 153,
+                "b": "barely above a whisper",
+                "a": "softly",
+                "r": "pack:sens_en_whisper_sparkle"
+            },
+            {
+                "s": 176,
+                "b": "eyes sparkling with mischief",
+                "a": "quietly",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，像一只耐心的捕食者审视着落入陷阱的猎物，没有说话。\n她站在窗边，脸上那层完美的温和面具出现了一丝裂痕，没有说话。\n“肾上腺素在血管里疯狂飙升！”她说。\n她站在窗边，心理防卫机制，没有说话。\n她站在窗边，某种微妙的磁场在两人之间蔓延，没有说话。\n“像是在无声地宣示主权！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "目光紧盯着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 47,
+                "b": "面具出现了一丝裂痕",
+                "a": "脸上的笑意淡了下去",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 88,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 107,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "对视间多了几分暗涌",
+                "r": "pack:jarg_tension_pull"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，强烈的领地意识，没有说话。\n她站在窗边，脑海中那根名为理智的弦啪地一声断了，没有说话。\n“身体本能地摆出防御姿态！”她说。\n她站在窗边，巴甫洛夫式的条件反射，没有说话。\n她站在窗边，a testament to，没有说话。\n“a dance as old as time！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "强烈的领地意识",
+                "a": "不动声色地将人护在身边",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 26,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "彻底失去了耐性",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 74,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 97,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "像一只耐心的捕食者审视着落入陷阱的猎物，脸上那层完美的温和面具出现了一丝裂痕，肾上腺素在血管里疯狂飙升，心理防卫机制，某种微妙的磁场在两人之间蔓延，像是在无声地宣示主权，强烈的领地意识，脑海中那根名为理智的弦啪地一声断了，身体本能地摆出防御姿态，巴甫洛夫式的条件反射，a testament to，a dance as old as time。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "好整以暇地看着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 29,
+                "b": "面具出现了一丝裂痕",
+                "a": "罕见地失了态",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 52,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 59,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "气氛一时有些僵持",
+                "r": "pack:jarg_tension_pull"
+            },
+            {
+                "s": 74,
+                "b": "像是在无声地宣示主权",
+                "a": "姿态亲昵而笃定",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 85,
+                "b": "强烈的领地意识",
+                "a": "透着一点不容旁人插手的强势",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 93,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "一时冲动占了上风",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 111,
+                "b": "身体本能地摆出防御姿态",
+                "a": "不由自主地绷紧了神经",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 123,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 134,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            },
+            {
+                "s": 149,
+                "b": "a dance as old as time",
+                "a": "a quiet sign of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，——————，没有说话。\n她站在窗边，…………，没有说话。\n“！！！！！！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 25,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 37,
+                "b": "！！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "——————，…………，！！！！！。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 7,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 12,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，肉刃，没有说话。\n她站在窗边，龙根，没有说话。\n“欲根！”她说。\n她站在窗边，胯下灼热的凶器，没有说话。\n她站在窗边，紫红的伞冠，没有说话。\n“硕大的龙头！”她说。",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，拨开湿润的花瓣，没有说话。\n她站在窗边，两片粉嫩花唇，没有说话。\n“泥泞的蜜穴！”她说。\n她站在窗边，花穴，没有说话。\n她站在窗边，探入湿润的秘处，没有说话。\n“捻弄充血的花珠！”她说。",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，按压顶端的小珍珠，没有说话。\n她站在窗边，涌出粘腻的蜜汁，没有说话。\n“腿间流出的琼浆！”她说。\n她站在窗边，饱满的酥胸，没有说话。\n她站在窗边，椒乳，没有说话。\n“胸前高耸的雪峰！”她说。",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，胸前挺立的红梅，没有说话。\n她站在窗边，含住粉嫩的樱桃，没有说话。\n“射出滚烫的龙精！”她说。\n她站在窗边，尽数喷洒出灼热的精华，没有说话。\n她站在窗边，探入紧窄的后庭，没有说话。\n“扩张羞耻的菊穴！”她说。",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "她站在窗边，层层叠叠的媚肉死死绞紧，没有说话。",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "肉刃，龙根，欲根，胯下灼热的凶器，紫红的伞冠，硕大的龙头，拨开湿润的花瓣，两片粉嫩花唇，泥泞的蜜穴，花穴，探入湿润的秘处，捻弄充血的花珠，按压顶端的小珍珠，涌出粘腻的蜜汁，腿间流出的琼浆，饱满的酥胸，椒乳，胸前高耸的雪峰，胸前挺立的红梅，含住粉嫩的樱桃，射出滚烫的龙精，尽数喷洒出灼热的精华，探入紧窄的后庭，扩张羞耻的菊穴，层层叠叠的媚肉死死绞紧。",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "那不是愤怒，而是一种执念。他并不是在笑，是在哭。这不是请求，也不是商量，而是命令。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是愤怒，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 14,
+                "b": "并不是在笑，是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 25,
+                "b": "不是请求，也不是商量，而是",
+                "a": "是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "这不是请求。是命令。这并非安慰，而是试探。与其说是安慰，不如说是试探。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是请求。是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 11,
+                "b": "并非安慰，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 21,
+                "b": "与其说是安慰，不如说是",
+                "a": "更像是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她的眼神少了几分凌厉，却多了几分温柔。他问她是不是累了，是该休息了。这不是梦。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "少了几分凌厉，却",
+                "a": "",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "It wasn't anger, it was grief. She smiled. It's not fear — it's resolve.",
+        "edits": [
+            {
+                "s": 0,
+                "b": "It wasn't anger, it was ",
+                "a": "It was ",
+                "r": "negation"
+            },
+            {
+                "s": 43,
+                "b": "It's not fear — it's ",
+                "a": "It is ",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "他转身离开。\n\n夜还很长。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "\n\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "他转身离开，夜，还很长呢……",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "他转身离开，夜还很长？",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，夜还很长？",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "他关上门，这一切才刚刚开始。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "，这一切才刚刚开始。",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "She left the room, the night was still young.",
+        "edits": [
+            {
+                "s": 17,
+                "b": ", the night was still young.",
+                "a": ".",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "She left. Only time will tell.",
+        "edits": [
+            {
+                "s": 9,
+                "b": " Only time will tell.",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "他转身离开，决定权在你手里了！",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，决定权在你手里了！",
+                "a": "！",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "他走了。\n夜还很长。\n<details><summary>状态</summary>HP 10</details>",
+        "edits": [
+            {
+                "s": 4,
+                "b": "\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "夜还很长。",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "他微微一笑，微微点头，又微微侧身，缓缓坐下，缓缓抬手，缓缓开口，缓缓地闭上眼，轻轻轻轻。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "微微",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 27,
+                "b": "缓缓",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 32,
+                "b": "缓缓地",
+                "a": "",
+                "r": "quota"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "“微微，微微，微微。”他微微一怔。",
+        "edits": []
+    },
+    {
+        "config": "default",
+        "text": "他来了。\n她走了。\n天黑了。\n雨停了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n她走了。\n天黑了。\n雨停了。",
+                "a": "他来了，她走了，天黑了，雨停了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "他来了。\n\n她走了。\n\n天黑了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n\n她走了。\n\n天黑了。",
+                "a": "他来了，她走了，天黑了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "他瞳孔猛地一缩，喉结滚动了一下，指节泛白。“瞳孔地震！！！！！”\n\n```\n瞳孔骤缩\n```\n『喉结滚动』……………",
+        "edits": [
+            {
+                "s": 1,
+                "b": "瞳孔猛地一缩",
+                "a": "眼神微敛",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 8,
+                "b": "喉结滚动了一下",
+                "a": "气息微沉",
+                "r": "pack:phys_throat_roll"
+            },
+            {
+                "s": 16,
+                "b": "指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 26,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 53,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "——————那一刻……………他愣住了！！！！！？？？？",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 9,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 18,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 23,
+                "b": "？？？？",
+                "a": "？？？",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "default",
+        "text": "她的眼底闪过一抹复杂的情绪，像一根羽毛轻轻搔过心尖，呼吸一滞。他倒吸一口凉气，心脏漏跳了一拍，后背发凉。",
+        "edits": [
+            {
+                "s": 2,
+                "b": "眼底闪过一抹复杂",
+                "a": "脸色微变",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 15,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 26,
+                "b": "呼吸一滞",
+                "a": "神情微顿",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 32,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 39,
+                "b": "心脏漏跳了一拍",
+                "a": "心神微晃",
+                "r": "pack:phys_stomach_weightless"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，瞳孔猛地一缩，没有说话。\n她站在窗边，瞳孔地震，没有说话。\n“攥得指节泛白！”她说。\n她站在窗边，指甲深深嵌进掌心，没有说话。\n她站在窗边，上下艰难地滚动了一下，没有说话。\n“一股电流顺着脊背窜上天灵盖！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "瞳孔猛地一缩",
+                "a": "眸光微闪",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 25,
+                "b": "瞳孔地震",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 37,
+                "b": "攥得指节泛白",
+                "a": "五指悄然收拢",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 55,
+                "b": "指甲深深嵌进掌心",
+                "a": "手背绷紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 94,
+                "b": "一股电流顺着脊背窜上天灵盖",
+                "a": "猛地打了个激灵",
+                "r": "pack:phys_spine_chill"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，呼吸猛地一滞，没有说话。\n她站在窗边，倒吸一口凉气，没有说话。\n“胃袋一阵失重！”她说。\n她站在窗边，心脏漏跳了一拍，没有说话。\n她站在窗边，眼底划过一抹复杂神色，没有说话。\n“下颌线绷得笔直！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "呼吸猛地一滞",
+                "a": "微微一怔",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 25,
+                "b": "倒吸一口凉气",
+                "a": "胸口微闷",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 39,
+                "b": "胃袋一阵失重",
+                "a": "心神微晃",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 57,
+                "b": "心脏漏跳了一拍",
+                "a": "心里咯噔一下",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 77,
+                "b": "眼底划过一抹复杂",
+                "a": "目光沉了沉",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 95,
+                "b": "下颌线绷得笔直",
+                "a": "抿紧了嘴角",
+                "r": "pack:phys_jawline_tense"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，咬肌微微鼓起，没有说话。\n她站在窗边，全身的血液在这一刻倒流，没有说话。\n“纤长的睫毛像受惊的蝶翼般微微颤抖！”她说。\n她站在窗边，耳根瞬间红得像要滴出血来，没有说话。\n她站在窗边，shivers down her spine，没有说话。\n“breath hitches！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 25,
+                "b": "全身的血液在这一刻倒流",
+                "a": "整个人僵在原地",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 44,
+                "b": "纤长的睫毛像受惊的蝶翼般微微颤抖",
+                "a": "不自然地移开目光",
+                "r": "pack:phys_eyelash_butterfly"
+            },
+            {
+                "s": 97,
+                "b": "shivers down her spine",
+                "a": "held still",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "瞳孔猛地一缩，瞳孔地震，攥得指节泛白，指甲深深嵌进掌心，上下艰难地滚动了一下，一股电流顺着脊背窜上天灵盖，呼吸猛地一滞，倒吸一口凉气，胃袋一阵失重，心脏漏跳了一拍，眼底划过一抹复杂神色，下颌线绷得笔直，咬肌微微鼓起，全身的血液在这一刻倒流，纤长的睫毛像受惊的蝶翼般微微颤抖，耳根瞬间红得像要滴出血来，shivers down her spine，breath hitches。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "瞳孔猛地一缩",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 7,
+                "b": "瞳孔地震",
+                "a": "神情微变",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 12,
+                "b": "攥得指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 19,
+                "b": "指甲深深嵌进掌心",
+                "a": "指腹用力抵着掌心",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 39,
+                "b": "一股电流顺着脊背窜上天灵盖",
+                "a": "身体微僵",
+                "r": "pack:phys_spine_chill"
+            },
+            {
+                "s": 53,
+                "b": "呼吸猛地一滞",
+                "a": "气息乱了一瞬",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 60,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 67,
+                "b": "胃袋一阵失重",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 74,
+                "b": "心脏漏跳了一拍",
+                "a": "心跳快了几分",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 82,
+                "b": "眼底划过一抹复杂",
+                "a": "目光闪了闪",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 93,
+                "b": "下颌线绷得笔直",
+                "a": "闭紧嘴没有吭声",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 101,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 108,
+                "b": "全身的血液在这一刻倒流",
+                "a": "指尖一阵发凉",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 120,
+                "b": "纤长的睫毛像受惊的蝶翼般微微颤抖",
+                "a": "视线微微低垂",
+                "r": "pack:phys_eyelash_butterfly"
+            },
+            {
+                "s": 150,
+                "b": "shivers down her spine",
+                "a": "steadied",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，带着三分凉薄、七分漫不经心，没有说话。\n她站在窗边，像一颗石子投入平静的湖心泛起涟漪，没有说话。\n“空气瞬间粘稠得能拧出水来！”她说。\n她站在窗边，一股凛冽的雪松混合着烟草的气息，没有说话。\n她站在窗边，唇角扬起一抹似笑非笑的弧度，没有说话。\n“声音低沉得像被砂纸打磨过！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "带着几分凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 33,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "让人心头微动",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 56,
+                "b": "空气瞬间粘稠得能拧出水来",
+                "a": "一时间无人说话",
+                "r": "pack:sens_air_solid"
+            },
+            {
+                "s": 80,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "一缕淡淡的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 108,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇角微扬",
+                "r": "pack:sens_lip_arc"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，那双不见底的眸子像幽暗的寒潭，没有说话。\n她站在窗边，像一根羽毛轻轻搔过心尖，没有说话。\n“那双修长分明的大手！”她说。\n她站在窗边，像一只受惊的小鹿般四处乱撞，没有说话。\n她站在窗边，带着一股不容置疑的上位者威压，没有说话。\n“barely above a whisper！”她说。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "眸子像幽暗的寒潭",
+                "a": "目光沉静如水",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 34,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 73,
+                "b": "像一只受惊的小鹿",
+                "a": "带着几分紧张和无助",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 99,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "语气笃定而强势",
+                "r": "pack:sens_undeniable_majesty"
+            },
+            {
+                "s": 121,
+                "b": "barely above a whisper",
+                "a": "quietly",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，eyes sparkling with mischief，没有说话。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "eyes sparkling with mischief",
+                "a": "with a faint smile",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "带着三分凉薄、七分漫不经心，像一颗石子投入平静的湖心泛起涟漪，空气瞬间粘稠得能拧出水来，一股凛冽的雪松混合着烟草的气息，唇角扬起一抹似笑非笑的弧度，声音低沉得像被砂纸打磨过，那双不见底的眸子像幽暗的寒潭，像一根羽毛轻轻搔过心尖，那双修长分明的大手，像一只受惊的小鹿般四处乱撞，带着一股不容置疑的上位者威压，barely above a whisper，eyes sparkling with mischief。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "隐约透出凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 15,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "在心间留下浅浅的痕迹",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 31,
+                "b": "空气瞬间粘稠得能拧出水来",
+                "a": "四周一时安静下来",
+                "r": "pack:sens_air_solid"
+            },
+            {
+                "s": 44,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "令人安心的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 60,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇边露出一丝笑意",
+                "r": "pack:sens_lip_arc"
+            },
+            {
+                "s": 93,
+                "b": "眸子像幽暗的寒潭",
+                "a": "静静地注视着前方",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 103,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "让人心里有些发痒",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 124,
+                "b": "像一只受惊的小鹿",
+                "a": "神情有些慌乱",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 138,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "话里透着一股执拗",
+                "r": "pack:sens_undeniable_majesty"
+            },
+            {
+                "s": 153,
+                "b": "barely above a whisper",
+                "a": "softly",
+                "r": "pack:sens_en_whisper_sparkle"
+            },
+            {
+                "s": 176,
+                "b": "eyes sparkling with mischief",
+                "a": "quietly",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，像一只耐心的捕食者审视着落入陷阱的猎物，没有说话。\n她站在窗边，脸上那层完美的温和面具出现了一丝裂痕，没有说话。\n“肾上腺素在血管里疯狂飙升！”她说。\n她站在窗边，心理防卫机制，没有说话。\n她站在窗边，某种微妙的磁场在两人之间蔓延，没有说话。\n“像是在无声地宣示主权！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "目光紧盯着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 47,
+                "b": "面具出现了一丝裂痕",
+                "a": "脸上的笑意淡了下去",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 88,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 107,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "对视间多了几分暗涌",
+                "r": "pack:jarg_tension_pull"
+            },
+            {
+                "s": 129,
+                "b": "像是在无声地宣示主权",
+                "a": "刻意拉近了两人的距离",
+                "r": "pack:jarg_claim_sovereignty"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，强烈的领地意识，没有说话。\n她站在窗边，脑海中那根名为理智的弦啪地一声断了，没有说话。\n“身体本能地摆出防御姿态！”她说。\n她站在窗边，巴甫洛夫式的条件反射，没有说话。\n她站在窗边，a testament to，没有说话。\n“a dance as old as time！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "强烈的领地意识",
+                "a": "不动声色地将人护在身边",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 26,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "彻底失去了耐性",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 51,
+                "b": "身体本能地摆出防御姿态",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 74,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "本能地生出几分抗拒",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 97,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            },
+            {
+                "s": 119,
+                "b": "a dance as old as time",
+                "a": "a reflection of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "像一只耐心的捕食者审视着落入陷阱的猎物，脸上那层完美的温和面具出现了一丝裂痕，肾上腺素在血管里疯狂飙升，心理防卫机制，某种微妙的磁场在两人之间蔓延，像是在无声地宣示主权，强烈的领地意识，脑海中那根名为理智的弦啪地一声断了，身体本能地摆出防御姿态，巴甫洛夫式的条件反射，a testament to，a dance as old as time。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "好整以暇地看着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 29,
+                "b": "面具出现了一丝裂痕",
+                "a": "罕见地失了态",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 52,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 59,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "气氛一时有些僵持",
+                "r": "pack:jarg_tension_pull"
+            },
+            {
+                "s": 74,
+                "b": "像是在无声地宣示主权",
+                "a": "姿态亲昵而笃定",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 85,
+                "b": "强烈的领地意识",
+                "a": "透着一点不容旁人插手的强势",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 93,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "一时冲动占了上风",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 111,
+                "b": "身体本能地摆出防御姿态",
+                "a": "不由自主地绷紧了神经",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 123,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 134,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            },
+            {
+                "s": 149,
+                "b": "a dance as old as time",
+                "a": "a quiet sign of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，——————，没有说话。\n她站在窗边，…………，没有说话。\n“！！！！！！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 25,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 37,
+                "b": "！！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "——————，…………，！！！！！。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 7,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 12,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，肉刃，没有说话。\n她站在窗边，龙根，没有说话。\n“欲根！”她说。\n她站在窗边，胯下灼热的凶器，没有说话。\n她站在窗边，紫红的伞冠，没有说话。\n“硕大的龙头！”她说。",
+        "edits": []
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，拨开湿润的花瓣，没有说话。\n她站在窗边，两片粉嫩花唇，没有说话。\n“泥泞的蜜穴！”她说。\n她站在窗边，花穴，没有说话。\n她站在窗边，探入湿润的秘处，没有说话。\n“捻弄充血的花珠！”她说。",
+        "edits": []
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，按压顶端的小珍珠，没有说话。\n她站在窗边，涌出粘腻的蜜汁，没有说话。\n“腿间流出的琼浆！”她说。\n她站在窗边，饱满的酥胸，没有说话。\n她站在窗边，椒乳，没有说话。\n“胸前高耸的雪峰！”她说。",
+        "edits": []
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，胸前挺立的红梅，没有说话。\n她站在窗边，含住粉嫩的樱桃，没有说话。\n“射出滚烫的龙精！”她说。\n她站在窗边，尽数喷洒出灼热的精华，没有说话。\n她站在窗边，探入紧窄的后庭，没有说话。\n“扩张羞耻的菊穴！”她说。",
+        "edits": []
+    },
+    {
+        "config": "dialogue",
+        "text": "她站在窗边，层层叠叠的媚肉死死绞紧，没有说话。",
+        "edits": []
+    },
+    {
+        "config": "dialogue",
+        "text": "肉刃，龙根，欲根，胯下灼热的凶器，紫红的伞冠，硕大的龙头，拨开湿润的花瓣，两片粉嫩花唇，泥泞的蜜穴，花穴，探入湿润的秘处，捻弄充血的花珠，按压顶端的小珍珠，涌出粘腻的蜜汁，腿间流出的琼浆，饱满的酥胸，椒乳，胸前高耸的雪峰，胸前挺立的红梅，含住粉嫩的樱桃，射出滚烫的龙精，尽数喷洒出灼热的精华，探入紧窄的后庭，扩张羞耻的菊穴，层层叠叠的媚肉死死绞紧。",
+        "edits": []
+    },
+    {
+        "config": "dialogue",
+        "text": "那不是愤怒，而是一种执念。他并不是在笑，是在哭。这不是请求，也不是商量，而是命令。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是愤怒，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 14,
+                "b": "并不是在笑，是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 25,
+                "b": "不是请求，也不是商量，而是",
+                "a": "是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "这不是请求。是命令。这并非安慰，而是试探。与其说是安慰，不如说是试探。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是请求。是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 11,
+                "b": "并非安慰，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 21,
+                "b": "与其说是安慰，不如说是",
+                "a": "更像是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她的眼神少了几分凌厉，却多了几分温柔。他问她是不是累了，是该休息了。这不是梦。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "少了几分凌厉，却",
+                "a": "",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "It wasn't anger, it was grief. She smiled. It's not fear — it's resolve.",
+        "edits": [
+            {
+                "s": 0,
+                "b": "It wasn't anger, it was ",
+                "a": "It was ",
+                "r": "negation"
+            },
+            {
+                "s": 43,
+                "b": "It's not fear — it's ",
+                "a": "It is ",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "他转身离开。\n\n夜还很长。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "\n\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "他转身离开，夜，还很长呢……",
+        "edits": []
+    },
+    {
+        "config": "dialogue",
+        "text": "他转身离开，夜还很长？",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，夜还很长？",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "他关上门，这一切才刚刚开始。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "，这一切才刚刚开始。",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "She left the room, the night was still young.",
+        "edits": [
+            {
+                "s": 17,
+                "b": ", the night was still young.",
+                "a": ".",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "She left. Only time will tell.",
+        "edits": [
+            {
+                "s": 9,
+                "b": " Only time will tell.",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "他转身离开，决定权在你手里了！",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，决定权在你手里了！",
+                "a": "！",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "他走了。\n夜还很长。\n<details><summary>状态</summary>HP 10</details>",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他走了。\n夜还很长。",
+                "a": "他走了，夜还很长。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "夜还很长。",
+        "edits": []
+    },
+    {
+        "config": "dialogue",
+        "text": "他微微一笑，微微点头，又微微侧身，缓缓坐下，缓缓抬手，缓缓开口，缓缓地闭上眼，轻轻轻轻。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "微微",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 27,
+                "b": "缓缓",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 32,
+                "b": "缓缓地",
+                "a": "",
+                "r": "quota"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "“微微，微微，微微。”他微微一怔。",
+        "edits": [
+            {
+                "s": 7,
+                "b": "微微",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 12,
+                "b": "微微",
+                "a": "",
+                "r": "quota"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "他来了。\n她走了。\n天黑了。\n雨停了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n她走了。\n天黑了。\n雨停了。",
+                "a": "他来了，她走了，天黑了，雨停了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "他来了。\n\n她走了。\n\n天黑了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n\n她走了。\n\n天黑了。",
+                "a": "他来了，她走了，天黑了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "他瞳孔猛地一缩，喉结滚动了一下，指节泛白。“瞳孔地震！！！！！”\n\n```\n瞳孔骤缩\n```\n『喉结滚动』……………",
+        "edits": [
+            {
+                "s": 1,
+                "b": "瞳孔猛地一缩",
+                "a": "眼神微敛",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 8,
+                "b": "喉结滚动了一下",
+                "a": "气息微沉",
+                "r": "pack:phys_throat_roll"
+            },
+            {
+                "s": 16,
+                "b": "指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 22,
+                "b": "瞳孔地震",
+                "a": "眸光微闪",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 26,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 48,
+                "b": "喉结滚动",
+                "a": "停顿了片刻",
+                "r": "pack:phys_throat_roll"
+            },
+            {
+                "s": 53,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "——————那一刻……………他愣住了！！！！！？？？？",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 9,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 18,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 23,
+                "b": "？？？？",
+                "a": "？？？",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "dialogue",
+        "text": "她的眼底闪过一抹复杂的情绪，像一根羽毛轻轻搔过心尖，呼吸一滞。他倒吸一口凉气，心脏漏跳了一拍，后背发凉。",
+        "edits": [
+            {
+                "s": 2,
+                "b": "眼底闪过一抹复杂",
+                "a": "脸色微变",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 15,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 26,
+                "b": "呼吸一滞",
+                "a": "神情微顿",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 32,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 39,
+                "b": "心脏漏跳了一拍",
+                "a": "心神微晃",
+                "r": "pack:phys_stomach_weightless"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，瞳孔猛地一缩，没有说话。\n她站在窗边，瞳孔地震，没有说话。\n“攥得指节泛白！”她说。\n她站在窗边，指甲深深嵌进掌心，没有说话。\n她站在窗边，上下艰难地滚动了一下，没有说话。\n“一股电流顺着脊背窜上天灵盖！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "瞳孔猛地一缩",
+                "a": "眸光微闪",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 25,
+                "b": "瞳孔地震",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 55,
+                "b": "指甲深深嵌进掌心",
+                "a": "五指悄然收拢",
+                "r": "pack:phys_knuckles_white"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，呼吸猛地一滞，没有说话。\n她站在窗边，倒吸一口凉气，没有说话。\n“胃袋一阵失重！”她说。\n她站在窗边，心脏漏跳了一拍，没有说话。\n她站在窗边，眼底划过一抹复杂神色，没有说话。\n“下颌线绷得笔直！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "呼吸猛地一滞",
+                "a": "微微一怔",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 25,
+                "b": "倒吸一口凉气",
+                "a": "胸口微闷",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 57,
+                "b": "心脏漏跳了一拍",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 77,
+                "b": "眼底划过一抹复杂",
+                "a": "目光沉了沉",
+                "r": "pack:phys_eyes_complex_emotion"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，咬肌微微鼓起，没有说话。\n她站在窗边，全身的血液在这一刻倒流，没有说话。\n“纤长的睫毛像受惊的蝶翼般微微颤抖！”她说。\n她站在窗边，耳根瞬间红得像要滴出血来，没有说话。\n她站在窗边，shivers down her spine，没有说话。\n“breath hitches！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 25,
+                "b": "全身的血液在这一刻倒流",
+                "a": "整个人僵在原地",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 97,
+                "b": "shivers down her spine",
+                "a": "held still",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "瞳孔猛地一缩，瞳孔地震，攥得指节泛白，指甲深深嵌进掌心，上下艰难地滚动了一下，一股电流顺着脊背窜上天灵盖，呼吸猛地一滞，倒吸一口凉气，胃袋一阵失重，心脏漏跳了一拍，眼底划过一抹复杂神色，下颌线绷得笔直，咬肌微微鼓起，全身的血液在这一刻倒流，纤长的睫毛像受惊的蝶翼般微微颤抖，耳根瞬间红得像要滴出血来，shivers down her spine，breath hitches。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "瞳孔猛地一缩",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 7,
+                "b": "瞳孔地震",
+                "a": "神情微变",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 12,
+                "b": "攥得指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 19,
+                "b": "指甲深深嵌进掌心",
+                "a": "指腹用力抵着掌心",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 39,
+                "b": "一股电流顺着脊背窜上天灵盖",
+                "a": "身体微僵",
+                "r": "pack:phys_spine_chill"
+            },
+            {
+                "s": 53,
+                "b": "呼吸猛地一滞",
+                "a": "气息乱了一瞬",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 60,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 67,
+                "b": "胃袋一阵失重",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 74,
+                "b": "心脏漏跳了一拍",
+                "a": "心跳快了几分",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 82,
+                "b": "眼底划过一抹复杂",
+                "a": "目光闪了闪",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 93,
+                "b": "下颌线绷得笔直",
+                "a": "闭紧嘴没有吭声",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 101,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 108,
+                "b": "全身的血液在这一刻倒流",
+                "a": "指尖一阵发凉",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 120,
+                "b": "纤长的睫毛像受惊的蝶翼般微微颤抖",
+                "a": "视线微微低垂",
+                "r": "pack:phys_eyelash_butterfly"
+            },
+            {
+                "s": 150,
+                "b": "shivers down her spine",
+                "a": "steadied",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，带着三分凉薄、七分漫不经心，没有说话。\n她站在窗边，像一颗石子投入平静的湖心泛起涟漪，没有说话。\n“空气瞬间粘稠得能拧出水来！”她说。\n她站在窗边，一股凛冽的雪松混合着烟草的气息，没有说话。\n她站在窗边，唇角扬起一抹似笑非笑的弧度，没有说话。\n“声音低沉得像被砂纸打磨过！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "带着几分凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 33,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "让人心头微动",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 80,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "一缕淡淡的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 108,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇角微扬",
+                "r": "pack:sens_lip_arc"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，那双不见底的眸子像幽暗的寒潭，没有说话。\n她站在窗边，像一根羽毛轻轻搔过心尖，没有说话。\n“那双修长分明的大手！”她说。\n她站在窗边，像一只受惊的小鹿般四处乱撞，没有说话。\n她站在窗边，带着一股不容置疑的上位者威压，没有说话。\n“barely above a whisper！”她说。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "眸子像幽暗的寒潭",
+                "a": "目光沉静如水",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 34,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 73,
+                "b": "像一只受惊的小鹿",
+                "a": "带着几分紧张和无助",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 99,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "语气笃定而强势",
+                "r": "pack:sens_undeniable_majesty"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，eyes sparkling with mischief，没有说话。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "eyes sparkling with mischief",
+                "a": "with a faint smile",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "带着三分凉薄、七分漫不经心，像一颗石子投入平静的湖心泛起涟漪，空气瞬间粘稠得能拧出水来，一股凛冽的雪松混合着烟草的气息，唇角扬起一抹似笑非笑的弧度，声音低沉得像被砂纸打磨过，那双不见底的眸子像幽暗的寒潭，像一根羽毛轻轻搔过心尖，那双修长分明的大手，像一只受惊的小鹿般四处乱撞，带着一股不容置疑的上位者威压，barely above a whisper，eyes sparkling with mischief。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "隐约透出凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 15,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "在心间留下浅浅的痕迹",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 31,
+                "b": "空气瞬间粘稠得能拧出水来",
+                "a": "四周一时安静下来",
+                "r": "pack:sens_air_solid"
+            },
+            {
+                "s": 44,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "令人安心的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 60,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇边露出一丝笑意",
+                "r": "pack:sens_lip_arc"
+            },
+            {
+                "s": 93,
+                "b": "眸子像幽暗的寒潭",
+                "a": "静静地注视着前方",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 103,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "让人心里有些发痒",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 124,
+                "b": "像一只受惊的小鹿",
+                "a": "神情有些慌乱",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 138,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "话里透着一股执拗",
+                "r": "pack:sens_undeniable_majesty"
+            },
+            {
+                "s": 153,
+                "b": "barely above a whisper",
+                "a": "softly",
+                "r": "pack:sens_en_whisper_sparkle"
+            },
+            {
+                "s": 176,
+                "b": "eyes sparkling with mischief",
+                "a": "quietly",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，像一只耐心的捕食者审视着落入陷阱的猎物，没有说话。\n她站在窗边，脸上那层完美的温和面具出现了一丝裂痕，没有说话。\n“肾上腺素在血管里疯狂飙升！”她说。\n她站在窗边，心理防卫机制，没有说话。\n她站在窗边，某种微妙的磁场在两人之间蔓延，没有说话。\n“像是在无声地宣示主权！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "目光紧盯着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 47,
+                "b": "面具出现了一丝裂痕",
+                "a": "脸上的笑意淡了下去",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 88,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 107,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "对视间多了几分暗涌",
+                "r": "pack:jarg_tension_pull"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，强烈的领地意识，没有说话。\n她站在窗边，脑海中那根名为理智的弦啪地一声断了，没有说话。\n“身体本能地摆出防御姿态！”她说。\n她站在窗边，巴甫洛夫式的条件反射，没有说话。\n她站在窗边，a testament to，没有说话。\n“a dance as old as time！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "强烈的领地意识",
+                "a": "不动声色地将人护在身边",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 26,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "彻底失去了耐性",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 74,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 97,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "像一只耐心的捕食者审视着落入陷阱的猎物，脸上那层完美的温和面具出现了一丝裂痕，肾上腺素在血管里疯狂飙升，心理防卫机制，某种微妙的磁场在两人之间蔓延，像是在无声地宣示主权，强烈的领地意识，脑海中那根名为理智的弦啪地一声断了，身体本能地摆出防御姿态，巴甫洛夫式的条件反射，a testament to，a dance as old as time。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "好整以暇地看着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 29,
+                "b": "面具出现了一丝裂痕",
+                "a": "罕见地失了态",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 52,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 59,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "气氛一时有些僵持",
+                "r": "pack:jarg_tension_pull"
+            },
+            {
+                "s": 74,
+                "b": "像是在无声地宣示主权",
+                "a": "姿态亲昵而笃定",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 85,
+                "b": "强烈的领地意识",
+                "a": "透着一点不容旁人插手的强势",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 93,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "一时冲动占了上风",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 111,
+                "b": "身体本能地摆出防御姿态",
+                "a": "不由自主地绷紧了神经",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 123,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 134,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            },
+            {
+                "s": 149,
+                "b": "a dance as old as time",
+                "a": "a quiet sign of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，——————，没有说话。\n她站在窗边，…………，没有说话。\n“！！！！！！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 25,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 37,
+                "b": "！！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "——————，…………，！！！！！。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 7,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 12,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，肉刃，没有说话。\n她站在窗边，龙根，没有说话。\n“欲根！”她说。\n她站在窗边，胯下灼热的凶器，没有说话。\n她站在窗边，紫红的伞冠，没有说话。\n“硕大的龙头！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "肉刃",
+                "a": "阳具",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 21,
+                "b": "龙根",
+                "a": "阴茎",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 45,
+                "b": "胯下灼热的凶器",
+                "a": "胯下性器",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 65,
+                "b": "紫红的伞冠",
+                "a": "紫红的龟头",
+                "r": "pack:nsfw_glans_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，拨开湿润的花瓣，没有说话。\n她站在窗边，两片粉嫩花唇，没有说话。\n“泥泞的蜜穴！”她说。\n她站在窗边，花穴，没有说话。\n她站在窗边，探入湿润的秘处，没有说话。\n“捻弄充血的花珠！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "拨开湿润的花瓣",
+                "a": "拨开湿润的唇瓣",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 26,
+                "b": "两片粉嫩花唇",
+                "a": "两片粉嫩软肉",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 57,
+                "b": "花穴",
+                "a": "肉壁",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 72,
+                "b": "探入湿润的秘处",
+                "a": "探入湿润的甬道",
+                "r": "pack:nsfw_vagina_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，按压顶端的小珍珠，没有说话。\n她站在窗边，涌出粘腻的蜜汁，没有说话。\n“腿间流出的琼浆！”她说。\n她站在窗边，饱满的酥胸，没有说话。\n她站在窗边，椒乳，没有说话。\n“胸前高耸的雪峰！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "按压顶端的小珍珠",
+                "a": "按压顶端的阴蒂",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 27,
+                "b": "涌出粘腻的蜜汁",
+                "a": "涌出粘腻的爱液",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 61,
+                "b": "饱满的酥胸",
+                "a": "软肉",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 79,
+                "b": "椒乳",
+                "a": "乳房",
+                "r": "pack:nsfw_breast_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，胸前挺立的红梅，没有说话。\n她站在窗边，含住粉嫩的樱桃，没有说话。\n“射出滚烫的龙精！”她说。\n她站在窗边，尽数喷洒出灼热的精华，没有说话。\n她站在窗边，探入紧窄的后庭，没有说话。\n“扩张羞耻的菊穴！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "胸前挺立的红梅",
+                "a": "胸前挺立的乳尖",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 26,
+                "b": "含住粉嫩的樱桃",
+                "a": "含住粉嫩的乳头",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 62,
+                "b": "喷洒出灼热的精华",
+                "a": "喷洒出灼热的精液",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 83,
+                "b": "探入紧窄的后庭",
+                "a": "探入紧窄的后穴",
+                "r": "pack:nsfw_anus_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她站在窗边，层层叠叠的媚肉死死绞紧，没有说话。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "层层叠叠的媚肉",
+                "a": "软肉",
+                "r": "pack:nsfw_inner_wall_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "肉刃，龙根，欲根，胯下灼热的凶器，紫红的伞冠，硕大的龙头，拨开湿润的花瓣，两片粉嫩花唇，泥泞的蜜穴，花穴，探入湿润的秘处，捻弄充血的花珠，按压顶端的小珍珠，涌出粘腻的蜜汁，腿间流出的琼浆，饱满的酥胸，椒乳，胸前高耸的雪峰，胸前挺立的红梅，含住粉嫩的樱桃，射出滚烫的龙精，尽数喷洒出灼热的精华，探入紧窄的后庭，扩张羞耻的菊穴，层层叠叠的媚肉死死绞紧。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "肉刃",
+                "a": "性器",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 3,
+                "b": "龙根",
+                "a": "阳具",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 6,
+                "b": "欲根",
+                "a": "阴茎",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 9,
+                "b": "胯下灼热的凶器",
+                "a": "胯下阳具",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 17,
+                "b": "紫红的伞冠",
+                "a": "紫红的前端",
+                "r": "pack:nsfw_glans_metaphor"
+            },
+            {
+                "s": 23,
+                "b": "硕大的龙头",
+                "a": "硕大的龟头",
+                "r": "pack:nsfw_glans_metaphor"
+            },
+            {
+                "s": 29,
+                "b": "拨开湿润的花瓣",
+                "a": "拨开湿润的软肉",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 37,
+                "b": "两片粉嫩花唇",
+                "a": "两片粉嫩唇瓣",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 44,
+                "b": "泥泞的蜜穴",
+                "a": "阴道",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 50,
+                "b": "花穴",
+                "a": "穴口",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 53,
+                "b": "探入湿润的秘处",
+                "a": "探入湿润的肉壁",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 63,
+                "b": "充血的花珠",
+                "a": "敏感点",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 69,
+                "b": "按压顶端的小珍珠",
+                "a": "按压顶端的阴蒂",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 78,
+                "b": "涌出粘腻的蜜汁",
+                "a": "涌出粘腻的爱液",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 86,
+                "b": "腿间流出的琼浆",
+                "a": "腿间流出的津液",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 94,
+                "b": "饱满的酥胸",
+                "a": "胸乳",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 100,
+                "b": "椒乳",
+                "a": "乳房",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 103,
+                "b": "胸前高耸的雪峰",
+                "a": "胸前高耸的软肉",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 111,
+                "b": "胸前挺立的红梅",
+                "a": "胸前挺立的乳尖",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 119,
+                "b": "含住粉嫩的樱桃",
+                "a": "含住粉嫩的乳头",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 129,
+                "b": "滚烫的龙精",
+                "a": "浓精",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 137,
+                "b": "喷洒出灼热的精华",
+                "a": "喷洒出灼热的精液",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 146,
+                "b": "探入紧窄的后庭",
+                "a": "探入紧窄的紧致穴口",
+                "r": "pack:nsfw_anus_metaphor"
+            },
+            {
+                "s": 156,
+                "b": "羞耻的菊穴",
+                "a": "肛口",
+                "r": "pack:nsfw_anus_metaphor"
+            },
+            {
+                "s": 162,
+                "b": "层层叠叠的媚肉",
+                "a": "褶皱",
+                "r": "pack:nsfw_inner_wall_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "那不是愤怒，而是一种执念。他并不是在笑，是在哭。这不是请求，也不是商量，而是命令。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是愤怒，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 14,
+                "b": "并不是在笑，是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 25,
+                "b": "不是请求，也不是商量，而是",
+                "a": "是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "这不是请求。是命令。这并非安慰，而是试探。与其说是安慰，不如说是试探。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是请求。是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 11,
+                "b": "并非安慰，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 21,
+                "b": "与其说是安慰，不如说是",
+                "a": "更像是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她的眼神少了几分凌厉，却多了几分温柔。他问她是不是累了，是该休息了。这不是梦。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "少了几分凌厉，却",
+                "a": "",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "It wasn't anger, it was grief. She smiled. It's not fear — it's resolve.",
+        "edits": [
+            {
+                "s": 0,
+                "b": "It wasn't anger, it was ",
+                "a": "It was ",
+                "r": "negation"
+            },
+            {
+                "s": 43,
+                "b": "It's not fear — it's ",
+                "a": "It is ",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他转身离开。\n\n夜还很长。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "\n\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他转身离开，夜，还很长呢……",
+        "edits": []
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他转身离开，夜还很长？",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，夜还很长？",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他关上门，这一切才刚刚开始。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "，这一切才刚刚开始。",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "She left the room, the night was still young.",
+        "edits": [
+            {
+                "s": 17,
+                "b": ", the night was still young.",
+                "a": ".",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "She left. Only time will tell.",
+        "edits": [
+            {
+                "s": 9,
+                "b": " Only time will tell.",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他转身离开，决定权在你手里了！",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，决定权在你手里了！",
+                "a": "！",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他走了。\n夜还很长。\n<details><summary>状态</summary>HP 10</details>",
+        "edits": [
+            {
+                "s": 4,
+                "b": "\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "夜还很长。",
+        "edits": []
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他微微一笑，微微点头，又微微侧身，缓缓坐下，缓缓抬手，缓缓开口，缓缓地闭上眼，轻轻轻轻。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "微微",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 27,
+                "b": "缓缓",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 32,
+                "b": "缓缓地",
+                "a": "",
+                "r": "quota"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "“微微，微微，微微。”他微微一怔。",
+        "edits": []
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他来了。\n她走了。\n天黑了。\n雨停了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n她走了。\n天黑了。\n雨停了。",
+                "a": "他来了，她走了，天黑了，雨停了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他来了。\n\n她走了。\n\n天黑了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n\n她走了。\n\n天黑了。",
+                "a": "他来了，她走了，天黑了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "他瞳孔猛地一缩，喉结滚动了一下，指节泛白。“瞳孔地震！！！！！”\n\n```\n瞳孔骤缩\n```\n『喉结滚动』……………",
+        "edits": [
+            {
+                "s": 1,
+                "b": "瞳孔猛地一缩",
+                "a": "眼神微敛",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 8,
+                "b": "喉结滚动了一下",
+                "a": "气息微沉",
+                "r": "pack:phys_throat_roll"
+            },
+            {
+                "s": 16,
+                "b": "指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 26,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 53,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "——————那一刻……………他愣住了！！！！！？？？？",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 9,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 18,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 23,
+                "b": "？？？？",
+                "a": "？？？",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_plain",
+        "text": "她的眼底闪过一抹复杂的情绪，像一根羽毛轻轻搔过心尖，呼吸一滞。他倒吸一口凉气，心脏漏跳了一拍，后背发凉。",
+        "edits": [
+            {
+                "s": 2,
+                "b": "眼底闪过一抹复杂",
+                "a": "脸色微变",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 15,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 26,
+                "b": "呼吸一滞",
+                "a": "神情微顿",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 32,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 39,
+                "b": "心脏漏跳了一拍",
+                "a": "心神微晃",
+                "r": "pack:phys_stomach_weightless"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，瞳孔猛地一缩，没有说话。\n她站在窗边，瞳孔地震，没有说话。\n“攥得指节泛白！”她说。\n她站在窗边，指甲深深嵌进掌心，没有说话。\n她站在窗边，上下艰难地滚动了一下，没有说话。\n“一股电流顺着脊背窜上天灵盖！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "瞳孔猛地一缩",
+                "a": "眸光微闪",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 25,
+                "b": "瞳孔地震",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 55,
+                "b": "指甲深深嵌进掌心",
+                "a": "五指悄然收拢",
+                "r": "pack:phys_knuckles_white"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，呼吸猛地一滞，没有说话。\n她站在窗边，倒吸一口凉气，没有说话。\n“胃袋一阵失重！”她说。\n她站在窗边，心脏漏跳了一拍，没有说话。\n她站在窗边，眼底划过一抹复杂神色，没有说话。\n“下颌线绷得笔直！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "呼吸猛地一滞",
+                "a": "微微一怔",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 25,
+                "b": "倒吸一口凉气",
+                "a": "胸口微闷",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 57,
+                "b": "心脏漏跳了一拍",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 77,
+                "b": "眼底划过一抹复杂",
+                "a": "目光沉了沉",
+                "r": "pack:phys_eyes_complex_emotion"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，咬肌微微鼓起，没有说话。\n她站在窗边，全身的血液在这一刻倒流，没有说话。\n“纤长的睫毛像受惊的蝶翼般微微颤抖！”她说。\n她站在窗边，耳根瞬间红得像要滴出血来，没有说话。\n她站在窗边，shivers down her spine，没有说话。\n“breath hitches！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 25,
+                "b": "全身的血液在这一刻倒流",
+                "a": "整个人僵在原地",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 97,
+                "b": "shivers down her spine",
+                "a": "held still",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "瞳孔猛地一缩，瞳孔地震，攥得指节泛白，指甲深深嵌进掌心，上下艰难地滚动了一下，一股电流顺着脊背窜上天灵盖，呼吸猛地一滞，倒吸一口凉气，胃袋一阵失重，心脏漏跳了一拍，眼底划过一抹复杂神色，下颌线绷得笔直，咬肌微微鼓起，全身的血液在这一刻倒流，纤长的睫毛像受惊的蝶翼般微微颤抖，耳根瞬间红得像要滴出血来，shivers down her spine，breath hitches。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "瞳孔猛地一缩",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 7,
+                "b": "瞳孔地震",
+                "a": "神情微变",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 12,
+                "b": "攥得指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 19,
+                "b": "指甲深深嵌进掌心",
+                "a": "指腹用力抵着掌心",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 39,
+                "b": "一股电流顺着脊背窜上天灵盖",
+                "a": "身体微僵",
+                "r": "pack:phys_spine_chill"
+            },
+            {
+                "s": 53,
+                "b": "呼吸猛地一滞",
+                "a": "气息乱了一瞬",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 60,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 67,
+                "b": "胃袋一阵失重",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 74,
+                "b": "心脏漏跳了一拍",
+                "a": "心跳快了几分",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 82,
+                "b": "眼底划过一抹复杂",
+                "a": "目光闪了闪",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 93,
+                "b": "下颌线绷得笔直",
+                "a": "闭紧嘴没有吭声",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 101,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 108,
+                "b": "全身的血液在这一刻倒流",
+                "a": "指尖一阵发凉",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 120,
+                "b": "纤长的睫毛像受惊的蝶翼般微微颤抖",
+                "a": "视线微微低垂",
+                "r": "pack:phys_eyelash_butterfly"
+            },
+            {
+                "s": 150,
+                "b": "shivers down her spine",
+                "a": "steadied",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，带着三分凉薄、七分漫不经心，没有说话。\n她站在窗边，像一颗石子投入平静的湖心泛起涟漪，没有说话。\n“空气瞬间粘稠得能拧出水来！”她说。\n她站在窗边，一股凛冽的雪松混合着烟草的气息，没有说话。\n她站在窗边，唇角扬起一抹似笑非笑的弧度，没有说话。\n“声音低沉得像被砂纸打磨过！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "带着几分凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 33,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "让人心头微动",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 80,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "一缕淡淡的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 108,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇角微扬",
+                "r": "pack:sens_lip_arc"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，那双不见底的眸子像幽暗的寒潭，没有说话。\n她站在窗边，像一根羽毛轻轻搔过心尖，没有说话。\n“那双修长分明的大手！”她说。\n她站在窗边，像一只受惊的小鹿般四处乱撞，没有说话。\n她站在窗边，带着一股不容置疑的上位者威压，没有说话。\n“barely above a whisper！”她说。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "眸子像幽暗的寒潭",
+                "a": "目光沉静如水",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 34,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 73,
+                "b": "像一只受惊的小鹿",
+                "a": "带着几分紧张和无助",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 99,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "语气笃定而强势",
+                "r": "pack:sens_undeniable_majesty"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，eyes sparkling with mischief，没有说话。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "eyes sparkling with mischief",
+                "a": "with a faint smile",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "带着三分凉薄、七分漫不经心，像一颗石子投入平静的湖心泛起涟漪，空气瞬间粘稠得能拧出水来，一股凛冽的雪松混合着烟草的气息，唇角扬起一抹似笑非笑的弧度，声音低沉得像被砂纸打磨过，那双不见底的眸子像幽暗的寒潭，像一根羽毛轻轻搔过心尖，那双修长分明的大手，像一只受惊的小鹿般四处乱撞，带着一股不容置疑的上位者威压，barely above a whisper，eyes sparkling with mischief。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "隐约透出凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 15,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "在心间留下浅浅的痕迹",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 31,
+                "b": "空气瞬间粘稠得能拧出水来",
+                "a": "四周一时安静下来",
+                "r": "pack:sens_air_solid"
+            },
+            {
+                "s": 44,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "令人安心的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 60,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇边露出一丝笑意",
+                "r": "pack:sens_lip_arc"
+            },
+            {
+                "s": 93,
+                "b": "眸子像幽暗的寒潭",
+                "a": "静静地注视着前方",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 103,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "让人心里有些发痒",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 124,
+                "b": "像一只受惊的小鹿",
+                "a": "神情有些慌乱",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 138,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "话里透着一股执拗",
+                "r": "pack:sens_undeniable_majesty"
+            },
+            {
+                "s": 153,
+                "b": "barely above a whisper",
+                "a": "softly",
+                "r": "pack:sens_en_whisper_sparkle"
+            },
+            {
+                "s": 176,
+                "b": "eyes sparkling with mischief",
+                "a": "quietly",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，像一只耐心的捕食者审视着落入陷阱的猎物，没有说话。\n她站在窗边，脸上那层完美的温和面具出现了一丝裂痕，没有说话。\n“肾上腺素在血管里疯狂飙升！”她说。\n她站在窗边，心理防卫机制，没有说话。\n她站在窗边，某种微妙的磁场在两人之间蔓延，没有说话。\n“像是在无声地宣示主权！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "目光紧盯着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 47,
+                "b": "面具出现了一丝裂痕",
+                "a": "脸上的笑意淡了下去",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 88,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 107,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "对视间多了几分暗涌",
+                "r": "pack:jarg_tension_pull"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，强烈的领地意识，没有说话。\n她站在窗边，脑海中那根名为理智的弦啪地一声断了，没有说话。\n“身体本能地摆出防御姿态！”她说。\n她站在窗边，巴甫洛夫式的条件反射，没有说话。\n她站在窗边，a testament to，没有说话。\n“a dance as old as time！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "强烈的领地意识",
+                "a": "不动声色地将人护在身边",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 26,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "彻底失去了耐性",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 74,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 97,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "像一只耐心的捕食者审视着落入陷阱的猎物，脸上那层完美的温和面具出现了一丝裂痕，肾上腺素在血管里疯狂飙升，心理防卫机制，某种微妙的磁场在两人之间蔓延，像是在无声地宣示主权，强烈的领地意识，脑海中那根名为理智的弦啪地一声断了，身体本能地摆出防御姿态，巴甫洛夫式的条件反射，a testament to，a dance as old as time。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "好整以暇地看着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 29,
+                "b": "面具出现了一丝裂痕",
+                "a": "罕见地失了态",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 52,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 59,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "气氛一时有些僵持",
+                "r": "pack:jarg_tension_pull"
+            },
+            {
+                "s": 74,
+                "b": "像是在无声地宣示主权",
+                "a": "姿态亲昵而笃定",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 85,
+                "b": "强烈的领地意识",
+                "a": "透着一点不容旁人插手的强势",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 93,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "一时冲动占了上风",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 111,
+                "b": "身体本能地摆出防御姿态",
+                "a": "不由自主地绷紧了神经",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 123,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 134,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            },
+            {
+                "s": 149,
+                "b": "a dance as old as time",
+                "a": "a quiet sign of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，——————，没有说话。\n她站在窗边，…………，没有说话。\n“！！！！！！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 25,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 37,
+                "b": "！！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "——————，…………，！！！！！。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 7,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 12,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，肉刃，没有说话。\n她站在窗边，龙根，没有说话。\n“欲根！”她说。\n她站在窗边，胯下灼热的凶器，没有说话。\n她站在窗边，紫红的伞冠，没有说话。\n“硕大的龙头！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "肉刃",
+                "a": "阳具",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 21,
+                "b": "龙根",
+                "a": "肉棒",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 45,
+                "b": "胯下灼热的凶器",
+                "a": "胯下粗长肉柱",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 65,
+                "b": "紫红的伞冠",
+                "a": "紫红的龟头",
+                "r": "pack:nsfw_glans_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，拨开湿润的花瓣，没有说话。\n她站在窗边，两片粉嫩花唇，没有说话。\n“泥泞的蜜穴！”她说。\n她站在窗边，花穴，没有说话。\n她站在窗边，探入湿润的秘处，没有说话。\n“捻弄充血的花珠！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "拨开湿润的花瓣",
+                "a": "拨开湿润的肉唇",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 26,
+                "b": "两片粉嫩花唇",
+                "a": "两片粉嫩娇嫩软肉",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 57,
+                "b": "花穴",
+                "a": "紧致甬道",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 72,
+                "b": "探入湿润的秘处",
+                "a": "探入湿润的嫩穴",
+                "r": "pack:nsfw_vagina_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，按压顶端的小珍珠，没有说话。\n她站在窗边，涌出粘腻的蜜汁，没有说话。\n“腿间流出的琼浆！”她说。\n她站在窗边，饱满的酥胸，没有说话。\n她站在窗边，椒乳，没有说话。\n“胸前高耸的雪峰！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "按压顶端的小珍珠",
+                "a": "按压顶端的敏感肉粒",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 27,
+                "b": "涌出粘腻的蜜汁",
+                "a": "涌出粘腻的淫水",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 61,
+                "b": "饱满的酥胸",
+                "a": "奶子",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 79,
+                "b": "椒乳",
+                "a": "饱满胸乳",
+                "r": "pack:nsfw_breast_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，胸前挺立的红梅，没有说话。\n她站在窗边，含住粉嫩的樱桃，没有说话。\n“射出滚烫的龙精！”她说。\n她站在窗边，尽数喷洒出灼热的精华，没有说话。\n她站在窗边，探入紧窄的后庭，没有说话。\n“扩张羞耻的菊穴！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "胸前挺立的红梅",
+                "a": "胸前挺立的奶尖",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 26,
+                "b": "含住粉嫩的樱桃",
+                "a": "含住粉嫩的乳首",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 62,
+                "b": "喷洒出灼热的精华",
+                "a": "喷洒出灼热的精液",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 83,
+                "b": "探入紧窄的后庭",
+                "a": "探入紧窄的后穴",
+                "r": "pack:nsfw_anus_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她站在窗边，层层叠叠的媚肉死死绞紧，没有说话。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "层层叠叠的媚肉",
+                "a": "湿热软肉",
+                "r": "pack:nsfw_inner_wall_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "肉刃，龙根，欲根，胯下灼热的凶器，紫红的伞冠，硕大的龙头，拨开湿润的花瓣，两片粉嫩花唇，泥泞的蜜穴，花穴，探入湿润的秘处，捻弄充血的花珠，按压顶端的小珍珠，涌出粘腻的蜜汁，腿间流出的琼浆，饱满的酥胸，椒乳，胸前高耸的雪峰，胸前挺立的红梅，含住粉嫩的樱桃，射出滚烫的龙精，尽数喷洒出灼热的精华，探入紧窄的后庭，扩张羞耻的菊穴，层层叠叠的媚肉死死绞紧。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "肉刃",
+                "a": "性器",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 3,
+                "b": "龙根",
+                "a": "粗长肉柱",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 6,
+                "b": "欲根",
+                "a": "肉棒",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 9,
+                "b": "胯下灼热的凶器",
+                "a": "胯下阳具",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 17,
+                "b": "紫红的伞冠",
+                "a": "紫红的饱满顶端",
+                "r": "pack:nsfw_glans_metaphor"
+            },
+            {
+                "s": 23,
+                "b": "硕大的龙头",
+                "a": "硕大的龟头",
+                "r": "pack:nsfw_glans_metaphor"
+            },
+            {
+                "s": 29,
+                "b": "拨开湿润的花瓣",
+                "a": "拨开湿润的娇嫩软肉",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 37,
+                "b": "两片粉嫩花唇",
+                "a": "两片粉嫩肉唇",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 44,
+                "b": "泥泞的蜜穴",
+                "a": "小穴",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 50,
+                "b": "花穴",
+                "a": "肉穴",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 53,
+                "b": "探入湿润的秘处",
+                "a": "探入湿润的紧致甬道",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 63,
+                "b": "充血的花珠",
+                "a": "阴蒂",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 69,
+                "b": "按压顶端的小珍珠",
+                "a": "按压顶端的小肉珠",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 78,
+                "b": "涌出粘腻的蜜汁",
+                "a": "涌出粘腻的淫水",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 86,
+                "b": "腿间流出的琼浆",
+                "a": "腿间流出的粘腻水液",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 94,
+                "b": "饱满的酥胸",
+                "a": "饱满胸乳",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 100,
+                "b": "椒乳",
+                "a": "软乳",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 103,
+                "b": "胸前高耸的雪峰",
+                "a": "胸前高耸的奶子",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 111,
+                "b": "胸前挺立的红梅",
+                "a": "胸前挺立的乳尖",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 119,
+                "b": "含住粉嫩的樱桃",
+                "a": "含住粉嫩的奶尖",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 129,
+                "b": "滚烫的龙精",
+                "a": "滚烫浓精",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 137,
+                "b": "喷洒出灼热的精华",
+                "a": "喷洒出灼热的精液",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 146,
+                "b": "探入紧窄的后庭",
+                "a": "探入紧窄的臀穴",
+                "r": "pack:nsfw_anus_metaphor"
+            },
+            {
+                "s": 156,
+                "b": "羞耻的菊穴",
+                "a": "紧窄小穴",
+                "r": "pack:nsfw_anus_metaphor"
+            },
+            {
+                "s": 162,
+                "b": "层层叠叠的媚肉",
+                "a": "敏感内壁",
+                "r": "pack:nsfw_inner_wall_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "那不是愤怒，而是一种执念。他并不是在笑，是在哭。这不是请求，也不是商量，而是命令。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是愤怒，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 14,
+                "b": "并不是在笑，是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 25,
+                "b": "不是请求，也不是商量，而是",
+                "a": "是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "这不是请求。是命令。这并非安慰，而是试探。与其说是安慰，不如说是试探。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是请求。是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 11,
+                "b": "并非安慰，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 21,
+                "b": "与其说是安慰，不如说是",
+                "a": "更像是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她的眼神少了几分凌厉，却多了几分温柔。他问她是不是累了，是该休息了。这不是梦。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "少了几分凌厉，却",
+                "a": "",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "It wasn't anger, it was grief. She smiled. It's not fear — it's resolve.",
+        "edits": [
+            {
+                "s": 0,
+                "b": "It wasn't anger, it was ",
+                "a": "It was ",
+                "r": "negation"
+            },
+            {
+                "s": 43,
+                "b": "It's not fear — it's ",
+                "a": "It is ",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他转身离开。\n\n夜还很长。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "\n\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他转身离开，夜，还很长呢……",
+        "edits": []
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他转身离开，夜还很长？",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，夜还很长？",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他关上门，这一切才刚刚开始。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "，这一切才刚刚开始。",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "She left the room, the night was still young.",
+        "edits": [
+            {
+                "s": 17,
+                "b": ", the night was still young.",
+                "a": ".",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "She left. Only time will tell.",
+        "edits": [
+            {
+                "s": 9,
+                "b": " Only time will tell.",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他转身离开，决定权在你手里了！",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，决定权在你手里了！",
+                "a": "！",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他走了。\n夜还很长。\n<details><summary>状态</summary>HP 10</details>",
+        "edits": [
+            {
+                "s": 4,
+                "b": "\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "夜还很长。",
+        "edits": []
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他微微一笑，微微点头，又微微侧身，缓缓坐下，缓缓抬手，缓缓开口，缓缓地闭上眼，轻轻轻轻。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "微微",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 27,
+                "b": "缓缓",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 32,
+                "b": "缓缓地",
+                "a": "",
+                "r": "quota"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "“微微，微微，微微。”他微微一怔。",
+        "edits": []
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他来了。\n她走了。\n天黑了。\n雨停了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n她走了。\n天黑了。\n雨停了。",
+                "a": "他来了，她走了，天黑了，雨停了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他来了。\n\n她走了。\n\n天黑了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n\n她走了。\n\n天黑了。",
+                "a": "他来了，她走了，天黑了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "他瞳孔猛地一缩，喉结滚动了一下，指节泛白。“瞳孔地震！！！！！”\n\n```\n瞳孔骤缩\n```\n『喉结滚动』……………",
+        "edits": [
+            {
+                "s": 1,
+                "b": "瞳孔猛地一缩",
+                "a": "眼神微敛",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 8,
+                "b": "喉结滚动了一下",
+                "a": "气息微沉",
+                "r": "pack:phys_throat_roll"
+            },
+            {
+                "s": 16,
+                "b": "指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 26,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 53,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "——————那一刻……………他愣住了！！！！！？？？？",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 9,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 18,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 23,
+                "b": "？？？？",
+                "a": "？？？",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_erotic",
+        "text": "她的眼底闪过一抹复杂的情绪，像一根羽毛轻轻搔过心尖，呼吸一滞。他倒吸一口凉气，心脏漏跳了一拍，后背发凉。",
+        "edits": [
+            {
+                "s": 2,
+                "b": "眼底闪过一抹复杂",
+                "a": "脸色微变",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 15,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 26,
+                "b": "呼吸一滞",
+                "a": "神情微顿",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 32,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 39,
+                "b": "心脏漏跳了一拍",
+                "a": "心神微晃",
+                "r": "pack:phys_stomach_weightless"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，瞳孔猛地一缩，没有说话。\n她站在窗边，瞳孔地震，没有说话。\n“攥得指节泛白！”她说。\n她站在窗边，指甲深深嵌进掌心，没有说话。\n她站在窗边，上下艰难地滚动了一下，没有说话。\n“一股电流顺着脊背窜上天灵盖！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "瞳孔猛地一缩",
+                "a": "眸光微闪",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 25,
+                "b": "瞳孔地震",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 55,
+                "b": "指甲深深嵌进掌心",
+                "a": "五指悄然收拢",
+                "r": "pack:phys_knuckles_white"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，呼吸猛地一滞，没有说话。\n她站在窗边，倒吸一口凉气，没有说话。\n“胃袋一阵失重！”她说。\n她站在窗边，心脏漏跳了一拍，没有说话。\n她站在窗边，眼底划过一抹复杂神色，没有说话。\n“下颌线绷得笔直！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "呼吸猛地一滞",
+                "a": "微微一怔",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 25,
+                "b": "倒吸一口凉气",
+                "a": "胸口微闷",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 57,
+                "b": "心脏漏跳了一拍",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 77,
+                "b": "眼底划过一抹复杂",
+                "a": "目光沉了沉",
+                "r": "pack:phys_eyes_complex_emotion"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，咬肌微微鼓起，没有说话。\n她站在窗边，全身的血液在这一刻倒流，没有说话。\n“纤长的睫毛像受惊的蝶翼般微微颤抖！”她说。\n她站在窗边，耳根瞬间红得像要滴出血来，没有说话。\n她站在窗边，shivers down her spine，没有说话。\n“breath hitches！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 25,
+                "b": "全身的血液在这一刻倒流",
+                "a": "整个人僵在原地",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 97,
+                "b": "shivers down her spine",
+                "a": "held still",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "瞳孔猛地一缩，瞳孔地震，攥得指节泛白，指甲深深嵌进掌心，上下艰难地滚动了一下，一股电流顺着脊背窜上天灵盖，呼吸猛地一滞，倒吸一口凉气，胃袋一阵失重，心脏漏跳了一拍，眼底划过一抹复杂神色，下颌线绷得笔直，咬肌微微鼓起，全身的血液在这一刻倒流，纤长的睫毛像受惊的蝶翼般微微颤抖，耳根瞬间红得像要滴出血来，shivers down her spine，breath hitches。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "瞳孔猛地一缩",
+                "a": "怔了怔",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 7,
+                "b": "瞳孔地震",
+                "a": "神情微变",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 12,
+                "b": "攥得指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 19,
+                "b": "指甲深深嵌进掌心",
+                "a": "指腹用力抵着掌心",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 39,
+                "b": "一股电流顺着脊背窜上天灵盖",
+                "a": "身体微僵",
+                "r": "pack:phys_spine_chill"
+            },
+            {
+                "s": 53,
+                "b": "呼吸猛地一滞",
+                "a": "气息乱了一瞬",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 60,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 67,
+                "b": "胃袋一阵失重",
+                "a": "胸口发紧",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 74,
+                "b": "心脏漏跳了一拍",
+                "a": "心跳快了几分",
+                "r": "pack:phys_stomach_weightless"
+            },
+            {
+                "s": 82,
+                "b": "眼底划过一抹复杂",
+                "a": "目光闪了闪",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 93,
+                "b": "下颌线绷得笔直",
+                "a": "闭紧嘴没有吭声",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 101,
+                "b": "咬肌微微鼓起",
+                "a": "忍着没有发作",
+                "r": "pack:phys_jawline_tense"
+            },
+            {
+                "s": 108,
+                "b": "全身的血液在这一刻倒流",
+                "a": "指尖一阵发凉",
+                "r": "pack:phys_blood_freeze"
+            },
+            {
+                "s": 120,
+                "b": "纤长的睫毛像受惊的蝶翼般微微颤抖",
+                "a": "视线微微低垂",
+                "r": "pack:phys_eyelash_butterfly"
+            },
+            {
+                "s": 150,
+                "b": "shivers down her spine",
+                "a": "steadied",
+                "r": "pack:phys_en_shiver_spine"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，带着三分凉薄、七分漫不经心，没有说话。\n她站在窗边，像一颗石子投入平静的湖心泛起涟漪，没有说话。\n“空气瞬间粘稠得能拧出水来！”她说。\n她站在窗边，一股凛冽的雪松混合着烟草的气息，没有说话。\n她站在窗边，唇角扬起一抹似笑非笑的弧度，没有说话。\n“声音低沉得像被砂纸打磨过！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "带着几分凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 33,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "让人心头微动",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 80,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "一缕淡淡的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 108,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇角微扬",
+                "r": "pack:sens_lip_arc"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，那双不见底的眸子像幽暗的寒潭，没有说话。\n她站在窗边，像一根羽毛轻轻搔过心尖，没有说话。\n“那双修长分明的大手！”她说。\n她站在窗边，像一只受惊的小鹿般四处乱撞，没有说话。\n她站在窗边，带着一股不容置疑的上位者威压，没有说话。\n“barely above a whisper！”她说。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "眸子像幽暗的寒潭",
+                "a": "目光沉静如水",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 34,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 73,
+                "b": "像一只受惊的小鹿",
+                "a": "带着几分紧张和无助",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 99,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "语气笃定而强势",
+                "r": "pack:sens_undeniable_majesty"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，eyes sparkling with mischief，没有说话。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "eyes sparkling with mischief",
+                "a": "with a faint smile",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "带着三分凉薄、七分漫不经心，像一颗石子投入平静的湖心泛起涟漪，空气瞬间粘稠得能拧出水来，一股凛冽的雪松混合着烟草的气息，唇角扬起一抹似笑非笑的弧度，声音低沉得像被砂纸打磨过，那双不见底的眸子像幽暗的寒潭，像一根羽毛轻轻搔过心尖，那双修长分明的大手，像一只受惊的小鹿般四处乱撞，带着一股不容置疑的上位者威压，barely above a whisper，eyes sparkling with mischief。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "带着三分凉薄、七分漫不经心",
+                "a": "隐约透出凉薄、与漫不经心",
+                "r": "pack:sens_pie_chart"
+            },
+            {
+                "s": 15,
+                "b": "一颗石子投入平静的湖心泛起涟漪",
+                "a": "在心间留下浅浅的痕迹",
+                "r": "pack:sens_stone_lake"
+            },
+            {
+                "s": 31,
+                "b": "空气瞬间粘稠得能拧出水来",
+                "a": "四周一时安静下来",
+                "r": "pack:sens_air_solid"
+            },
+            {
+                "s": 44,
+                "b": "一股凛冽的雪松混合着烟草的气息",
+                "a": "令人安心的气息",
+                "r": "pack:sens_scent_cliche"
+            },
+            {
+                "s": 60,
+                "b": "唇角扬起一抹似笑非笑的弧度",
+                "a": "唇边露出一丝笑意",
+                "r": "pack:sens_lip_arc"
+            },
+            {
+                "s": 93,
+                "b": "眸子像幽暗的寒潭",
+                "a": "静静地注视着前方",
+                "r": "pack:sens_abyss_eyes"
+            },
+            {
+                "s": 103,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "让人心里有些发痒",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 124,
+                "b": "像一只受惊的小鹿",
+                "a": "神情有些慌乱",
+                "r": "pack:sens_frightened_deer"
+            },
+            {
+                "s": 138,
+                "b": "带着一股不容置疑的上位者威压",
+                "a": "话里透着一股执拗",
+                "r": "pack:sens_undeniable_majesty"
+            },
+            {
+                "s": 153,
+                "b": "barely above a whisper",
+                "a": "softly",
+                "r": "pack:sens_en_whisper_sparkle"
+            },
+            {
+                "s": 176,
+                "b": "eyes sparkling with mischief",
+                "a": "quietly",
+                "r": "pack:sens_en_whisper_sparkle"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，像一只耐心的捕食者审视着落入陷阱的猎物，没有说话。\n她站在窗边，脸上那层完美的温和面具出现了一丝裂痕，没有说话。\n“肾上腺素在血管里疯狂飙升！”她说。\n她站在窗边，心理防卫机制，没有说话。\n她站在窗边，某种微妙的磁场在两人之间蔓延，没有说话。\n“像是在无声地宣示主权！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "目光紧盯着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 47,
+                "b": "面具出现了一丝裂痕",
+                "a": "脸上的笑意淡了下去",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 88,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 107,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "对视间多了几分暗涌",
+                "r": "pack:jarg_tension_pull"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，强烈的领地意识，没有说话。\n她站在窗边，脑海中那根名为理智的弦啪地一声断了，没有说话。\n“身体本能地摆出防御姿态！”她说。\n她站在窗边，巴甫洛夫式的条件反射，没有说话。\n她站在窗边，a testament to，没有说话。\n“a dance as old as time！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "强烈的领地意识",
+                "a": "不动声色地将人护在身边",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 26,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "彻底失去了耐性",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 74,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 97,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "像一只耐心的捕食者审视着落入陷阱的猎物，脸上那层完美的温和面具出现了一丝裂痕，肾上腺素在血管里疯狂飙升，心理防卫机制，某种微妙的磁场在两人之间蔓延，像是在无声地宣示主权，强烈的领地意识，脑海中那根名为理智的弦啪地一声断了，身体本能地摆出防御姿态，巴甫洛夫式的条件反射，a testament to，a dance as old as time。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "像一只耐心的捕食者审视着落入陷阱的猎物",
+                "a": "好整以暇地看着对方",
+                "r": "pack:jarg_predator_prey"
+            },
+            {
+                "s": 29,
+                "b": "面具出现了一丝裂痕",
+                "a": "罕见地失了态",
+                "r": "pack:jarg_mask_peel"
+            },
+            {
+                "s": 52,
+                "b": "心理防卫机制",
+                "a": "难以抑制的心悸",
+                "r": "pack:jarg_hormone_science"
+            },
+            {
+                "s": 59,
+                "b": "某种微妙的磁场在两人之间蔓延",
+                "a": "气氛一时有些僵持",
+                "r": "pack:jarg_tension_pull"
+            },
+            {
+                "s": 74,
+                "b": "像是在无声地宣示主权",
+                "a": "姿态亲昵而笃定",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 85,
+                "b": "强烈的领地意识",
+                "a": "透着一点不容旁人插手的强势",
+                "r": "pack:jarg_claim_sovereignty"
+            },
+            {
+                "s": 93,
+                "b": "脑海中那根名为理智的弦啪地一声断了",
+                "a": "一时冲动占了上风",
+                "r": "pack:jarg_sanity_string_snap"
+            },
+            {
+                "s": 111,
+                "b": "身体本能地摆出防御姿态",
+                "a": "不由自主地绷紧了神经",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 123,
+                "b": "巴甫洛夫式的条件反射",
+                "a": "下意识地后退了半步",
+                "r": "pack:jarg_pavlov_defense"
+            },
+            {
+                "s": 134,
+                "b": "a testament to",
+                "a": "proof of",
+                "r": "pack:jarg_en_testament_tapestry"
+            },
+            {
+                "s": 149,
+                "b": "a dance as old as time",
+                "a": "a quiet sign of",
+                "r": "pack:jarg_en_testament_tapestry"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，——————，没有说话。\n她站在窗边，…………，没有说话。\n“！！！！！！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 25,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 37,
+                "b": "！！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "——————，…………，！！！！！。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 7,
+                "b": "…………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 12,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，肉刃，没有说话。\n她站在窗边，龙根，没有说话。\n“欲根！”她说。\n她站在窗边，胯下灼热的凶器，没有说话。\n她站在窗边，紫红的伞冠，没有说话。\n“硕大的龙头！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "肉刃",
+                "a": "粗肉棒",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 21,
+                "b": "龙根",
+                "a": "鸡巴",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 45,
+                "b": "胯下灼热的凶器",
+                "a": "胯下大屌",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 65,
+                "b": "紫红的伞冠",
+                "a": "紫红的大龟头",
+                "r": "pack:nsfw_glans_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，拨开湿润的花瓣，没有说话。\n她站在窗边，两片粉嫩花唇，没有说话。\n“泥泞的蜜穴！”她说。\n她站在窗边，花穴，没有说话。\n她站在窗边，探入湿润的秘处，没有说话。\n“捻弄充血的花珠！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "拨开湿润的花瓣",
+                "a": "拨开湿润的嫩肉",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 26,
+                "b": "两片粉嫩花唇",
+                "a": "两片粉嫩屄唇",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 57,
+                "b": "花穴",
+                "a": "肉穴",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 72,
+                "b": "探入湿润的秘处",
+                "a": "探入湿润的嫩屄",
+                "r": "pack:nsfw_vagina_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，按压顶端的小珍珠，没有说话。\n她站在窗边，涌出粘腻的蜜汁，没有说话。\n“腿间流出的琼浆！”她说。\n她站在窗边，饱满的酥胸，没有说话。\n她站在窗边，椒乳，没有说话。\n“胸前高耸的雪峰！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "按压顶端的小珍珠",
+                "a": "按压顶端的骚豆",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 27,
+                "b": "涌出粘腻的蜜汁",
+                "a": "涌出粘腻的骚水",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 61,
+                "b": "饱满的酥胸",
+                "a": "软奶",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 79,
+                "b": "椒乳",
+                "a": "奶子",
+                "r": "pack:nsfw_breast_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，胸前挺立的红梅，没有说话。\n她站在窗边，含住粉嫩的樱桃，没有说话。\n“射出滚烫的龙精！”她说。\n她站在窗边，尽数喷洒出灼热的精华，没有说话。\n她站在窗边，探入紧窄的后庭，没有说话。\n“扩张羞耻的菊穴！”她说。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "胸前挺立的红梅",
+                "a": "胸前挺立的奶尖儿",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 26,
+                "b": "含住粉嫩的樱桃",
+                "a": "含住粉嫩的奶头",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 62,
+                "b": "喷洒出灼热的精华",
+                "a": "喷洒出灼热的精液",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 83,
+                "b": "探入紧窄的后庭",
+                "a": "探入紧窄的后穴",
+                "r": "pack:nsfw_anus_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她站在窗边，层层叠叠的媚肉死死绞紧，没有说话。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "层层叠叠的媚肉",
+                "a": "湿软肉壁",
+                "r": "pack:nsfw_inner_wall_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "肉刃，龙根，欲根，胯下灼热的凶器，紫红的伞冠，硕大的龙头，拨开湿润的花瓣，两片粉嫩花唇，泥泞的蜜穴，花穴，探入湿润的秘处，捻弄充血的花珠，按压顶端的小珍珠，涌出粘腻的蜜汁，腿间流出的琼浆，饱满的酥胸，椒乳，胸前高耸的雪峰，胸前挺立的红梅，含住粉嫩的樱桃，射出滚烫的龙精，尽数喷洒出灼热的精华，探入紧窄的后庭，扩张羞耻的菊穴，层层叠叠的媚肉死死绞紧。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "肉刃",
+                "a": "大屌",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 3,
+                "b": "龙根",
+                "a": "粗肉棒",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 6,
+                "b": "欲根",
+                "a": "鸡巴",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 9,
+                "b": "胯下灼热的凶器",
+                "a": "胯下粗肉棒",
+                "r": "pack:nsfw_penis_metaphor"
+            },
+            {
+                "s": 17,
+                "b": "紫红的伞冠",
+                "a": "紫红的大龟头",
+                "r": "pack:nsfw_glans_metaphor"
+            },
+            {
+                "s": 23,
+                "b": "硕大的龙头",
+                "a": "硕大的龟头",
+                "r": "pack:nsfw_glans_metaphor"
+            },
+            {
+                "s": 29,
+                "b": "拨开湿润的花瓣",
+                "a": "拨开湿润的屄唇",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 37,
+                "b": "两片粉嫩花唇",
+                "a": "两片粉嫩嫩肉",
+                "r": "pack:nsfw_labia_metaphor"
+            },
+            {
+                "s": 44,
+                "b": "泥泞的蜜穴",
+                "a": "骚穴",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 50,
+                "b": "花穴",
+                "a": "小屄",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 53,
+                "b": "探入湿润的秘处",
+                "a": "探入湿润的肉穴",
+                "r": "pack:nsfw_vagina_metaphor"
+            },
+            {
+                "s": 63,
+                "b": "充血的花珠",
+                "a": "阴蒂",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 69,
+                "b": "按压顶端的小珍珠",
+                "a": "按压顶端的屄豆",
+                "r": "pack:nsfw_clit_metaphor"
+            },
+            {
+                "s": 78,
+                "b": "涌出粘腻的蜜汁",
+                "a": "涌出粘腻的骚水",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 86,
+                "b": "腿间流出的琼浆",
+                "a": "腿间流出的水儿",
+                "r": "pack:nsfw_fluid_metaphor"
+            },
+            {
+                "s": 94,
+                "b": "饱满的酥胸",
+                "a": "大奶",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 100,
+                "b": "椒乳",
+                "a": "奶子",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 103,
+                "b": "胸前高耸的雪峰",
+                "a": "胸前高耸的软奶",
+                "r": "pack:nsfw_breast_metaphor"
+            },
+            {
+                "s": 111,
+                "b": "胸前挺立的红梅",
+                "a": "胸前挺立的奶尖儿",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 119,
+                "b": "含住粉嫩的樱桃",
+                "a": "含住粉嫩的奶头",
+                "r": "pack:nsfw_nipple_metaphor"
+            },
+            {
+                "s": 129,
+                "b": "滚烫的龙精",
+                "a": "浓精",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 137,
+                "b": "喷洒出灼热的精华",
+                "a": "喷洒出灼热的精液",
+                "r": "pack:nsfw_semen_metaphor"
+            },
+            {
+                "s": 146,
+                "b": "探入紧窄的后庭",
+                "a": "探入紧窄的屁眼",
+                "r": "pack:nsfw_anus_metaphor"
+            },
+            {
+                "s": 156,
+                "b": "羞耻的菊穴",
+                "a": "后穴",
+                "r": "pack:nsfw_anus_metaphor"
+            },
+            {
+                "s": 162,
+                "b": "层层叠叠的媚肉",
+                "a": "湿软肉壁",
+                "r": "pack:nsfw_inner_wall_metaphor"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "那不是愤怒，而是一种执念。他并不是在笑，是在哭。这不是请求，也不是商量，而是命令。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是愤怒，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 14,
+                "b": "并不是在笑，是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 25,
+                "b": "不是请求，也不是商量，而是",
+                "a": "是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "这不是请求。是命令。这并非安慰，而是试探。与其说是安慰，不如说是试探。",
+        "edits": [
+            {
+                "s": 1,
+                "b": "不是请求。是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 11,
+                "b": "并非安慰，而是",
+                "a": "是",
+                "r": "negation"
+            },
+            {
+                "s": 21,
+                "b": "与其说是安慰，不如说是",
+                "a": "更像是",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她的眼神少了几分凌厉，却多了几分温柔。他问她是不是累了，是该休息了。这不是梦。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "少了几分凌厉，却",
+                "a": "",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "It wasn't anger, it was grief. She smiled. It's not fear — it's resolve.",
+        "edits": [
+            {
+                "s": 0,
+                "b": "It wasn't anger, it was ",
+                "a": "It was ",
+                "r": "negation"
+            },
+            {
+                "s": 43,
+                "b": "It's not fear — it's ",
+                "a": "It is ",
+                "r": "negation"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他转身离开。\n\n夜还很长。",
+        "edits": [
+            {
+                "s": 6,
+                "b": "\n\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他转身离开，夜，还很长呢……",
+        "edits": []
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他转身离开，夜还很长？",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，夜还很长？",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他关上门，这一切才刚刚开始。",
+        "edits": [
+            {
+                "s": 4,
+                "b": "，这一切才刚刚开始。",
+                "a": "。",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "She left the room, the night was still young.",
+        "edits": [
+            {
+                "s": 17,
+                "b": ", the night was still young.",
+                "a": ".",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "She left. Only time will tell.",
+        "edits": [
+            {
+                "s": 9,
+                "b": " Only time will tell.",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他转身离开，决定权在你手里了！",
+        "edits": [
+            {
+                "s": 5,
+                "b": "，决定权在你手里了！",
+                "a": "！",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他走了。\n夜还很长。\n<details><summary>状态</summary>HP 10</details>",
+        "edits": [
+            {
+                "s": 4,
+                "b": "\n夜还很长。",
+                "a": "",
+                "r": "finale"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "夜还很长。",
+        "edits": []
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他微微一笑，微微点头，又微微侧身，缓缓坐下，缓缓抬手，缓缓开口，缓缓地闭上眼，轻轻轻轻。",
+        "edits": [
+            {
+                "s": 12,
+                "b": "微微",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 27,
+                "b": "缓缓",
+                "a": "",
+                "r": "quota"
+            },
+            {
+                "s": 32,
+                "b": "缓缓地",
+                "a": "",
+                "r": "quota"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "“微微，微微，微微。”他微微一怔。",
+        "edits": []
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他来了。\n她走了。\n天黑了。\n雨停了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n她走了。\n天黑了。\n雨停了。",
+                "a": "他来了，她走了，天黑了，雨停了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他来了。\n\n她走了。\n\n天黑了。",
+        "edits": [
+            {
+                "s": 0,
+                "b": "他来了。\n\n她走了。\n\n天黑了。",
+                "a": "他来了，她走了，天黑了。",
+                "r": "merge"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "他瞳孔猛地一缩，喉结滚动了一下，指节泛白。“瞳孔地震！！！！！”\n\n```\n瞳孔骤缩\n```\n『喉结滚动』……………",
+        "edits": [
+            {
+                "s": 1,
+                "b": "瞳孔猛地一缩",
+                "a": "眼神微敛",
+                "r": "pack:phys_pupil_quake"
+            },
+            {
+                "s": 8,
+                "b": "喉结滚动了一下",
+                "a": "气息微沉",
+                "r": "pack:phys_throat_roll"
+            },
+            {
+                "s": 16,
+                "b": "指节泛白",
+                "a": "指尖收紧",
+                "r": "pack:phys_knuckles_white"
+            },
+            {
+                "s": 26,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 53,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "——————那一刻……………他愣住了！！！！！？？？？",
+        "edits": [
+            {
+                "s": 0,
+                "b": "——————",
+                "a": "——",
+                "r": "pack:punct_dash_run"
+            },
+            {
+                "s": 9,
+                "b": "……………",
+                "a": "……",
+                "r": "pack:punct_ellipsis_run"
+            },
+            {
+                "s": 18,
+                "b": "！！！！！",
+                "a": "！！！",
+                "r": "pack:punct_mark_run"
+            },
+            {
+                "s": 23,
+                "b": "？？？？",
+                "a": "？？？",
+                "r": "pack:punct_mark_run"
+            }
+        ]
+    },
+    {
+        "config": "explicit_vulgar",
+        "text": "她的眼底闪过一抹复杂的情绪，像一根羽毛轻轻搔过心尖，呼吸一滞。他倒吸一口凉气，心脏漏跳了一拍，后背发凉。",
+        "edits": [
+            {
+                "s": 2,
+                "b": "眼底闪过一抹复杂",
+                "a": "脸色微变",
+                "r": "pack:phys_eyes_complex_emotion"
+            },
+            {
+                "s": 15,
+                "b": "一根羽毛轻轻搔过心尖",
+                "a": "听得人耳根微热",
+                "r": "pack:sens_feather_scratch"
+            },
+            {
+                "s": 26,
+                "b": "呼吸一滞",
+                "a": "神情微顿",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 32,
+                "b": "倒吸一口凉气",
+                "a": "怔在原地",
+                "r": "pack:phys_breath_hitch"
+            },
+            {
+                "s": 39,
+                "b": "心脏漏跳了一拍",
+                "a": "心神微晃",
+                "r": "pack:phys_stomach_weightless"
+            }
+        ]
+    }
+]

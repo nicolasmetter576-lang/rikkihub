@@ -5,7 +5,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.stream.DecodeResult
 import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.provider.stream.StreamChunkDecoder
@@ -17,8 +16,12 @@ import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.toMetadata
 import me.rerere.ai.util.json
 import me.rerere.ai.util.parseErrorDetail
+import me.rerere.common.http.jsonObjectOrNull
+import me.rerere.common.http.jsonPrimitiveOrNull
+import java.io.IOException
 
 internal class ClaudeStreamDecoder : StreamChunkDecoder {
+    private val usageNormalizer = ClaudeUsageNormalizer()
     private val blocks = mutableMapOf<Int, ClaudeStreamBlock>()
     private var responseId: String? = null
     private var responseModel: String? = null
@@ -27,7 +30,7 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
 
     override fun accept(event: SseEvent): DecodeResult {
         if (finished) return DecodeResult(completed = true)
-        if (event.data == "[DONE]") return DecodeResult(finish(), completed = true)
+        if (event.data.trim() == "[DONE]") return DecodeResult(finishAtEof(), completed = true)
         return try {
             acceptEvent(event)
         } catch (e: Throwable) {
@@ -39,24 +42,27 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
 
     private fun acceptEvent(event: SseEvent): DecodeResult {
         val dataJson = json.parseToJsonElement(event.data).jsonObject
-        if (event.event == "error") {
+        val eventType = dataJson["type"]?.jsonPrimitiveOrNull?.contentOrNull?.takeIf { it.isNotBlank() }
+            ?: event.event?.takeIf { it.isNotBlank() }
+        if (eventType == "error") {
             throw (dataJson["error"] ?: dataJson).parseErrorDetail()
         }
 
-        dataJson["message"]?.jsonObject?.let { message ->
+        dataJson["message"]?.jsonObjectOrNull?.let { message ->
             responseId = message["id"]?.jsonPrimitive?.contentOrNull ?: responseId
             responseModel = message["model"]?.jsonPrimitive?.contentOrNull ?: responseModel
         }
-        dataJson["delta"]?.jsonObject?.get("stop_reason")?.jsonPrimitive?.contentOrNull?.let {
-            finishReason = it
-        }
+        dataJson["delta"]?.jsonObjectOrNull?.get("stop_reason")?.jsonPrimitiveOrNull?.contentOrNull
+            ?.takeIf { it.isNotBlank() }?.let {
+                finishReason = it
+            }
 
         val chunks = buildList {
-            parseTokenUsage(dataJson)?.let { add(StreamChunk.Usage(it)) }
+            usageNormalizer.update(dataJson)?.let { add(StreamChunk.Usage(it)) }
             val index = dataJson["index"]?.jsonPrimitive?.intOrNull
-            val contentBlock = dataJson["content_block"]?.jsonObject
+            val contentBlock = dataJson["content_block"]?.jsonObjectOrNull
 
-            if (event.event == "content_block_start" && index != null && contentBlock != null) {
+            if (eventType == "content_block_start" && index != null && contentBlock != null) {
                 val kind = contentBlock["type"]?.jsonPrimitive?.contentOrNull ?: ""
                 // 空串 id 按缺失处理：blank id 会让多个 block 共享同一 part 身份，
                 // 下游拼接语义下会互相污染（见 ChatCompletionsStreamDecoder 同款防护）。
@@ -67,6 +73,9 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
                     "thinking" -> contentBlock["signature"]?.jsonPrimitive?.contentOrNull?.let {
                         ClaudeReasoningMetadata(signature = it).toMetadata()
                     }
+                    "redacted_thinking" -> contentBlock["data"]?.jsonPrimitiveOrNull?.contentOrNull?.let {
+                        ClaudeReasoningMetadata(redactedData = it).toMetadata()
+                    }
                     else -> null
                 }
                 // tool_use 的 input 快照不能立刻发射：部分上游转换器在
@@ -74,13 +83,15 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
                 // JSON 增量重放一遍，两边都收会拼出双份非法 JSON。快照先记在 block 上，
                 // 仅当整个 block 没有任何 input delta 时才在 stop/finish 时兜底发出。
                 val inputSnapshot = if (kind == "tool_use") {
-                    contentBlock["input"]?.jsonObject?.takeIf { it.isNotEmpty() }
+                    contentBlock["input"]?.jsonObjectOrNull?.takeIf { it.isNotEmpty() }
                         ?.let { json.encodeToString(it) }
                 } else null
                 blocks[index] = ClaudeStreamBlock(kind, blockId, metadata, inputSnapshot)
                 when (kind) {
                     "text" -> add(StreamChunk.TextStart(blockId))
-                    "thinking", "redacted_thinking" -> add(StreamChunk.ReasoningStart(blockId, metadata))
+                    "thinking" -> add(StreamChunk.ReasoningStart(blockId, metadata))
+                    // 没有加密数据的 redacted_thinking 无法回传，和非流式解析一样不产出推理块
+                    "redacted_thinking" -> if (metadata != null) add(StreamChunk.ReasoningStart(blockId, metadata))
                     "tool_use" -> {
                         add(StreamChunk.ToolCallStart(
                             id = blockId,
@@ -118,9 +129,9 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
                 }
             }
 
-            if (event.event == "content_block_delta" && index != null) {
+            if (eventType == "content_block_delta" && index != null) {
                 val block = blocks[index] ?: error("Unknown content block index: $index")
-                val delta = dataJson["delta"]?.jsonObject ?: JsonObject(emptyMap())
+                val delta = dataJson["delta"]?.jsonObjectOrNull ?: JsonObject(emptyMap())
                 when (delta["type"]?.jsonPrimitive?.contentOrNull) {
                     "text_delta" -> add(StreamChunk.TextDelta(
                         block.id,
@@ -132,8 +143,10 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
                         block.metadata,
                     ))
                     "signature_delta" -> {
+                        // 签名可能分成多个 delta 到达，要接在这一块已收到的签名后面
                         val metadata = delta["signature"]?.jsonPrimitive?.contentOrNull?.let {
-                            ClaudeReasoningMetadata(signature = it).toMetadata()
+                            val received = block.metadata?.get("signature")?.jsonPrimitive?.contentOrNull.orEmpty()
+                            ClaudeReasoningMetadata(signature = received + it).toMetadata()
                         }
                         blocks[index] = block.copy(metadata = metadata ?: block.metadata)
                         add(StreamChunk.ReasoningDelta(block.id, "", metadata))
@@ -156,20 +169,27 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
                 }
             }
 
-            if (event.event == "content_block_stop" && index != null) {
+            if (eventType == "content_block_stop" && index != null) {
                 val block = blocks.remove(index) ?: error("Unknown content block index: $index")
                 addAll(endBlock(block))
             }
         }
 
-        return if (event.event == "message_stop") {
+        return if (eventType == "message_stop") {
             DecodeResult(chunks + finish(), completed = true)
         } else {
             DecodeResult(chunks)
         }
     }
 
-    override fun onClosed(): List<StreamChunk> = finish()
+    override fun onClosed(): List<StreamChunk> = finishAtEof()
+
+    private fun finishAtEof(): List<StreamChunk> {
+        if (finished) return emptyList()
+        if (finishReason != null && blocks.isEmpty()) return finish()
+        finished = true
+        throw IOException("Claude stream ended without message_stop")
+    }
 
     private fun finish(): List<StreamChunk> {
         if (finished) return emptyList()
@@ -188,29 +208,13 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
         }
         when (block.kind) {
             "text" -> add(StreamChunk.TextEnd(block.id))
-            "thinking", "redacted_thinking" -> add(StreamChunk.ReasoningEnd(block.id, block.metadata))
+            "thinking" -> add(StreamChunk.ReasoningEnd(block.id, block.metadata))
+            "redacted_thinking" -> if (block.metadata != null) add(StreamChunk.ReasoningEnd(block.id, block.metadata))
             "tool_use" -> add(StreamChunk.ToolCallEnd(block.id))
             else -> if (block.kind.isClaudeServerToolUseType()) {
                 add(StreamChunk.ServerToolInputEnd(block.id))
             }
         }
-    }
-
-    private fun parseTokenUsage(bodyJson: JsonObject): TokenUsage? {
-        val usageJson = bodyJson["usage"]?.jsonObject
-            ?: bodyJson["message"]?.jsonObject?.get("usage")?.jsonObject
-            ?: return null
-        val inputTokens = usageJson["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cachedInputTokens = usageJson["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cachedCreationTokens = usageJson["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val completionTokens = usageJson["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val promptTokens = inputTokens + cachedInputTokens + cachedCreationTokens
-        return TokenUsage(
-            promptTokens = promptTokens,
-            completionTokens = completionTokens,
-            totalTokens = promptTokens + completionTokens,
-            cachedTokens = cachedInputTokens,
-        )
     }
 
     private data class ClaudeStreamBlock(

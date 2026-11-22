@@ -129,7 +129,7 @@ export function WorkspaceDevicePanel({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="space-y-3 rounded-lg border p-4">
+      <div className="space-y-3 rounded-xl border p-3">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-1">
             <h2 className="text-sm font-medium">{t("device.title")}</h2>
@@ -156,11 +156,11 @@ export function WorkspaceDevicePanel({ workspaceId }: { workspaceId: string }) {
           </div>
         ) : null}
 
-        <div className="space-y-2">
+        <div className="divide-y overflow-hidden rounded-xl border">
           {mounts.map((mount) => (
             <div
               key={mount.id}
-              className="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+              className="flex items-center justify-between gap-3 px-3 py-2"
             >
               <div className="min-w-0 space-y-0.5">
                 <div className="flex items-center gap-2">
@@ -706,7 +706,7 @@ function DeviceFileBrowser({
 
   if (!mount.active) {
     return (
-      <div className="rounded-lg border p-4">
+      <div className="rounded-xl border p-3">
         <p className="text-xs text-muted-foreground">
           {t("device.files_inactive_hint", { alias: mount.alias })}
         </p>
@@ -718,7 +718,7 @@ function DeviceFileBrowser({
   const batchPaths = (batchTargets ?? []).map((entry) => entry.path);
 
   return (
-    <div className="space-y-3 rounded-lg border p-4">
+    <div className="space-y-3 rounded-xl border p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-sm font-medium">

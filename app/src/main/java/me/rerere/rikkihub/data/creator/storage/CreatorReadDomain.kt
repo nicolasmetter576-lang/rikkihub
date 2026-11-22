@@ -7,13 +7,20 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.displayLabel
+import me.rerere.ai.provider.effectiveApiKeyEntries
+import me.rerere.ai.provider.effectiveServiceAccounts
+import me.rerere.ai.provider.resolvedLocation
+import me.rerere.ai.provider.rotationStrategyOrDefault
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_TITLE_PROMPT
@@ -29,11 +36,16 @@ import me.rerere.rikkihub.data.creator.session.CreatorObjectKind
 import me.rerere.rikkihub.data.creator.session.CreatorObjectSummary
 import me.rerere.rikkihub.data.creator.session.CreatorReadObjectOutput
 import me.rerere.rikkihub.data.datastore.Settings
+import me.rerere.rikkihub.data.model.regexScripts
+import me.rerere.rikkihub.data.management.adapters.NativeCollections
+import me.rerere.rikkihub.data.management.adapters.NativeViews
 import me.rerere.rikkihub.data.management.adapters.SettingsCollectionInterpreter
+import me.rerere.rikkihub.data.management.adapters.character.CharacterCollections
 import me.rerere.rikkihub.data.management.adapters.conversation.ConversationCollections
 import me.rerere.rikkihub.data.management.adapters.skills.SkillCollections
 import me.rerere.rikkihub.data.management.adapters.subagent.SubagentCollections
 import me.rerere.rikkihub.data.management.ports.ManagementReadPort
+import kotlin.uuid.Uuid
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -71,7 +83,7 @@ class CreatorReadDomain(
 ) {
     companion object {
         const val MAX_PAGE_SIZE = 100
-        const val MAX_READ_CHARS = 64 * 1024
+        const val MAX_READ_CHARS = 160 * 1024
         const val MAX_PROPOSAL_CHARS = 256 * 1024
         const val MAX_PROPOSAL_STEPS = 64
         const val MAX_PROPOSAL_TARGETS = 256
@@ -82,6 +94,7 @@ class CreatorReadDomain(
         val PROMPT_SLOTS = listOf("TITLE", "TRANSLATE", "SUGGESTION", "OCR")
 
         private val DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        private val SUB_OBJECT_KINDS = setOf(CreatorObjectKind.LOREBOOK_ENTRY, CreatorObjectKind.PRESET_ENTRY, CreatorObjectKind.REGEX_SCRIPT)
     }
 
     sealed interface ReadResult {
@@ -94,7 +107,9 @@ class CreatorReadDomain(
         data class Missing(val code: String, val detail: String) : DetailResult
     }
 
-    private data class Row(val id: String, val title: String, val digestSource: JsonElement)
+    /** [scope] is the parent id of a sub-object (book, assistant, or "global"); [searchText] extends what a text filter matches. */
+    private data class Row(val id: String, val title: String, val digestSource: JsonElement,
+        val scope: String? = null, val searchText: String = "")
 
     // ------------------------------------------------------------------ list
 
@@ -133,7 +148,11 @@ class CreatorReadDomain(
         } catch (e: UnavailableDomain) {
             return ReadResult.Denied(e.message.orEmpty())
         }
-        val filtered = rows.filter { input.filter.isBlank() || it.title.contains(input.filter, ignoreCase = true) }
+        val (scope, text) = if (kind in SUB_OBJECT_KINDS) splitScope(input.filter) else null to input.filter.trim()
+        val filtered = rows.filter { row ->
+            (scope == null || row.scope == scope) &&
+                (text.isBlank() || row.title.contains(text, ignoreCase = true) || row.searchText.contains(text, ignoreCase = true))
+        }
         val from = start.coerceAtMost(filtered.size)
         val page = filtered.subList(from, minOf(from + pageSize, filtered.size))
         return ReadResult.Ok(CreatorListObjectsOutput(
@@ -144,7 +163,17 @@ class CreatorReadDomain(
         ))
     }
 
+    /** A sub-object filter may start with the parent id (a lorebook, an assistant, or `global` for regex scripts): `<id> dragon`. */
+    private fun splitScope(filter: String): Pair<String?, String> {
+        val trimmed = filter.trim()
+        val first = trimmed.substringBefore(' ')
+        val isScope = first == "global" || runCatching { Uuid.parse(first) }.isSuccess
+        return if (isScope) first to trimmed.removePrefix(first).trim() else null to trimmed
+    }
+
     private fun noteFor(kind: CreatorObjectKind, empty: Boolean): String? = when {
+        kind in SUB_OBJECT_KINDS && !empty -> "Ids are <parentId>/<childId>. Start the filter with a parent id (a lorebook / assistant id, or global for " +
+            "regex scripts) to list only its objects, then add text to search titles, keywords and content."
         kind == CreatorObjectKind.ASSISTANT -> "The creator assistant itself is not listed and cannot be changed."
         kind == CreatorObjectKind.SKILL -> "Built-in skills are read-only; change one with SKILL CreateBuiltinOverride."
         kind == CreatorObjectKind.SUBAGENT_PRESET ->
@@ -168,6 +197,42 @@ class CreatorReadDomain(
             CreatorObjectKind.QUICK_MESSAGE -> collectionRows(settings, "settings.quickMessages", "title")
             CreatorObjectKind.MODE_INJECTION -> collectionRows(settings, "settings.modeInjections", "name")
             CreatorObjectKind.LOREBOOK -> collectionRows(settings, "settings.lorebooks", "name")
+            CreatorObjectKind.LOREBOOK_ENTRY -> settings.lorebooks.flatMap { book ->
+                SettingsCollectionInterpreter.collectionJson(settings, "settings.lorebooks.${book.id}.entries").map { entry ->
+                    fun list(key: String) = (entry[key] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
+                    val label = entry["comment"]?.jsonPrimitive?.contentOrNull?.ifBlank { null } ?: list("key").firstOrNull() ?: "(no title)"
+                    val flags = (if (entry["disable"]?.jsonPrimitive?.booleanOrNull == true) " (disabled)" else "") +
+                        (if (entry["constant"]?.jsonPrimitive?.booleanOrNull == true) " (always on)" else "")
+                    Row("${book.id}/${entry.getValue("id").jsonPrimitive.content}",
+                        "[${book.name.ifBlank { "(unnamed book)" }}] #${entry.getValue("id").jsonPrimitive.content} $label$flags",
+                        entry, scope = book.id.toString(),
+                        searchText = (list("key") + list("keysecondary")).joinToString(" ") + " " + entry["content"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                }
+            }
+            CreatorObjectKind.PRESET_ENTRY -> assistantRegistry.sanitizeOrdinaryAssistants(settings.assistants).flatMap { assistant ->
+                SettingsCollectionInterpreter.collectionJson(settings, "settings.assistants.${assistant.id}.presetEntries").mapIndexed { index, entry ->
+                    val id = entry.getValue("id").jsonPrimitive.content
+                    val name = entry["name"]?.jsonPrimitive?.contentOrNull?.ifBlank { null } ?: id
+                    val flags = (if (entry["enabled"]?.jsonPrimitive?.booleanOrNull == false) " (disabled)" else "") +
+                        (if (entry["marker"]?.jsonPrimitive?.booleanOrNull == true) " [marker]" else "")
+                    Row("${assistant.id}/$id", "[${assistant.name}] ${index + 1}. $name$flags", entry, scope = assistant.id.toString(),
+                        searchText = id + " " + entry["content"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                }
+            }
+            CreatorObjectKind.REGEX_SCRIPT -> {
+                fun rows(collection: String, scope: String, owner: String) =
+                    SettingsCollectionInterpreter.collectionJson(settings, collection).map { script ->
+                        val id = script.getValue("id").jsonPrimitive.content
+                        val off = if (script["disabled"]?.jsonPrimitive?.booleanOrNull == true) " (disabled)" else ""
+                        Row("$scope/$id", "[$owner] ${script["scriptName"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { id }}$off", script,
+                            scope = scope, searchText = script["findRegex"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                    }
+                rows(NativeCollections.GLOBAL_REGEX, "global", "global") + assistantRegistry.sanitizeOrdinaryAssistants(settings.assistants).flatMap {
+                    rows("settings.assistants.${it.id}.regexScripts", it.id.toString(), it.name)
+                }
+            }
+            CreatorObjectKind.TAVERN_SETTINGS -> listOf(Row("tavern", "Global tavern settings (world info, author's note defaults, global variables)",
+                NativeViews.tavernJson(settings.tavern), scope = "global"))
             CreatorObjectKind.MODEL_DEFINITION -> settings.providers.flatMap { provider ->
                 SettingsCollectionInterpreter.collectionJson(settings, "settings.providers.${provider.id}.models").map { model ->
                     val name = model["displayName"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -197,9 +262,12 @@ class CreatorReadDomain(
             }
             CreatorObjectKind.PROVIDER -> settings.providers.map { provider ->
                 val type = SettingsCollectionInterpreter.providerType(provider)
+                val hasKey = provider.effectiveApiKeyEntries().any { it.enabled && it.key.isNotBlank() } ||
+                    (provider is ProviderSetting.Google &&
+                        provider.effectiveServiceAccounts().any { it.enabled && it.privateKey.isNotBlank() })
                 val credential = when {
                     type !in SettingsCollectionInterpreter.creatableProviderTypes -> "signs in from the app"
-                    providerKey(provider).isNotBlank() -> "key set"
+                    hasKey -> "key set"
                     else -> "no key"
                 }
                 Row(provider.id.toString(),
@@ -216,6 +284,21 @@ class CreatorReadDomain(
                 val port = port()
                 port.snapshotIds("room.workspaces").mapNotNull { id ->
                     port.readObjectJson("room.workspaces", id)?.let { Row(id, it["name"]?.jsonPrimitive?.contentOrNull.orEmpty(), JsonPrimitive(id)) }
+                }
+            }
+            CreatorObjectKind.CHARACTER -> {
+                val port = port()
+                port.snapshotIds(CharacterCollections.CARDS).mapNotNull { id ->
+                    port.readObjectJson(CharacterCollections.CARDS, id)?.let { view ->
+                        val name = view["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val tags = (view["tags"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
+                        val revision = (view["readOnly"] as? JsonObject)?.get("revision") ?: JsonNull
+                        Row(id, name.ifBlank { "(unnamed)" } + (if (tags.isEmpty()) "" else " · " + tags.take(4).joinToString(", ")) +
+                            (if (view["fav"]?.jsonPrimitive?.booleanOrNull == true) " ★" else ""),
+                            JsonArray(listOf(JsonPrimitive(id), revision)),
+                            searchText = view["creator"]?.jsonPrimitive?.contentOrNull.orEmpty() + " " +
+                                view["description"]?.jsonPrimitive?.contentOrNull.orEmpty().take(300))
+                    }
                 }
             }
             CreatorObjectKind.CONVERSATION -> emptyList()
@@ -264,14 +347,25 @@ class CreatorReadDomain(
                         readOnly = JsonObject(mapOf("usedBy" to names(settings.assistants.filter { tag.id in it.tags }.map { it.name }))))
                 } ?: missing(kind, id)
                 CreatorObjectKind.QUICK_MESSAGE -> readBindable(settings, kind, id, "settings.quickMessages") { it.quickMessageIds.map(Any::toString) }
-                CreatorObjectKind.MODE_INJECTION -> readBindable(settings, kind, id, "settings.modeInjections") { it.modeInjectionIds.map(Any::toString) }
-                CreatorObjectKind.LOREBOOK -> readBindable(settings, kind, id, "settings.lorebooks") { it.lorebookIds.map(Any::toString) }
+                CreatorObjectKind.MODE_INJECTION -> readBindable(settings, kind, id, "settings.modeInjections") { it.libraryEntryIds.map(Any::toString) }
+                CreatorObjectKind.LOREBOOK -> readBindable(settings, kind, id, "settings.lorebooks",
+                    extraReadOnly = settings.lorebooks.firstOrNull { it.id.toString() == id }?.let {
+                        mapOf("entryCount" to JsonPrimitive(it.entries.size))
+                    }.orEmpty()) { it.lorebookIds.map(Any::toString) }
+                CreatorObjectKind.LOREBOOK_ENTRY, CreatorObjectKind.PRESET_ENTRY, CreatorObjectKind.REGEX_SCRIPT -> readSubObject(settings, kind, id)
+                CreatorObjectKind.TAVERN_SETTINGS -> {
+                    if (id != "tavern") return missing(kind, id)
+                    ok(kind, id, JsonObject(NativeViews.tavernJson(settings.tavern) - "id"),
+                        hint = "Patch with only the keys you change; worldInfo and authorsNote merge key by key, globalVariables and regexAllowed are replaced as a whole. " +
+                            "The global regex scripts are REGEX_SCRIPT objects with scope global.")
+                }
                 CreatorObjectKind.MODEL_DEFINITION -> readModel(settings, id)
                 CreatorObjectKind.DEFAULT_SLOT -> readSlot(settings, id.uppercase())
                 CreatorObjectKind.PROMPT -> readPrompt(settings, id.uppercase())
                 CreatorObjectKind.SUBAGENT_PRESET -> readSubagent(id)
                 CreatorObjectKind.SKILL -> readSkill(id)
                 CreatorObjectKind.CONVERSATION -> readConversation(settings, id)
+                CreatorObjectKind.CHARACTER -> readCharacter(settings, id)
                 CreatorObjectKind.PROVIDER -> readProvider(settings, id)
                 CreatorObjectKind.MCP_SERVER -> settings.mcpServers.firstOrNull { it.id.toString() == id }?.let { server ->
                     ok(kind, id, JsonObject(mapOf(
@@ -333,30 +427,75 @@ class CreatorReadDomain(
         val refs = buildMap {
             assistant.tags.forEach { tag -> put(tag.toString(), settings.assistantTags.firstOrNull { it.id == tag }?.name ?: "?") }
             assistant.lorebookIds.forEach { book -> put(book.toString(), settings.lorebooks.firstOrNull { it.id == book }?.name ?: "?") }
-            assistant.modeInjectionIds.forEach { mode -> put(mode.toString(), settings.modeInjections.firstOrNull { it.id == mode }?.name ?: "?") }
+            assistant.libraryEntryIds.forEach { mode -> put(mode.toString(), settings.promptLibrary.firstOrNull { it.identifier == mode.toString() }?.name ?: "?") }
             assistant.quickMessageIds.forEach { qm -> put(qm.toString(), settings.quickMessages.firstOrNull { it.id == qm }?.title ?: "?") }
             assistant.mcpServers.forEach { mcp -> put(mcp.toString(), settings.mcpServers.firstOrNull { it.id == mcp }?.commonOptions?.name ?: "?") }
             assistant.chatModelId?.let { put(it.toString(), modelLabel(settings, it) ?: "?") }
             assistant.workspaceId?.let { put(it.toString(), "workspace") }
         }
-        val sectionsHint = if (assistant.promptSections.isNotEmpty())
-            " Its systemPrompt is the joined text of promptSections: patch one section in promptSections, " +
-                "or patch systemPrompt and the edit lands in the matching sections." else ""
+        val layout = assistant.promptPreset.layout().entries
         return ok(CreatorObjectKind.ASSISTANT, id, content, refs = refs,
+            readOnly = JsonObject(buildMap {
+                put("presetEntryCount", JsonPrimitive(layout.size))
+                put("regexScriptCount", JsonPrimitive(assistant.promptPreset.regexScripts.size))
+                put("cliActive", JsonPrimitive(assistant.defaultCliAgentId != null))
+                assistant.defaultCliAgentId?.let { put("defaultCliAgentId", JsonPrimitive(it)) }
+            }),
             hint = "To change it, send only the changed fields: Patch {targetId:\"$id\", params:{fields:{...}}}. " +
-                "List fields (tags, lorebookIds, ...) are replaced as a whole.$sectionsHint")
+                "List fields (tags, lorebookIds, ...) are replaced as a whole. The prompt text and layout are PRESET_ENTRY objects " +
+                "(ids \"$id/<identifier>\", e.g. \"$id/main\"), its regex scripts are REGEX_SCRIPT objects; promptOptions are merged key by key.")
     }
 
     private fun readBindable(
         settings: Settings, kind: CreatorObjectKind, id: String, collection: String,
+        extraReadOnly: Map<String, JsonElement> = emptyMap(),
         bound: (me.rerere.rikkihub.data.model.Assistant) -> List<String>,
     ): DetailResult {
         val content = writable(settings, collection, id) ?: return missing(kind, id)
         val users = settings.assistants.filter { id in bound(it) }
             .map { if (CreatorAssistantDefinition.isCreator(it.id)) "${it.name} (creator)" else it.name }
-        return ok(kind, id, content, readOnly = JsonObject(mapOf("boundToAssistants" to names(users))),
-            hint = if (kind == CreatorObjectKind.LOREBOOK) "Patch fields.entries replaces the whole entry list: " +
-                "keep the id of every existing entry you keep, omit id for new entries." else null)
+        return ok(kind, id, content, readOnly = JsonObject(mapOf("boundToAssistants" to names(users)) + extraReadOnly),
+            hint = if (kind == CreatorObjectKind.LOREBOOK) "The entries are LOREBOOK_ENTRY objects (ids \"$id/<uid>\"): " +
+                "list kind=LOREBOOK_ENTRY with filter \"$id <text>\" to search them." else null)
+    }
+
+    /** `<parentId>/<childId>` objects: lorebook entries, an assistant's prompt entries and regex scripts. */
+    private fun readSubObject(settings: Settings, kind: CreatorObjectKind, id: String): DetailResult {
+        val parent = id.substringBefore('/', "")
+        val child = id.substringAfter('/', "")
+        if (parent.isEmpty() || child.isEmpty()) return DetailResult.Missing("NOT_FOUND",
+            "ids of ${kind.name} are <parentId>/<id>; call creator_list_objects kind=${kind.name} for valid ids")
+        val collection = when (kind) {
+            CreatorObjectKind.LOREBOOK_ENTRY -> "settings.lorebooks.$parent.entries"
+            CreatorObjectKind.PRESET_ENTRY -> "settings.assistants.$parent.presetEntries"
+            else -> if (parent == "global") NativeCollections.GLOBAL_REGEX else "settings.assistants.$parent.regexScripts"
+        }
+        if (parent != "global" && runCatching { Uuid.parse(parent) }.isFailure) return missing(kind, id)
+        val views = try {
+            SettingsCollectionInterpreter.collectionJson(settings, collection)
+        } catch (e: Exception) {
+            return if (AssistantRegistry.isReservedAssistantId(parent)) DetailResult.Missing("RESERVED",
+                "the creator assistant (you) cannot be read or changed through these tools; the user edits it in the app")
+            else missing(kind, id)
+        }
+        val index = views.indexOfFirst { it["id"]?.jsonPrimitive?.contentOrNull == child }
+        if (index < 0) return missing(kind, id)
+        val owner = when (kind) {
+            CreatorObjectKind.LOREBOOK_ENTRY -> "bookName" to settings.lorebooks.firstOrNull { it.id.toString() == parent }?.name
+            else -> "ownerName" to if (parent == "global") "global" else settings.assistants.firstOrNull { it.id.toString() == parent }?.name
+        }
+        val readOnly = buildMap<String, JsonElement> {
+            put(if (kind == CreatorObjectKind.LOREBOOK_ENTRY) "bookId" else "ownerId", JsonPrimitive(parent))
+            put(owner.first, JsonPrimitive(owner.second.orEmpty()))
+            if (kind == CreatorObjectKind.PRESET_ENTRY) { put("position", JsonPrimitive(index + 1)); put("of", JsonPrimitive(views.size)) }
+        }
+        val hint = when (kind) {
+            CreatorObjectKind.LOREBOOK_ENTRY -> "Patch {targetId:\"$id\", params:{fields:{...}}} with only the changed fields; " +
+                "keyword lists (key, keysecondary, triggers) are replaced as a whole."
+            CreatorObjectKind.PRESET_ENTRY -> "The position in the list is the order the entries are sent in; Reorder takes every id of this assistant's entries."
+            else -> "Patch {targetId:\"$id\", params:{fields:{...}}} with only the changed fields."
+        }
+        return ok(kind, id, JsonObject(views[index] - "id"), readOnly = JsonObject(readOnly), hint = hint)
     }
 
     private fun readProvider(settings: Settings, id: String): DetailResult {
@@ -366,9 +505,28 @@ class CreatorReadDomain(
         val loginBased = type !in SettingsCollectionInterpreter.creatableProviderTypes
         val readOnly = buildMap {
             put("type", JsonPrimitive(type))
-            if (loginBased) put("signIn", JsonPrimitive("signs in with an account in the app; only name and enabled can be changed here"))
-            else put("apiKeyConfigured", JsonPrimitive(providerKey(provider).isNotBlank()))
-            if (provider is ProviderSetting.Google) put("privateKeyConfigured", JsonPrimitive(provider.privateKey.isNotBlank()))
+            if (loginBased) {
+                put("signIn", JsonPrimitive("signs in with an account in the app; only name and enabled can be changed here"))
+            } else {
+                val apiEntries = provider.effectiveApiKeyEntries()
+                put("apiKeyConfigured", JsonPrimitive(apiEntries.any { it.key.isNotBlank() }))
+                put("apiKeyCount", JsonPrimitive(apiEntries.size))
+                put("rotationStrategy", JsonPrimitive(provider.rotationStrategyOrDefault().name))
+            }
+            if (provider is ProviderSetting.Google) {
+                val accounts = provider.effectiveServiceAccounts()
+                put("privateKeyConfigured", JsonPrimitive(accounts.any { it.privateKey.isNotBlank() }))
+                put("serviceAccountCount", JsonPrimitive(accounts.size))
+                put("serviceAccountsSummary", JsonArray(accounts.mapIndexed { idx, acc ->
+                    buildJsonObject {
+                        put("label", acc.displayLabel(idx))
+                        put("projectId", acc.projectId)
+                        put("serviceAccountEmail", acc.serviceAccountEmail)
+                        put("location", acc.resolvedLocation(provider.location))
+                        put("enabled", acc.enabled)
+                    }
+                }))
+            }
             put("models", JsonArray(provider.models.map { model ->
                 JsonObject(mapOf("id" to JsonPrimitive(model.id.toString()), "modelId" to JsonPrimitive(model.modelId),
                     "displayName" to JsonPrimitive(model.displayName), "type" to JsonPrimitive(model.type.name)))
@@ -376,17 +534,10 @@ class CreatorReadDomain(
         }
         return ok(CreatorObjectKind.PROVIDER, id, JsonObject(projection - "type"), readOnly = JsonObject(readOnly),
             hint = (if (loginBased) "A built-in provider that signs in from the app. " else
-                "apiKey${if (provider is ProviderSetting.Google) ", privateKey" else ""} and header values are write-only: send a " +
+                "apiKey, apiKeys${if (provider is ProviderSetting.Google) ", privateKey, serviceAccounts" else ""} and header values are write-only: send a " +
                     "new value to replace one, never ask to see it. customHeaders entries without value keep their stored value. ") +
                 "Providers cannot be deleted here. Use this id as params.providerId when creating a MODEL_DEFINITION; " +
                 "check the connection with creator_test_provider once a change is applied.")
-    }
-
-    private fun providerKey(provider: ProviderSetting): String = when (provider) {
-        is ProviderSetting.OpenAI -> provider.apiKey
-        is ProviderSetting.Google -> provider.apiKey
-        is ProviderSetting.Claude -> provider.apiKey
-        else -> ""
     }
 
     private fun readModel(settings: Settings, id: String): DetailResult {
@@ -482,6 +633,21 @@ class CreatorReadDomain(
                     "{targetId:\"$skillName\", params:{path:\"$path\", newContent:<whole new file>}}.")
     }
 
+    private suspend fun readCharacter(settings: Settings, id: String): DetailResult {
+        val view = port().readObjectJson(CharacterCollections.CARDS, id) ?: return missing(CreatorObjectKind.CHARACTER, id)
+        val content = JsonObject(view.filterKeys { it != "id" && it != "readOnly" })
+        val books = buildList {
+            (view["embeddedBookId"] as? JsonPrimitive)?.contentOrNull?.let { add(it) }
+            (view["extraBookIds"] as? JsonArray).orEmpty().forEach { add(it.jsonPrimitive.content) }
+        }
+        val refs = books.mapNotNull { bookId ->
+            settings.lorebooks.firstOrNull { it.id.toString() == bookId }?.let { bookId to it.name }
+        }.toMap()
+        return ok(CreatorObjectKind.CHARACTER, id, content, readOnly = view["readOnly"] as? JsonObject, refs = refs.ifEmpty { null },
+            hint = "Edit with Patch {fields: only what you change}. The card's own regex scripts (readOnly.cardRegexScripts) run only after " +
+                "TAVERN_SETTINGS regexAllowed lists readOnly.regexSource. Characters are removed by the user in Settings › Characters.")
+    }
+
     private suspend fun readConversation(settings: Settings, id: String): DetailResult {
         val port = port()
         val view = port.readObjectJson(ConversationCollections.TREE, id) ?: return missing(CreatorObjectKind.CONVERSATION, id)
@@ -489,7 +655,7 @@ class CreatorReadDomain(
         if (AssistantRegistry.isReservedAssistantId(assistantId.orEmpty())) return DetailResult.Missing("RESERVED",
             "creator conversations cannot be read or managed")
         val content = JsonObject(view.filterKeys { it in setOf("title", "isPinned", "folderId", "customSystemPrompt",
-            "workspaceCwd", "modeInjectionIds", "lorebookIds") })
+            "workspaceCwd", "modeInjectionIds", "lorebookIds", "tavernMetadata", "characterId") })
         val nodes = view["nodes"]?.jsonArray.orEmpty().map { it.jsonObject }.map { node ->
             val select = node["selectIndex"]?.jsonPrimitive?.intOrNull ?: 0
             val candidates = node["candidates"]?.jsonArray.orEmpty().map { it.jsonObject }
@@ -516,6 +682,7 @@ class CreatorReadDomain(
             "assistantName" to JsonPrimitive(settings.assistants.firstOrNull { it.id.toString() == assistantId }?.name ?: "?"),
             "deleted" to (view["deleted"] ?: JsonPrimitive(false)),
             "busy" to (view["busy"] ?: JsonNull),
+            "cliActive" to JsonPrimitive(view["cliSession"] != null && view["cliSession"] != JsonNull),
             "omittedOlderNodes" to JsonPrimitive(nodes.size - kept.size),
             "nodes" to JsonArray(kept),
         ))

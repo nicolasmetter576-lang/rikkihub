@@ -65,7 +65,8 @@ class ChartGenerationLoopTest {
         val chart = chunks.tools().single()
         assertEquals("plot_trend", chart.toolName)
         assertEquals(input, chart.input)
-        assertNull(chart.metadata)
+        // 除了循环打的步界标记没有别的 metadata（图表标记只在结果上）
+        assertEquals(setOf(me.rerere.ai.ui.TOOL_STEP_START_KEY), chart.metadata?.keys)
         assertNotNull(ChartSpec.fromTool(chart))
         chunks.filterIsInstance<GenerationChunk.Messages>().flatMap { it.messages }.flatMap { it.getTools() }
             .filterNot { it.isExecuted }.forEach { assertNull(ChartSpec.fromTool(it)) }

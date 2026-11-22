@@ -2,7 +2,6 @@ package me.rerere.rikkihub.ui.pages.extensions.workspace
 
 import me.rerere.rikkihub.ui.theme.amoledOutlineBorder
 import android.content.Intent
-import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -51,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -61,6 +61,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.CheckmarkSquare02
+import me.rerere.hugeicons.stroke.Edit02
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.FileAdd
@@ -79,8 +80,13 @@ import me.rerere.rikkihub.utils.writeClipboardText
 import me.rerere.workspace.WorkspaceArchiveExtractor
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.Screen
+import me.rerere.rikkihub.ui.pages.files.FileManagerPicks
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import org.koin.compose.koinInject
+import me.rerere.rikkihub.ui.components.ui.FileNameDialog
 import me.rerere.rikkihub.ui.components.ui.ImagePreviewDialog
 import me.rerere.rikkihub.ui.components.ui.RikkaConfirmDialog
+import me.rerere.rikkihub.ui.components.ui.fileBaseNameSelection
 import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.fileSizeToString
@@ -90,6 +96,7 @@ import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.workspace.WorkspaceTransferMode
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 /**
  * Shared workspace file browser used by the dedicated workspace detail page
@@ -133,6 +140,7 @@ fun WorkspaceFilesBrowser(
     val navController = LocalNavController.current
     val context = LocalContext.current
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
+    var renameTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var pendingTransfer by remember { mutableStateOf<PendingTransferSheet?>(null) }
     val transferWorkspaces by vm.transferWorkspaces.collectAsStateWithLifecycle()
     val extraction by vm.extraction.collectAsStateWithLifecycle()
@@ -202,36 +210,21 @@ fun WorkspaceFilesBrowser(
         selectedPaths = toggleWorkspacePathSelection(selectedPaths, entry.path)
     }
 
-    val filePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val fileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0) cursor.getString(nameIndex) else null
-            } else null
-        } ?: uri.lastPathSegment ?: "imported_file"
-        val inputStream = context.contentResolver.openInputStream(uri) ?: return@rememberLauncherForActivityResult
-        vm.importFile(inputStream, fileName)
+    // Import goes through the built-in file manager (files and folders). Area + destination are
+    // snapshotted before it opens so navigating here meanwhile cannot redirect the import.
+    val fileManagerPicks: FileManagerPicks = koinInject()
+    val importRequest = rememberSaveable(workspaceId) { FileManagerPicks.newRequest() }
+    var pendingImport by rememberSaveable(workspaceId) {
+        mutableStateOf<PendingImport?>(null)
     }
-
-    // Area + destination path are snapshotted before launching the tree picker
-    // so a user navigating elsewhere while picking cannot redirect the import.
-    var pendingFolderImport by rememberSaveable(workspaceId) {
-        mutableStateOf<PendingFolderImport?>(null)
-    }
-    val folderPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree(),
-    ) { uri ->
-        val pending = pendingFolderImport.also { pendingFolderImport = null }
-            ?: return@rememberLauncherForActivityResult
-        if (uri == null) return@rememberLauncherForActivityResult // 取消无副作用
-        vm.importFolder(
-            uri = uri,
-            area = pending.area,
-            destinationPath = pending.destinationPath,
-        )
+    LifecycleResumeEffect(importRequest) {
+        val sources = fileManagerPicks.takeImport(importRequest)
+        val target = pendingImport
+        if (sources != null && target != null) {
+            pendingImport = null
+            vm.importSources(sources, target.area, target.destinationPath)
+        }
+        onPauseOrDispose { }
     }
 
     // Single-file export keeps a saveable path snapshot for the same reason.
@@ -382,14 +375,10 @@ fun WorkspaceFilesBrowser(
         } else null,
         onSelectArea = vm::selectArea,
         onGoUp = vm::goUp,
-        onImport = { filePicker.launch(arrayOf("*/*")) },
-        onImportFolder = {
+        onImport = {
             if (!state.isTransferring) {
-                pendingFolderImport = PendingFolderImport(
-                    area = state.area,
-                    destinationPath = state.path,
-                )
-                folderPicker.launch(null)
+                pendingImport = PendingImport(area = state.area, destinationPath = state.path)
+                navController.navigate(Screen.FileManager(pickRequest = importRequest, importToWorkspace = true))
             }
         },
         onToggleSelect = { toggleSelection(it) },
@@ -465,6 +454,11 @@ fun WorkspaceFilesBrowser(
             }
         },
         onDelete = { deleteTarget = it },
+        onRename = if (state.area == WorkspaceStorageArea.FILES) {
+            { renameTarget = it }
+        } else {
+            null
+        },
         onMove = if (state.area == WorkspaceStorageArea.FILES) {
             { pendingTransfer = PendingTransferSheet(listOf(it), WorkspaceTransferMode.MOVE, fromSelection = false) }
         } else {
@@ -563,6 +557,18 @@ fun WorkspaceFilesBrowser(
     }
 
 
+    renameTarget?.let { entry ->
+        FileNameDialog(
+            initial = entry.name,
+            initialSelection = if (entry.isDirectory) TextRange(0, entry.name.length) else fileBaseNameSelection(entry.name),
+            onDismiss = { renameTarget = null },
+            onConfirm = { name ->
+                renameTarget = null
+                vm.rename(entry, name)
+            },
+        )
+    }
+
     deleteTarget?.let { entry ->
         RikkaConfirmDialog(
             show = true,
@@ -600,6 +606,8 @@ internal fun WorkspaceFilesPage(
     onCopyPath: (WorkspaceFileEntry) -> Unit,
     /** null hides Extract (only the FILES area supports it) */
     onExtract: ((WorkspaceFileEntry) -> Unit)?,
+    /** null hides Rename (Linux files are read-only) */
+    onRename: ((WorkspaceFileEntry) -> Unit)?,
     /** null hides Move (only the FILES area supports moving) */
     onMove: ((WorkspaceFileEntry) -> Unit)?,
     /** null hides Copy to (FILES area only) */
@@ -622,12 +630,11 @@ internal fun WorkspaceFilesPage(
     /** true when the current selection contains at least one directory entry */
     selectionHasDirectories: Boolean = false,
     onImport: (() -> Unit)? = null,
-    onImportFolder: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = contentPadding + PaddingValues(16.dp),
+        contentPadding = contentPadding + PaddingValues(AppSpacing.sm),
         verticalArrangement = Arrangement.spacedBy(WorkspaceFileRowSpacing),
     ) {
         workspaceBlock {
@@ -661,7 +668,6 @@ internal fun WorkspaceFilesPage(
                     transferring = transferring,
                     onGoUp = onGoUp,
                     onImport = onImport,
-                    onImportFolder = onImportFolder,
                     onCreateFile = onCreateFile,
                     canCreateFile = !creation.busy && creation.pendingOpen == null &&
                         !state.loading && state.error == null && state.workspace != null,
@@ -741,6 +747,7 @@ internal fun WorkspaceFilesPage(
                 onCopyPath = { onCopyPath(entry) },
                 onExtract = onExtract?.takeIf { !entry.isDirectory && WorkspaceArchiveExtractor.isArchiveName(entry.name) }
                     ?.let { extract -> { extract(entry) } },
+                onRename = onRename?.let { rename -> { rename(entry) } },
                 onMove = onMove?.let { move -> { move(entry) } },
                 onCopyTo = onCopyTo?.let { copy -> { copy(entry) } },
             )
@@ -869,7 +876,6 @@ private fun WorkspacePathBar(
     transferring: Boolean,
     onGoUp: () -> Unit,
     onImport: (() -> Unit)? = null,
-    onImportFolder: (() -> Unit)? = null,
     onCreateFile: (() -> Unit)? = null,
     canCreateFile: Boolean = true,
 ) {
@@ -905,14 +911,6 @@ private fun WorkspacePathBar(
                 )
             }
         }
-        if (onImportFolder != null) {
-            IconButton(onClick = onImportFolder, enabled = !transferring) {
-                Icon(
-                    HugeIcons.FolderImport,
-                    contentDescription = "Import folder",
-                )
-            }
-        }
     }
 }
 
@@ -930,6 +928,7 @@ private fun WorkspaceFileCard(
     onExportZip: () -> Unit,
     onCopyPath: () -> Unit,
     onExtract: (() -> Unit)?,
+    onRename: (() -> Unit)?,
     onMove: (() -> Unit)?,
     onCopyTo: (() -> Unit)? = null,
 ) {
@@ -1086,6 +1085,22 @@ private fun WorkspaceFileCard(
                                 onCopyPath()
                             },
                         )
+                        if (onRename != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.common_rename)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = HugeIcons.Edit02,
+                                        contentDescription = null,
+                                    )
+                                },
+                                enabled = !transferring,
+                                onClick = {
+                                    menuExpanded = false
+                                    onRename()
+                                },
+                            )
+                        }
                         if (onMove != null) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.workspace_move)) },

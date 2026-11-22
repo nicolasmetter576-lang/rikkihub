@@ -17,10 +17,13 @@ internal class PendingRestore(
     private val root: File,
     private val databaseFile: File,
     private val filesDir: File,
+    private val receiptFile: File? = null,
     /** Idempotent fail-closed hook, before any restored DB can become live (also on retry). */
     private val beforeDatabaseInstall: () -> Unit = {},
 ) {
     private val pending get() = File(root, "pending")
+
+    fun hasPending(): Boolean = pending.isDirectory
 
     fun createStagingDirectory(): File {
         check(!pending.exists()) { "A backup restore is already pending. Restart the app first." }
@@ -40,6 +43,7 @@ internal class PendingRestore(
         }?.forEach { it.deleteRecursively() }
         if (!pending.isDirectory) return false
 
+        val metadata = readMetadata()
         val journal = File(pending, "journal.json")
         val entries = if (journal.exists()) {
             // An existing journal may describe an interrupted installation.
@@ -51,6 +55,14 @@ internal class PendingRestore(
                 // pending directory instead of aborting every future launch.
                 restoreOriginalsBestEffort()
                 move(pending, File(root, "failed-${UUID.randomUUID()}"))
+                writeReceiptQuietly(
+                    outcome = RestoreOutcome.ROLLED_BACK,
+                    metadata = metadata,
+                    restoredSettings = false,
+                    restoredDatabase = false,
+                    restoredFilesCount = 0,
+                    errorMessage = e.message,
+                )
                 throw RestoreFailedException(e)
             }
         } else {
@@ -59,11 +71,24 @@ internal class PendingRestore(
             } catch (e: Exception) {
                 // No live files have been changed yet, so this restore can be safely rejected.
                 move(pending, File(root, "failed-${UUID.randomUUID()}"))
+                writeReceiptQuietly(
+                    outcome = RestoreOutcome.ROLLED_BACK,
+                    metadata = metadata,
+                    restoredSettings = false,
+                    restoredDatabase = false,
+                    restoredFilesCount = 0,
+                    errorMessage = e.message,
+                )
                 throw RestoreFailedException(e)
             }
         }
+        val settings = File(pending, "settings.json")
+        val hasSettings = settings.isFile
+        val restoredDatabase = entries.any { it.install && it.path == "database/${databaseFile.name}" }
+        val restoredFilesCount = entries.count { it.install && it.path.startsWith("files/") }
+
         try {
-            if (entries.any { it.install && it.path == "database/${databaseFile.name}" }) {
+            if (restoredDatabase) {
                 beforeDatabaseInstall()
             }
             entries.forEach { entry ->
@@ -78,8 +103,7 @@ internal class PendingRestore(
                     if (entry.install) move(source, target)
                 }
             }
-            val settings = File(pending, "settings.json")
-            if (settings.isFile) restoreSettings(settings.readText())
+            if (hasSettings) restoreSettings(settings.readText())
         } catch (e: Exception) {
             try {
                 rollback(entries)
@@ -89,6 +113,14 @@ internal class PendingRestore(
                 throw e
             }
             move(pending, File(root, "failed-${UUID.randomUUID()}"))
+            writeReceiptQuietly(
+                outcome = RestoreOutcome.ROLLED_BACK,
+                metadata = metadata,
+                restoredSettings = false,
+                restoredDatabase = false,
+                restoredFilesCount = 0,
+                errorMessage = e.message,
+            )
             throw RestoreFailedException(e)
         }
 
@@ -96,8 +128,53 @@ internal class PendingRestore(
         // If this move fails, startup aborts and the next launch retries the same installation.
         val completed = File(root, "completed-${UUID.randomUUID()}")
         move(pending, completed)
+        writeReceiptQuietly(
+            outcome = RestoreOutcome.COMMITTED,
+            metadata = metadata,
+            restoredSettings = hasSettings,
+            restoredDatabase = restoredDatabase,
+            restoredFilesCount = restoredFilesCount,
+            errorMessage = null,
+        )
         completed.deleteRecursively()
         return true
+    }
+
+    private fun readMetadata(): RestoreMetadata? {
+        val file = File(pending, RESTORE_META_FILE_NAME)
+        if (!file.isFile) return null
+        return runCatching {
+            BackupDeviceStateStore.stateJson.decodeFromString<RestoreMetadata>(file.readText())
+        }.getOrNull()
+    }
+
+    private fun writeReceiptQuietly(
+        outcome: RestoreOutcome,
+        metadata: RestoreMetadata?,
+        restoredSettings: Boolean,
+        restoredDatabase: Boolean,
+        restoredFilesCount: Int,
+        errorMessage: String?,
+    ) {
+        val target = receiptFile ?: return
+        runCatching {
+            target.parentFile?.let { parent ->
+                check(parent.isDirectory || parent.mkdirs()) { "Cannot create receipt directory" }
+            }
+            val receipt = RestoreReceipt(
+                outcome = outcome,
+                timestampMillis = System.currentTimeMillis(),
+                source = metadata?.source ?: RestoreSource.LOCAL,
+                sourceDisplayName = metadata?.sourceDisplayName.orEmpty(),
+                restoredSettings = restoredSettings,
+                restoredDatabase = restoredDatabase,
+                restoredFilesCount = restoredFilesCount,
+                preRestoreSnapshotId = metadata?.preRestoreSnapshotId,
+                errorMessage = errorMessage,
+                acknowledged = false,
+            )
+            writeDurably(target, BackupDeviceStateStore.stateJson.encodeToString(receipt))
+        }
     }
 
     private fun buildEntries(): List<RestoreEntry> {
@@ -162,6 +239,8 @@ internal class PendingRestore(
     private data class RestoreEntry(val path: String, val install: Boolean, val hadOriginal: Boolean)
 
     companion object {
+        const val RESTORE_META_FILE_NAME = "restore_meta.json"
+
         fun resolveInside(root: File, relativePath: String): File {
             require(relativePath.isNotBlank() && !relativePath.startsWith('/') &&
                 '\\' !in relativePath && relativePath.split('/').none { it == ".." || it == "." }) {

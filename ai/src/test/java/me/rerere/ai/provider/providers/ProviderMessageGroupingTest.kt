@@ -3,6 +3,7 @@ package me.rerere.ai.provider.providers
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.markedAsStepStart
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +44,22 @@ class ProviderMessageGroupingTest {
         assertEquals(1, result.size)
         assertTrue(result[0] is PartGroup.Tools)
         assertEquals(2, (result[0] as PartGroup.Tools).tools.size)
+    }
+
+    @Test
+    fun `a tool marked as the start of a step opens a new Tools group`() {
+        val parts = listOf(
+            createExecutedTool("call1", "tool1"),
+            createExecutedTool("call2", "tool2"),
+            createExecutedTool("call3", "tool3").markedAsStepStart(),
+            createExecutedTool("call4", "tool4"),
+        )
+        val result = groupPartsByToolBoundary(parts)
+
+        assertEquals(
+            listOf(listOf("call1", "call2"), listOf("call3", "call4")),
+            result.map { group -> (group as PartGroup.Tools).tools.map { it.toolCallId } },
+        )
     }
 
     @Test

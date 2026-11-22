@@ -112,7 +112,8 @@ fun VideoPlayerDialog(
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
                             runCatching { context.startActivity(Intent.createChooser(intent, null)) }
-                        }
+                        },
+                        shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(stringResource(R.string.video_player_open_with), color = Color.White)
                     }

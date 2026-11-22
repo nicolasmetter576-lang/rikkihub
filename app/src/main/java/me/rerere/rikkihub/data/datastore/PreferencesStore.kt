@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.datastore
 
+import me.rerere.rikkihub.data.ai.ProviderSpendLimit
 import android.content.Context
 import android.util.Log
 import androidx.datastore.core.CorruptionException
@@ -47,14 +48,29 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkihub.AppScope
 import me.rerere.rikkihub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkihub.data.ai.tools.ToolOverride
+import me.rerere.rikkihub.data.cli.CliEnvOverride
+import me.rerere.rikkihub.data.cli.CustomCliAgentConfig
 import me.rerere.rikkihub.data.ai.tools.ToolExecutionConfig
+import me.rerere.rikkihub.data.ai.CompressionConfig
 import me.rerere.rikkihub.data.ai.MemoryDreamConfig
 import me.rerere.rikkihub.data.ai.polish.PromptPolishConfig
+import me.rerere.rikkihub.data.ai.qubagu.QubaguConfig
 import me.rerere.rikkihub.data.ai.tuiqiao.TuiqiaoConfig
 import me.rerere.rikkihub.data.ai.zaizao.ZaizaoConfig
 import me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition
-import me.rerere.rikkihub.data.model.normalizedSystemPrompt
-import me.rerere.rikkihub.data.model.reconcileSystemPrompt
+import kotlinx.serialization.builtins.ListSerializer
+import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV5Migration
+import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV6Migration
+import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV7Migration
+import me.rerere.rikkihub.data.model.AssistantPresets
+import me.rerere.rikkihub.data.model.LibraryEntryMeta
+import me.rerere.rikkihub.data.model.PromptEntrySerializer
+import me.rerere.rikkihub.data.model.TavernSettings
+import me.rerere.rikkihub.data.model.mainPromptText
+import me.rerere.rikkihub.data.model.withLibraryMeta
+import me.rerere.rikkihub.data.model.withMainPromptText
+import me.rerere.tavern.core.PromptRole
+import me.rerere.tavern.prompt.PromptEntry
 import me.rerere.rikkihub.data.mutation.ExpectedVersions
 import me.rerere.rikkihub.data.mutation.MutationActor
 import me.rerere.rikkihub.data.mutation.MutationConflictException
@@ -63,6 +79,7 @@ import me.rerere.rikkihub.data.mutation.MutationOutcome
 import me.rerere.rikkihub.data.mutation.MutationRuntime
 import me.rerere.rikkihub.data.mutation.MutationFencedException
 import me.rerere.rikkihub.data.mutation.VersionToken
+import me.rerere.rikkihub.data.ai.prompts.DEFAULT_MESSAGE_TITLE_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkihub.data.ai.prompts.DEFAULT_TITLE_PROMPT
@@ -75,9 +92,7 @@ import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV3Migration
 import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV4Migration
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.Avatar
-import me.rerere.rikkihub.data.model.InjectionPosition
 import me.rerere.rikkihub.data.model.Lorebook
-import me.rerere.rikkihub.data.model.PromptInjection
 import me.rerere.rikkihub.data.model.QuickMessage
 import me.rerere.rikkihub.data.model.Tag
 import me.rerere.rikkihub.data.sync.s3.S3Config
@@ -126,7 +141,10 @@ private val Context.settingsStore by preferencesDataStore(
             PreferenceStoreV1Migration(),
             PreferenceStoreV2Migration(),
             PreferenceStoreV3Migration(),
-            PreferenceStoreV4Migration()
+            PreferenceStoreV4Migration(),
+            PreferenceStoreV5Migration(),
+            PreferenceStoreV6Migration(),
+            PreferenceStoreV7Migration(context),
         )
     }
 )
@@ -209,6 +227,7 @@ class SettingsStore private constructor(
         val SUGGESTION_PROMPT = stringPreferencesKey("suggestion_prompt")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
+        val MESSAGE_TITLE_PROMPT = stringPreferencesKey("message_title_prompt")
         // 2.22.0 起不再使用，只在写入时清掉旧值
         val COMPRESS_MODEL = stringPreferencesKey("compress_model")
         val COMPRESS_PROMPT = stringPreferencesKey("compress_prompt")
@@ -265,7 +284,10 @@ class SettingsStore private constructor(
         val WEB_SERVER_HTTPS_ENABLED = booleanPreferencesKey("web_server_https_enabled")
 
         // 提示词注入
+        // 旧键：V5 迁移把它的内容搬到 PROMPT_LIBRARY 后删除，迁移之外不再读写
         val MODE_INJECTIONS = stringPreferencesKey("mode_injections")
+        val PROMPT_LIBRARY = stringPreferencesKey("prompt_library")
+        val TAVERN_SETTINGS = stringPreferencesKey("tavern_settings")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val QUICK_MESSAGES = stringPreferencesKey("quick_messages")
 
@@ -280,8 +302,13 @@ class SettingsStore private constructor(
         val TOOL_EXECUTION_CONFIG = stringPreferencesKey("tool_execution_config")
         val TUIQIAO_CONFIG = stringPreferencesKey("tuiqiao_config")
         val ZAIZAO_CONFIG = stringPreferencesKey("zaizao_config")
+        val QUBAGU_CONFIG = stringPreferencesKey("qubagu_config")
         val PROMPT_POLISH_CONFIG = stringPreferencesKey("prompt_polish_config")
         val MEMORY_DREAM_CONFIG = stringPreferencesKey("memory_dream_config")
+        val COMPRESSION_CONFIG = stringPreferencesKey("compression_config")
+        val PROVIDER_SPEND_LIMITS = stringPreferencesKey("provider_spend_limits")
+        val CUSTOM_CLI_AGENTS = stringPreferencesKey("custom_cli_agents")
+        val BUILT_IN_CLI_ENV_OVERRIDES = stringPreferencesKey("built_in_cli_env_overrides")
 
         // 统计
         val LAUNCH_COUNT = intPreferencesKey("launch_count")
@@ -353,6 +380,8 @@ class SettingsStore private constructor(
                     preferences[OCR_MODEL] = settings.ocrModelId.toString()
                 if (old == null || old.ocrPrompt != settings.ocrPrompt)
                     preferences[OCR_PROMPT] = settings.ocrPrompt
+                if (old == null || old.messageTitlePrompt != settings.messageTitlePrompt)
+                    preferences[MESSAGE_TITLE_PROMPT] = settings.messageTitlePrompt
                 // 压缩改为复用会话的聊天模型和固定的结构化指令，旧版的压缩模型 / 压缩提示词不再保存
                 preferences.remove(COMPRESS_MODEL)
                 preferences.remove(COMPRESS_PROMPT)
@@ -408,8 +437,12 @@ class SettingsStore private constructor(
                     settings.selectedASRProviderId?.let {
                         preferences[SELECTED_ASR_PROVIDER] = it.toString()
                     } ?: preferences.remove(SELECTED_ASR_PROVIDER)
-                if (old == null || old.modeInjections != settings.modeInjections)
-                    preferences[MODE_INJECTIONS] = JsonInstant.encodeToString(settings.modeInjections)
+                if (old == null || old.promptLibrary != settings.promptLibrary)
+                    preferences[PROMPT_LIBRARY] = JsonInstant.encodeToString(
+                        ListSerializer(PromptEntrySerializer), settings.promptLibrary,
+                    )
+                if (old == null || old.tavern != settings.tavern)
+                    preferences[TAVERN_SETTINGS] = JsonInstant.encodeToString(settings.tavern)
                 if (old == null || old.lorebooks != settings.lorebooks)
                     preferences[LOREBOOKS] = JsonInstant.encodeToString(settings.lorebooks)
                 if (old == null || old.quickMessages != settings.quickMessages)
@@ -438,10 +471,20 @@ class SettingsStore private constructor(
                     preferences[TUIQIAO_CONFIG] = JsonInstant.encodeToString(settings.tuiqiao)
                 if (old == null || old.zaizao != settings.zaizao)
                     preferences[ZAIZAO_CONFIG] = JsonInstant.encodeToString(settings.zaizao)
+                if (old == null || old.qubagu != settings.qubagu)
+                    preferences[QUBAGU_CONFIG] = JsonInstant.encodeToString(settings.qubagu)
                 if (old == null || old.promptPolish != settings.promptPolish)
                     preferences[PROMPT_POLISH_CONFIG] = JsonInstant.encodeToString(settings.promptPolish)
                 if (old == null || old.memoryDream != settings.memoryDream)
                     preferences[MEMORY_DREAM_CONFIG] = JsonInstant.encodeToString(settings.memoryDream)
+                if (old == null || old.compression != settings.compression)
+                    preferences[COMPRESSION_CONFIG] = JsonInstant.encodeToString(settings.compression)
+                if (old == null || old.providerSpendLimits != settings.providerSpendLimits)
+                    preferences[PROVIDER_SPEND_LIMITS] = JsonInstant.encodeToString(settings.providerSpendLimits)
+                if (old == null || old.customCliAgents != settings.customCliAgents)
+                    preferences[CUSTOM_CLI_AGENTS] = JsonInstant.encodeToString(settings.customCliAgents)
+                if (old == null || old.builtInCliEnvOverrides != settings.builtInCliEnvOverrides)
+                    preferences[BUILT_IN_CLI_ENV_OVERRIDES] = JsonInstant.encodeToString(settings.builtInCliEnvOverrides)
                 if (old == null || old.sponsorAlertDismissedAt != settings.sponsorAlertDismissedAt)
                     preferences[SPONSOR_ALERT_DISMISSED_AT] = settings.sponsorAlertDismissedAt
         }
@@ -457,7 +500,9 @@ class SettingsStore private constructor(
         emitAll(
             dataStore.data.withSettingsReadRetry()
                 // 启动次数不属于 Settings，只有它变化时不重新解码整份设置
-                .distinctUntilChanged { old, new -> old.asMap() - LAUNCH_COUNT == new.asMap() - LAUNCH_COUNT }
+                .distinctUntilChanged { old, new ->
+                    old.asMap() - LAUNCH_COUNT == new.asMap() - LAUNCH_COUNT
+                }
                 .map { stamped(it) }
         )
     }.flowOn(Dispatchers.Default)
@@ -489,6 +534,10 @@ class SettingsStore private constructor(
     /** Fire-and-forget UI writes report conflicts/fences here instead of crashing the caller. */
     val writeFailures = kotlinx.coroutines.flow.MutableSharedFlow<SettingsWriteFailure>(extraBufferCapacity = 16)
 
+    // 世界书体积大又很少变：键没变就复用上次解码出的实例（见 RawJsonMemo）。
+    // 必须声明在 init 之前：init 里的协程在别的线程上会走到 decodeSettings，属性初始化是按书写顺序的。
+    private val lorebooksMemo = RawJsonMemo<List<Lorebook>> { JsonInstant.decodeFromString(it) }
+
     init {
         // 整份设置的比较（StateFlow 判等）和模板缓存的失效判断都不放在主线程
         scope.launch(Dispatchers.Default) {
@@ -502,13 +551,13 @@ class SettingsStore private constructor(
             }
         }
         // Pebble 模板缓存只在模板相关字段变化时失效：
-        // 助手 messageTemplate / modeInjections / lorebooks
+        // 助手 messageTemplate / promptLibrary / lorebooks
         scope.launch(Dispatchers.Default) {
             settingsFlow
                 .distinctUntilChangedBy { settings ->
                     Triple(
                         settings.assistants.map { it.id to it.messageTemplate },
-                        settings.modeInjections,
+                        settings.promptLibrary,
                         settings.lorebooks,
                     )
                 }
@@ -600,11 +649,7 @@ class SettingsStore private constructor(
                 ledger.assertExpected(epoch, expected)
                 val base = preferences.decodeSettings().withDefaultBackfill().normalizedForPersistence()
                     .copy(readRevision = ledger.commitRevision, readEpoch = epoch)
-                val proposed = block(base).let { next ->
-                    // 整块与分块是同一份提示词：按写入前的同一助手把两者对齐（App/Web/创造助手/导入共用）
-                    val before = base.assistants.associateBy { it.id }
-                    next.copy(assistants = next.assistants.map { it.reconcileSystemPrompt(before[it.id]) })
-                }
+                val proposed = block(base)
                 require(!proposed.init) { "Cannot update dummy settings" }
                 require(proposed.toolOverrides.values.none { it.name?.startsWith("creator_") == true }) {
                     "Reserved tool namespace is unavailable"
@@ -615,16 +660,20 @@ class SettingsStore private constructor(
                 val next = proposed.copy(deletedAssistantIds = deleted - CreatorAssistantDefinition.ID)
                     .withCreatorAssistant().normalizedForPersistence().copy(readRevision = -1, readEpoch = -1)
                 val cleanBase = base.copy(readRevision = -1, readEpoch = -1)
-                val changedKeys = (settingsObjects(cleanBase).keys + settingsObjects(next).keys)
-                    .filter { settingsObjects(cleanBase)[it] != settingsObjects(next)[it] }.toSet()
+                // 两张表各算一次：每个键都重新生成一遍整张表是键数的平方，上千条世界书条目时一次写入要几秒
+                val objectsBefore = settingsObjects(cleanBase)
+                val objectsAfter = settingsObjects(next)
+                val changedKeys = (objectsBefore.keys + objectsAfter.keys)
+                    .filter { objectsBefore[it] != objectsAfter[it] }.toSet()
                 mutationRuntime.checkWriteAdmission(MutationDomain.SETTINGS, changedKeys, operationId, actor)
                 val nextLedger = ledger.changed(cleanBase, next)
                 val afterTokens = changedKeys.mapNotNull { key ->
                     nextLedger.token(key, epoch)?.let { key to it.encode() }
                 }.toMap()
                 val oldCollections = settingsCollections(cleanBase)
-                val changedCollections = settingsCollections(next).keys.filter { key ->
-                    oldCollections[key] != settingsCollections(next)[key]
+                val newCollections = settingsCollections(next)
+                val changedCollections = newCollections.keys.filter { key ->
+                    oldCollections[key] != newCollections[key]
                 }.associateWith { nextLedger.collections[it] ?: 0L }
                 val committed = SettingsOperationReceipt(operationId, requestFingerprint,
                     System.currentTimeMillis(), epoch, afterTokens, changedCollections)
@@ -752,6 +801,7 @@ class SettingsStore private constructor(
                 suggestionPrompt = preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT,
                 ocrModelId = preferences[OCR_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
+                messageTitlePrompt = preferences[MESSAGE_TITLE_PROMPT] ?: DEFAULT_MESSAGE_TITLE_PROMPT,
                 toolOverrides = preferences[TOOL_OVERRIDES]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyMap(),
@@ -806,12 +856,11 @@ class SettingsStore private constructor(
                 } ?: emptyList(),
                 selectedASRProviderId = preferences[SELECTED_ASR_PROVIDER]?.let { Uuid.parse(it) },
                 // 新安装时键还不存在：退回内置默认（Learning Mode），不是空列表
-                modeInjections = preferences[MODE_INJECTIONS]?.let {
-                    JsonInstant.decodeFromString(it)
-                } ?: DEFAULT_MODE_INJECTIONS,
-                lorebooks = preferences[LOREBOOKS]?.let {
-                    JsonInstant.decodeFromString(it)
-                } ?: emptyList(),
+                promptLibrary = preferences[PROMPT_LIBRARY]?.let {
+                    JsonInstant.decodeFromString(ListSerializer(PromptEntrySerializer), it)
+                } ?: DEFAULT_PROMPT_LIBRARY,
+                tavern = preferences[TAVERN_SETTINGS]?.let { JsonInstant.decodeFromString<TavernSettings>(it) } ?: TavernSettings(),
+                lorebooks = preferences[LOREBOOKS]?.let { lorebooksMemo.get(it) } ?: emptyList(),
                 quickMessages = preferences[QUICK_MESSAGES]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -839,12 +888,27 @@ class SettingsStore private constructor(
                 zaizao = preferences[ZAIZAO_CONFIG]?.let {
                     runCatching { JsonInstant.decodeFromString<ZaizaoConfig>(it) }.getOrNull()
                 } ?: ZaizaoConfig(),
+                qubagu = preferences[QUBAGU_CONFIG]?.let {
+                    runCatching { JsonInstant.decodeFromString<QubaguConfig>(it) }.getOrNull()
+                } ?: QubaguConfig(),
                 promptPolish = preferences[PROMPT_POLISH_CONFIG]?.let {
                     runCatching { JsonInstant.decodeFromString<PromptPolishConfig>(it) }.getOrNull()
                 } ?: PromptPolishConfig(),
                 memoryDream = preferences[MEMORY_DREAM_CONFIG]?.let {
                     runCatching { JsonInstant.decodeFromString<MemoryDreamConfig>(it) }.getOrNull()
                 } ?: MemoryDreamConfig(),
+                compression = preferences[COMPRESSION_CONFIG]?.let {
+                    runCatching { JsonInstant.decodeFromString<CompressionConfig>(it) }.getOrNull()
+                } ?: CompressionConfig(),
+                providerSpendLimits = preferences[PROVIDER_SPEND_LIMITS]?.let {
+                    runCatching { JsonInstant.decodeFromString<Map<Uuid, ProviderSpendLimit>>(it) }.getOrNull()
+                } ?: emptyMap(),
+                customCliAgents = preferences[CUSTOM_CLI_AGENTS]?.let {
+                    runCatching { JsonInstant.decodeFromString<List<CustomCliAgentConfig>>(it) }.getOrNull()
+                } ?: emptyList(),
+                builtInCliEnvOverrides = preferences[BUILT_IN_CLI_ENV_OVERRIDES]?.let {
+                    runCatching { JsonInstant.decodeFromString<List<CliEnvOverride>>(it) }.getOrNull()
+                } ?: emptyList(),
                 sponsorAlertDismissedAt = preferences[SPONSOR_ALERT_DISMISSED_AT] ?: 0,
             )
     }
@@ -893,9 +957,10 @@ class SettingsStore private constructor(
     private fun Settings.withCreatorAssistant(): Settings =
         if (assistants.any { CreatorAssistantDefinition.isCreator(it.id) }) {
             val upgraded = assistants.map { assistant ->
-                // 拆成分块后整块由分块合并而来，不再按旧默认文本整体替换
-                if (!CreatorAssistantDefinition.isCreator(assistant.id) || assistant.promptSections.isNotEmpty()) assistant
-                else assistant.copy(systemPrompt = CreatorAssistantDefinition.upgradedSystemPrompt(assistant.systemPrompt))
+                // 只有还是单个 main 条目（用户没拆开排版过）才按旧默认文本整体替换
+                val onlyMain = assistant.promptPreset.layout().entries.count { it.marker != true && it.identifier != "jailbreak" } <= 1
+                if (!CreatorAssistantDefinition.isCreator(assistant.id) || !onlyMain) assistant
+                else assistant.withMainPromptText(CreatorAssistantDefinition.upgradedSystemPrompt(assistant.mainPromptText))
             }
             if (upgraded == assistants) this else copy(assistants = upgraded)
         }
@@ -905,7 +970,7 @@ class SettingsStore private constructor(
         val settings = this
             // 去重并清理无效引用
             val validMcpServerIds = settings.mcpServers.map { it.id }.toSet()
-            val validModeInjectionIds = settings.modeInjections.map { it.id }.toSet()
+            val validLibraryEntryIds = settings.promptLibrary.mapNotNull { runCatching { Uuid.parse(it.identifier) }.getOrNull() }.toSet()
             val validLorebookIds = settings.lorebooks.map { it.id }.toSet()
             val validQuickMessageIds = settings.quickMessages.map { it.id }.toSet()
             val asrProviders = settings.asrProviders.distinctBy { it.id }
@@ -913,15 +978,19 @@ class SettingsStore private constructor(
                 providers = settings.providers.distinctBy { it.id }.map { provider ->
                     when (provider) {
                         is ProviderSetting.OpenAI -> provider.copy(
-                            models = provider.models.distinctBy { model -> model.id }
+                            models = provider.models.distinctBy { model -> model.id },
+                            apiKeys = provider.apiKeys.distinctBy { entry -> entry.id },
                         )
 
                         is ProviderSetting.Google -> provider.copy(
-                            models = provider.models.distinctBy { model -> model.id }
+                            models = provider.models.distinctBy { model -> model.id },
+                            apiKeys = provider.apiKeys.distinctBy { entry -> entry.id },
+                            serviceAccounts = provider.serviceAccounts.distinctBy { account -> account.id },
                         )
 
                         is ProviderSetting.Claude -> provider.copy(
-                            models = provider.models.distinctBy { model -> model.id }
+                            models = provider.models.distinctBy { model -> model.id },
+                            apiKeys = provider.apiKeys.distinctBy { entry -> entry.id },
                         )
 
                         is ProviderSetting.Codex -> provider.copy(
@@ -938,7 +1007,7 @@ class SettingsStore private constructor(
                     }
                 },
                 assistants = settings.assistants
-                    .distinctBy { it.id }.map { it.normalizedSystemPrompt() }.map { assistant ->
+                    .distinctBy { it.id }.map { assistant ->
                     assistant.copy(
                         // 创造助手不能绑定工作区（App/Web/导入/恢复统一兜底）
                         workspaceId = if (CreatorAssistantDefinition.isCreator(assistant.id)) null else assistant.workspaceId,
@@ -946,9 +1015,9 @@ class SettingsStore private constructor(
                         mcpServers = assistant.mcpServers.filter { serverId ->
                             serverId in validMcpServerIds
                         }.toSet(),
-                        // 过滤掉不存在的模式注入 ID
-                        modeInjectionIds = assistant.modeInjectionIds.filter { id ->
-                            id in validModeInjectionIds
+                        // 过滤掉不存在的提示词库条目 ID
+                        libraryEntryIds = assistant.libraryEntryIds.filter { id ->
+                            id in validLibraryEntryIds
                         }.toSet(),
                         // 过滤掉不存在的 Lorebook ID
                         lorebookIds = assistant.lorebookIds.filter { id ->
@@ -968,7 +1037,7 @@ class SettingsStore private constructor(
                 favoriteModels = settings.favoriteModels.filter { uuid ->
                     settings.providers.flatMap { it.models }.any { it.id == uuid }
                 },
-                modeInjections = settings.modeInjections.distinctBy { it.id },
+                promptLibrary = settings.promptLibrary.distinctBy { it.identifier },
                 lorebooks = settings.lorebooks.distinctBy { it.id },
                 quickMessages = settings.quickMessages.distinctBy { it.id },
             )
@@ -1049,7 +1118,7 @@ class SettingsStore private constructor(
 
     suspend fun updateAssistantInjections(
         assistantId: Uuid,
-        modeInjectionIds: Set<Uuid>,
+        libraryEntryIds: Set<Uuid>,
         lorebookIds: Set<Uuid>,
         quickMessageIds: Set<Uuid> = emptySet(),
     ) {
@@ -1058,7 +1127,7 @@ class SettingsStore private constructor(
                 assistants = settings.assistants.map { assistant ->
                     if (assistant.id == assistantId) {
                         assistant.copy(
-                            modeInjectionIds = modeInjectionIds,
+                            libraryEntryIds = libraryEntryIds,
                             lorebookIds = lorebookIds,
                             quickMessageIds = quickMessageIds,
                         )
@@ -1099,6 +1168,8 @@ data class Settings(
     val suggestionPrompt: String = DEFAULT_SUGGESTION_PROMPT,
     val ocrModelId: Uuid = Uuid.random(),
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
+    // 每轮标题约定（开了「每轮标题」的助手追加在系统提示词末尾）
+    val messageTitlePrompt: String = DEFAULT_MESSAGE_TITLE_PROMPT,
     val toolOverrides: Map<String, ToolOverride> = emptyMap(),
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
     val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
@@ -1121,7 +1192,10 @@ data class Settings(
     val defaultTTSPlaybackSpeed: Float = 1.0f,
     val asrProviders: List<ASRProviderSetting> = emptyList(),
     val selectedASRProviderId: Uuid? = null,
-    val modeInjections: List<PromptInjection.ModeInjection> = DEFAULT_MODE_INJECTIONS,
+    // 提示词库（原模式注入）：酒馆格式的提示词条目，助手/会话按 id 选用
+    val promptLibrary: List<@Serializable(with = PromptEntrySerializer::class) PromptEntry> = DEFAULT_PROMPT_LIBRARY,
+    // 全局酒馆设置：世界书全局设置、全局变量、全局正则、允许名单
+    val tavern: TavernSettings = TavernSettings(),
     val lorebooks: List<Lorebook> = emptyList(),
     val quickMessages: List<QuickMessage> = emptyList(),
     val webServerEnabled: Boolean = false,
@@ -1141,10 +1215,20 @@ data class Settings(
     val tuiqiao: TuiqiaoConfig = TuiqiaoConfig(),
     /** 再造：模型与推理参数、后文开关、默认类型、三种类型的提示词、最近用过的要求。 */
     val zaizao: ZaizaoConfig = ZaizaoConfig(),
+    /** 去八股：模式、保护项、句式规则、词包开关、自定义规则、AI 精修。对哪个助手生效由助手上的开关决定。 */
+    val qubagu: QubaguConfig = QubaguConfig(),
     /** 聊天框润色：模型、提示词、是否带对话上下文及条数。 */
     val promptPolish: PromptPolishConfig = PromptPolishConfig(),
+    /** 各提供商的消费上限（提供商 id → 上限与状态）；没有条目 = 不限 */
+    val providerSpendLimits: Map<Uuid, ProviderSpendLimit> = emptyMap(),
     /** 记忆库「做梦」（后台整理）：自动开关、触发时机、模型、步数与提示词。 */
     val memoryDream: MemoryDreamConfig = MemoryDreamConfig(),
+    /** 上下文压缩：自动档位、触发 / 目标比例、保留条数、摘要模板与模型。会话可单独改档位和模板。 */
+    val compression: CompressionConfig = CompressionConfig(),
+    /** 用户添加的 ACP CLI（工作区 CLI 会话）。 */
+    val customCliAgents: List<CustomCliAgentConfig> = emptyList(),
+    /** 内置 CLI（agy、droid）的环境变量，例如 API Key；按 CLI 的 id 一项。 */
+    val builtInCliEnvOverrides: List<CliEnvOverride> = emptyList(),
     val sponsorAlertDismissedAt: Int = 0,
 ) {
     companion object {
@@ -1160,6 +1244,7 @@ data class NetworkSetting(
     val proxyUsername: String = "",
     val proxyPassword: String = "",
     val enableAutoRetry: Boolean = true,
+    val enableRateLimitRetry: Boolean = true,
 )
 
 const val DEFAULT_TRANSLATE_TARGET_LANGUAGE = "zh-CN"
@@ -1206,6 +1291,9 @@ data class DisplaySetting(
     val showTokenUsage: Boolean = true,
     val showThinkingContent: Boolean = true,
     val autoCloseThinking: Boolean = true,
+    // 超过 collapseLongUserMessageChars 字（至少 50）的用户消息折叠成几行，带展开按钮
+    val collapseLongUserMessages: Boolean = false,
+    val collapseLongUserMessageChars: Int = 500,
     val updateCheckDisabledUntilEpochMillis: Long = 0L,
     val showMessageJumper: Boolean = true,
     val messageJumperOnLeft: Boolean = false,
@@ -1216,7 +1304,7 @@ data class DisplaySetting(
     // buttons (the name is from when that meant two rows), and the button order by stable id
     // (WorkspaceEditorToolbarItem.id; empty = default order, missing ids appended).
     val workspaceEditorToolbarDoubleRow: Boolean = false,
-    // Buttons per row in multi-row mode; read through WorkspaceEditorToolbar's clamp (3..15).
+    // Buttons per row in multi-row mode; read through WorkspaceEditorToolbar's clamp (3..16).
     val workspaceEditorToolbarPerRow: Int = 8,
     // The toolbar (with the find bar) below the text, next to the keyboard, instead of above it.
     val workspaceEditorToolbarAtBottom: Boolean = false,
@@ -1227,6 +1315,10 @@ data class DisplaySetting(
     // the typography: phone and desktop input methods differ (some close brackets themselves).
     val workspaceEditorAutoPair: Boolean = true,
     val webWorkspaceEditorAutoPair: Boolean = true,
+    // Workspace reading mode: volume down / up turn to the next / previous page (off: they change the volume).
+    val workspaceReaderVolumeKeys: Boolean = false,
+    // Workspace reading mode: swipe/tap horizontally by page (false) or scroll continuously vertically (true).
+    val workspaceReaderVerticalScroll: Boolean = false,
     // Workspace editor font/size/spacing: one for the App (sp), one for the Web (px).
     // Read them through appEditorTypography / webEditorTypography (clamped).
     val workspaceEditorTypography: EditorTypography = EditorTypography.APP_DEFAULT,
@@ -1235,6 +1327,10 @@ data class DisplaySetting(
     val skipCropImage: Boolean = true,
     val enableNotificationOnMessageGeneration: Boolean = false,
     val enableLiveUpdateNotification: Boolean = false,
+    val enableFloatingChatWindow: Boolean = false,
+    val floatingChatStripWhileGenerating: Boolean = true,
+    val floatingChatAutoHide: Boolean = true,
+    val floatingChatOpacity: Float = 0.8f,
     val codeBlockAutoWrap: Boolean = false,
     val codeBlockAutoCollapse: Boolean = false,
     val showLineNumbers: Boolean = false,
@@ -1359,12 +1455,11 @@ internal val DEFAULT_ASSISTANTS = listOf(
     Assistant(
         id = DEFAULT_ASSISTANT_ID,
         name = "",
-        systemPrompt = ""
     ),
     Assistant(
         id = Uuid.parse("3d47790c-c415-4b90-9388-751128adb0a0"),
         name = "",
-        systemPrompt = """
+        promptPreset = AssistantPresets.withSystemPrompt("""
             You are a helpful assistant, called {{char}}, based on model {{model_name}}.
 
             ## Info
@@ -1378,7 +1473,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
             ## Hint
             - If the user does not specify a language, reply in the user's primary language.
             - Remember to use Markdown syntax for formatting, and use latex for mathematical expressions.
-        """.trimIndent()
+        """.trimIndent()),
     ),
 )
 
@@ -1392,11 +1487,16 @@ private val DEFAULT_TTS_PROVIDERS = listOf(
 
 internal val DEFAULT_ASSISTANTS_IDS = DEFAULT_ASSISTANTS.map { it.id }
 
-val DEFAULT_MODE_INJECTIONS = listOf(
-    PromptInjection.ModeInjection(
-        id = Uuid.parse("b87eaf16-f5cd-4ac1-9e4f-b11ae3a61d74"),
+val DEFAULT_PROMPT_LIBRARY: List<PromptEntry> = listOf(
+    PromptEntry(
+        identifier = "b87eaf16-f5cd-4ac1-9e4f-b11ae3a61d74",
+        name = "Learning Mode",
+        role = PromptRole.SYSTEM,
         content = LEARNING_MODE_PROMPT,
-        position = InjectionPosition.AFTER_SYSTEM_PROMPT,
-        name = "Learning Mode"
-    )
+        systemPrompt = false,
+        marker = false,
+        injectionPosition = 0,
+        injectionOrder = 0,
+    ).withLibraryMeta(enabled = true, anchor = LibraryEntryMeta.AFTER_SYSTEM)
 )
+

@@ -13,16 +13,19 @@ class WorkspaceEditorToolbarTest {
     @Test fun emptyOrderIsTheDefaultOrder() {
         assertEquals(WorkspaceEditorToolbarItem.entries, workspaceEditorToolbarOrder(emptyList()))
         // Writing buttons first, then the Markdown format buttons, then Undo/Redo.
-        assertEquals(listOf(TUIQIAO, ZAIZAO, FIND, FORMAT, HEADING, BOLD, ITALIC, LIST, QUOTE, TASK, LINK, CODE, TABLE, UNDO, REDO),
+        assertEquals(listOf(TUIQIAO, ZAIZAO, QUBAGU, FIND, FORMAT, HEADING, BOLD, ITALIC, LIST, QUOTE, TASK, LINK, CODE, TABLE, UNDO, REDO),
             WorkspaceEditorToolbarItem.entries.toList())
     }
 
     @Test fun storedOrderComesFirstAndMissingButtonsAreAppendedInDefaultOrder() {
         val order = workspaceEditorToolbarOrder(listOf("undo", "table", "bold"))
-        assertEquals(listOf(UNDO, TABLE, BOLD, TUIQIAO, ZAIZAO, FIND, FORMAT, HEADING, ITALIC, LIST, QUOTE, TASK, LINK, CODE, REDO), order)
+        assertEquals(listOf(UNDO, TABLE, BOLD, TUIQIAO, ZAIZAO, QUBAGU, FIND, FORMAT, HEADING, ITALIC, LIST, QUOTE, TASK, LINK, CODE, REDO), order)
         // An order saved before the writing buttons existed keeps its buttons first and gains the new ones at the end.
         val saved = listOf("heading", "bold", "italic", "list", "quote", "task", "link", "code", "table", "undo", "redo")
-        assertEquals(listOf(TUIQIAO, ZAIZAO, FIND, FORMAT), workspaceEditorToolbarOrder(saved).takeLast(4))
+        assertEquals(listOf(TUIQIAO, ZAIZAO, QUBAGU, FIND, FORMAT), workspaceEditorToolbarOrder(saved).takeLast(5))
+        // One saved before 八股 existed: 八股 comes last.
+        val beforeQubagu = saved + listOf("tuiqiao", "zaizao", "find", "format")
+        assertEquals(QUBAGU, workspaceEditorToolbarOrder(beforeQubagu).last())
     }
 
     @Test fun unknownAndRepeatedIdsAreIgnored() {
@@ -34,7 +37,7 @@ class WorkspaceEditorToolbarTest {
     }
 
     @Test fun idsAreStable() {
-        assertEquals(listOf("tuiqiao", "zaizao", "find", "format", "heading", "bold", "italic", "list", "quote", "task", "link", "code", "table", "undo", "redo"),
+        assertEquals(listOf("tuiqiao", "zaizao", "qubagu", "find", "format", "heading", "bold", "italic", "list", "quote", "task", "link", "code", "table", "undo", "redo"),
             WorkspaceEditorToolbarItem.entries.map { it.id })
     }
 
@@ -45,33 +48,44 @@ class WorkspaceEditorToolbarTest {
 
     @Test fun multiRowCutsInOrderByButtonsPerRow() {
         val items = WorkspaceEditorToolbarItem.entries
-        // 15 buttons, 8 a row: 8 + 7 (the old double-row split).
+        // 16 buttons, 8 a row: two full rows.
         val rows = workspaceEditorToolbarRows(items, multiRow = true, perRow = 8)
-        assertEquals(listOf(TUIQIAO, ZAIZAO, FIND, FORMAT, HEADING, BOLD, ITALIC, LIST), rows[0])
-        assertEquals(listOf(QUOTE, TASK, LINK, CODE, TABLE, UNDO, REDO), rows[1])
-        // 5 a row: three full rows.
-        assertEquals(listOf(5, 5, 5), workspaceEditorToolbarRows(items, multiRow = true, perRow = 5).map { it.size })
+        assertEquals(listOf(TUIQIAO, ZAIZAO, QUBAGU, FIND, FORMAT, HEADING, BOLD, ITALIC), rows[0])
+        assertEquals(listOf(LIST, QUOTE, TASK, LINK, CODE, TABLE, UNDO, REDO), rows[1])
+        // 5 a row: three full rows and one left over.
+        assertEquals(listOf(5, 5, 5, 1), workspaceEditorToolbarRows(items, multiRow = true, perRow = 5).map { it.size })
         // A txt file's 6 buttons fit one row of 8.
         assertEquals(listOf(listOf(TUIQIAO, ZAIZAO, FIND, FORMAT, UNDO, REDO)),
             workspaceEditorToolbarRows(listOf(TUIQIAO, ZAIZAO, FIND, FORMAT, UNDO, REDO), multiRow = true, perRow = 8))
     }
 
-    @Test fun buttonsPerRowIsClampedToThreeThroughFifteen() {
+    @Test fun buttonsPerRowIsClampedToThreeThroughSixteen() {
         val items = WorkspaceEditorToolbarItem.entries
-        assertEquals(listOf(3, 3, 3, 3, 3), workspaceEditorToolbarRows(items, multiRow = true, perRow = 1).map { it.size })
-        assertEquals(listOf(15), workspaceEditorToolbarRows(items, multiRow = true, perRow = 99).map { it.size })
+        assertEquals(listOf(3, 3, 3, 3, 3, 1), workspaceEditorToolbarRows(items, multiRow = true, perRow = 1).map { it.size })
+        assertEquals(listOf(16), workspaceEditorToolbarRows(items, multiRow = true, perRow = 99).map { it.size })
         assertEquals(listOf(emptyList<WorkspaceEditorToolbarItem>()), workspaceEditorToolbarRows(emptyList(), multiRow = true, perRow = 8))
     }
 
     @Test fun buttonsFollowTheFileType() {
-        val markdown = WorkspaceEditorToolbarActions(true, WorkspaceFormatKind.MARKDOWN, onTuiqiao = { _, _ -> }, onZaizao = { _, _ -> })
+        val markdown = WorkspaceEditorToolbarActions(true, WorkspaceFormatKind.MARKDOWN, onTuiqiao = { _, _ -> }, onZaizao = { _, _ -> }, qubagu = qubagu(active = false))
         assertEquals(WorkspaceEditorToolbarItem.entries, WorkspaceEditorToolbarItem.entries.filter { it.availableFor(markdown) })
         // A txt file: writing buttons, find, format, undo/redo — no Markdown formatting.
-        val plain = WorkspaceEditorToolbarActions(false, WorkspaceFormatKind.PLAIN, onTuiqiao = { _, _ -> }, onZaizao = { _, _ -> })
-        assertEquals(listOf(TUIQIAO, ZAIZAO, FIND, FORMAT, UNDO, REDO), WorkspaceEditorToolbarItem.entries.filter { it.availableFor(plain) })
+        val plain = WorkspaceEditorToolbarActions(false, WorkspaceFormatKind.PLAIN, onTuiqiao = { _, _ -> }, onZaizao = { _, _ -> }, qubagu = qubagu(active = false))
+        assertEquals(listOf(TUIQIAO, ZAIZAO, QUBAGU, FIND, FORMAT, UNDO, REDO), WorkspaceEditorToolbarItem.entries.filter { it.availableFor(plain) })
+        // 八股 needs an editable text file whose autosave works, like 推敲
+        val noQubagu = WorkspaceEditorToolbarActions(false, WorkspaceFormatKind.PLAIN, onTuiqiao = { _, _ -> }, onZaizao = { _, _ -> })
+        assertFalse(QUBAGU.availableFor(noQubagu))
         // Code, or 推敲 off for the type (and the device-directory editor): find and undo/redo only.
         val code = WorkspaceEditorToolbarActions(false, null)
         assertEquals(listOf(FIND, UNDO, REDO), WorkspaceEditorToolbarItem.entries.filter { it.availableFor(code) })
+    }
+
+    private fun qubagu(active: Boolean) = WorkspaceEditorQubagu(active = active, scanning = false, marks = emptyList(), onToggle = {}, onOpen = {})
+
+    @Test fun shownMarksLockTheEditingButtons() {
+        assertFalse(WorkspaceEditorToolbarActions(true, WorkspaceFormatKind.MARKDOWN, qubagu = qubagu(active = false)).locked)
+        assertTrue(WorkspaceEditorToolbarActions(true, WorkspaceFormatKind.MARKDOWN, qubagu = qubagu(active = true)).locked)
+        assertFalse(WorkspaceEditorToolbarActions(true, WorkspaceFormatKind.MARKDOWN).locked)
     }
 
     @Test fun displaySettingDefaultsAndLegacyJson() {

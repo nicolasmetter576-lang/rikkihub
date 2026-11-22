@@ -35,6 +35,15 @@ class ChatWorkspaceSwipeTest {
     }
 
     @Test
+    fun filesDrawerOnlyResetsWhenWorkspaceBindingChanges() {
+        assertFalse(ChatWorkspaceSwipe.shouldResetFilesOpen("ws-1", "ws-1"))
+        assertFalse(ChatWorkspaceSwipe.shouldResetFilesOpen(null, null))
+        assertTrue(ChatWorkspaceSwipe.shouldResetFilesOpen("ws-1", "ws-2"))
+        assertTrue(ChatWorkspaceSwipe.shouldResetFilesOpen("ws-1", null))
+        assertTrue(ChatWorkspaceSwipe.shouldResetFilesOpen(null, "ws-1"))
+    }
+
+    @Test
     fun backPrefersFilesNavigationThenFilesCloseThenConversationClose() {
         assertEquals(
             ChatWorkspaceSwipe.BackAction.NavigateUpInFiles,

@@ -1,8 +1,5 @@
 package me.rerere.rikkihub.data.ai
 
-import me.rerere.ai.core.TokenUsage
-import me.rerere.ai.core.merge
-
 /**
  * 一次 [GenerationLoop.generateText] 运行的事件驱动统计器。
  *
@@ -74,11 +71,8 @@ class GenerationRunStats {
     fun onChunk(chunk: GenerationChunk) {
         when (chunk) {
             is GenerationChunk.StepFinished -> {
-                val stepTotal = chunk.usage?.let { usage ->
-                    (usage.totalTokens.toLong().takeIf { it > 0 }
-                        ?: (usage.promptTokens.toLong() + usage.completionTokens.toLong()))
-                        .coerceAtLeast(0)
-                }
+                // Provider normalization is the only fallback point; an explicit zero is valid.
+                val stepTotal = chunk.usage?.totalTokens?.toLong()?.coerceAtLeast(0)
                 synchronized(lock) {
                     state = state.copy(
                         stepCount = state.stepCount + 1,
@@ -96,51 +90,6 @@ class GenerationRunStats {
             is GenerationChunk.Messages -> {}
         }
     }
-}
-
-/**
- * 一次 provider 生成 attempt 内多个 `StreamChunk.Usage` 的步级归并。
- *
- * prompt/completion/cached 沿用 [TokenUsage.merge] 的"正值覆盖, 0 保留旧值"
- * (分片累计口径); `totalTokens` 是**快照口径**, 语义为「attempt 内最新的
- * 有效上报」, **不是历史 max**——provider 先报 105 再修正为 20 时取 20。
- * `TokenUsage` 没有"total 是否独立上报"字段, 只能按数值关系判定:
- *
- * 1. `other.totalTokens > 0 && != other.p + other.c`: 独立上报的 total
- *    (total-only 分片、含 cache/推理等额外口径、或不一致的修正快照)。
- *    取 `other.totalTokens`——最新独立快照, 允许向下修正。
- * 2. `other` 的 p/c 齐全 (p>0 且 c>0): 完整快照。此时 `other.total` 只会是
- *    缺失 (TokenUsage 默认 0) 或等于 p+c 的派生值 (p+c 不同的已进入 1),
- *    二者是同一逻辑上报, total 取新快照的 p+c——完整 p/c 新快照允许向下
- *    修正, 也覆盖更早的独立 total。
- * 3. 其余 (`other` 全零或只是部分分片): `other` 没有带来**新**的独立
- *    total 口径, 不能把在案独立 total (result.total != result.p+result.c
- *    可判定, 与 p+c 相等时二者无差别) 归零或抹去; 无在案独立 total 时回退
- *    到累计 p+c。这样 partial p/c 分片 (p=50,c=0,total 按 p+c 构造 = 50 →
- *    p=0,c=15,total = 15) 按累计得 65 而非 15, 也保留 `total > p+c` 的
- *    已上报口径。
- *
- * 已知歧义边界: `total == p+c` 无法区分「decoder 构造的派生值」与「恰好
- * 相等的独立上报」, 一律当派生值处理 (规则 2/3), 在案独立 total 不被部分
- * 分片改写; 完整 p/c 快照则无论其 total 字段缺失或相等都视为完整快照。
- * 全局 [TokenUsage.merge] 不变, message.usage 路径不受影响。
- */
-internal fun mergeStepUsage(current: TokenUsage?, other: TokenUsage): TokenUsage {
-    val merged = current.merge(other)
-    val mergedDerivedTotal = merged.promptTokens + merged.completionTokens
-    // current.total != p+c ⇒ 由前序「独立 total」分支写入, 在案独立上报;
-    // total == p+c 时保留与否数值无差别, 无需单独标记。
-    val reportedTotal = current
-        ?.takeIf { it.totalTokens != it.promptTokens + it.completionTokens }
-        ?.totalTokens
-    val total = when {
-        other.totalTokens > 0 && other.totalTokens != other.promptTokens + other.completionTokens ->
-            other.totalTokens
-        other.promptTokens > 0 && other.completionTokens > 0 ->
-            other.promptTokens + other.completionTokens
-        else -> reportedTotal ?: mergedDerivedTotal
-    }
-    return merged.copy(totalTokens = total)
 }
 
 /**

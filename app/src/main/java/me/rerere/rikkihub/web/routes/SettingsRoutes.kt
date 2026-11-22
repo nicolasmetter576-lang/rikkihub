@@ -10,8 +10,9 @@ import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.data.datastore.findModelById
+import me.rerere.rikkihub.data.model.promptLibraryIds
 import me.rerere.rikkihub.web.BadRequestException
-import me.rerere.rikkihub.web.toVisibleAssistantUuid
+import me.rerere.rikkihub.web.toAssistantUuid
 import me.rerere.rikkihub.web.NotFoundException
 import me.rerere.rikkihub.web.dto.UpdateAssistantModelRequest
 import me.rerere.rikkihub.web.dto.UpdateAssistantRequest
@@ -30,7 +31,7 @@ fun Route.settingsRoutes(
     route("/settings") {
         post("/assistant") {
             val request = call.receive<UpdateAssistantRequest>()
-            val assistantId = request.assistantId.toVisibleAssistantUuid("assistantId")
+            val assistantId = request.assistantId.toAssistantUuid("assistantId")
 
             settingsStore.updateAssistant(assistantId)
             call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
@@ -38,7 +39,7 @@ fun Route.settingsRoutes(
 
         post("/assistant/model") {
             val request = call.receive<UpdateAssistantModelRequest>()
-            val assistantId = request.assistantId.toVisibleAssistantUuid("assistantId")
+            val assistantId = request.assistantId.toAssistantUuid("assistantId")
             val modelId = request.modelId.toUuid("modelId")
 
             val settings = settingsStore.settingsFlow.value
@@ -58,7 +59,7 @@ fun Route.settingsRoutes(
 
         post("/assistant/thinking-budget") {
             val request = call.receive<UpdateAssistantReasoningLevelRequest>()
-            val assistantId = request.assistantId.toVisibleAssistantUuid("assistantId")
+            val assistantId = request.assistantId.toAssistantUuid("assistantId")
 
             val settings = settingsStore.settingsFlow.value
             if (settings.assistants.none { it.id == assistantId }) {
@@ -71,7 +72,7 @@ fun Route.settingsRoutes(
 
         post("/assistant/mcp") {
             val request = call.receive<UpdateAssistantMcpServersRequest>()
-            val assistantId = request.assistantId.toVisibleAssistantUuid("assistantId")
+            val assistantId = request.assistantId.toAssistantUuid("assistantId")
 
             val settings = settingsStore.settingsFlow.value
             if (settings.assistants.none { it.id == assistantId }) {
@@ -90,14 +91,14 @@ fun Route.settingsRoutes(
 
         post("/assistant/injections") {
             val request = call.receive<UpdateAssistantInjectionsRequest>()
-            val assistantId = request.assistantId.toVisibleAssistantUuid("assistantId")
+            val assistantId = request.assistantId.toAssistantUuid("assistantId")
 
             val settings = settingsStore.settingsFlow.value
             if (settings.assistants.none { it.id == assistantId }) {
                 throw NotFoundException("Assistant not found")
             }
 
-            val validModeInjectionIds = settings.modeInjections.map { it.id }.toSet()
+            val validModeInjectionIds = settings.promptLibraryIds()
             val requestedModeInjectionIds =
                 request.modeInjectionIds.map { it.toUuid("modeInjectionIds") }.toSet()
             if (!validModeInjectionIds.containsAll(requestedModeInjectionIds)) {
@@ -119,7 +120,7 @@ fun Route.settingsRoutes(
 
             settingsStore.updateAssistantInjections(
                 assistantId = assistantId,
-                modeInjectionIds = requestedModeInjectionIds,
+                libraryEntryIds = requestedModeInjectionIds,
                 lorebookIds = requestedLorebookIds,
                 quickMessageIds = requestedQuickMessageIds,
             )
@@ -128,7 +129,7 @@ fun Route.settingsRoutes(
 
         post("/search/enabled") {
             val request = call.receive<UpdateSearchEnabledRequest>()
-            val assistantId = request.assistantId.toVisibleAssistantUuid("assistantId")
+            val assistantId = request.assistantId.toAssistantUuid("assistantId")
 
             val settings = settingsStore.settingsFlow.value
             if (settings.assistants.none { it.id == assistantId }) {

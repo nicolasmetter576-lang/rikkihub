@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.web.routes
 
+import me.rerere.rikkihub.data.model.promptLibraryIds
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -17,7 +18,14 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.rikkihub.data.cli.AcpRuntimeInfo
+import me.rerere.rikkihub.data.cli.AcpSessionManager
+import me.rerere.rikkihub.data.cli.CliPermissionMode
 import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.data.db.fts.MessageSearchSort
 import me.rerere.rikkihub.data.model.Conversation
@@ -25,11 +33,14 @@ import me.rerere.rikkihub.data.model.NodeFavoriteTarget
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.data.repository.FavoriteRepository
 import me.rerere.rikkihub.data.repository.FolderRepository
+import me.rerere.rikkihub.service.ChatErrorSolution
 import me.rerere.rikkihub.service.ChatService
 import me.rerere.rikkihub.service.MessageQueueState
 import me.rerere.rikkihub.web.BadRequestException
 import me.rerere.rikkihub.web.NotFoundException
-import me.rerere.rikkihub.web.toVisibleAssistantUuid
+import me.rerere.rikkihub.web.WebAuthConfig
+import me.rerere.rikkihub.web.requireCliControlAllowed
+import me.rerere.rikkihub.web.toAssistantUuid
 import me.rerere.rikkihub.web.dto.ConversationMetadataPatch
 import me.rerere.rikkihub.web.dto.ConversationNodeUpdateEvent
 import me.rerere.rikkihub.web.dto.ConversationQueueEvent
@@ -63,7 +74,20 @@ fun Route.conversationRoutes(
     folderRepo: FolderRepository,
     settingsStore: SettingsStore,
     favoriteRepo: FavoriteRepository,
+    displayProjector: me.rerere.rikkihub.web.dto.WebDisplayProjector? = null,
+    acpSessionManager: AcpSessionManager? = null,
+    authConfigProvider: (() -> WebAuthConfig)? = null,
 ) {
+    fun resolveAuthConfig(): WebAuthConfig = authConfigProvider?.invoke() ?: run {
+        val current = settingsStore.settingsFlow.value
+        WebAuthConfig(
+            jwtEnabled = current.webServerJwtEnabled,
+            accessPassword = current.webServerAccessPassword,
+            requireHttps = current.webServerHttpsEnabled,
+            localhostOnly = false,
+        )
+    }
+
     route("/conversations") {
         // GET /api/conversations - List conversations of current assistant
         get {
@@ -144,7 +168,7 @@ fun Route.conversationRoutes(
             }
             val assistantId = call.request.queryParameters["assistantId"]
                 ?.takeIf { it.isNotBlank() }
-                ?.toVisibleAssistantUuid("assistantId")
+                ?.toAssistantUuid("assistantId")
             val sort = call.request.queryParameters["sort"]
                 ?.takeIf { it.isNotBlank() }
                 ?.let { raw ->
@@ -173,13 +197,12 @@ fun Route.conversationRoutes(
 
             val isGenerating = chatService.getGenerationJobStateFlow(uuid).first() != null
             val queueState = chatService.getMessageQueueStateIfLoaded(uuid)
-            call.respond(
-                conversation.toDto(
-                    isGenerating = isGenerating,
-                    queueSize = queueState?.messages?.size ?: 0,
-                    queuePaused = queueState?.paused ?: false,
-                )
+            val dto = conversation.toDto(
+                isGenerating = isGenerating,
+                queueSize = queueState?.messages?.size ?: 0,
+                queuePaused = queueState?.paused ?: false,
             )
+            call.respond(displayProjector?.project(dto, conversation) ?: dto)
         }
 
         // PUT /api/conversations/{id} - Merge-patch conversation metadata
@@ -217,14 +240,12 @@ fun Route.conversationRoutes(
             )
             val isGenerating = chatService.getGenerationJobStateFlow(uuid).first() != null
             val queueState = chatService.getMessageQueueStateIfLoaded(uuid)
-            call.respond(
-                HttpStatusCode.OK,
-                updatedConversation.toDto(
-                    isGenerating = isGenerating,
-                    queueSize = queueState?.messages?.size ?: 0,
-                    queuePaused = queueState?.paused ?: false,
-                )
+            val dto = updatedConversation.toDto(
+                isGenerating = isGenerating,
+                queueSize = queueState?.messages?.size ?: 0,
+                queuePaused = queueState?.paused ?: false,
             )
+            call.respond(HttpStatusCode.OK, displayProjector?.project(dto, updatedConversation) ?: dto)
         }
 
         // DELETE /api/conversations/{id} - Delete conversation
@@ -306,21 +327,19 @@ fun Route.conversationRoutes(
 
             val isGenerating = chatService.getGenerationJobStateFlow(uuid).first() != null
             val queueState = chatService.getMessageQueueStateIfLoaded(uuid)
-            call.respond(
-                HttpStatusCode.OK,
-                updatedConversation.toDto(
-                    isGenerating = isGenerating,
-                    queueSize = queueState?.messages?.size ?: 0,
-                    queuePaused = queueState?.paused ?: false,
-                )
+            val dto = updatedConversation.toDto(
+                isGenerating = isGenerating,
+                queueSize = queueState?.messages?.size ?: 0,
+                queuePaused = queueState?.paused ?: false,
             )
+            call.respond(HttpStatusCode.OK, displayProjector?.project(dto, updatedConversation) ?: dto)
         }
 
         // POST /api/conversations/{id}/move - Move conversation to another assistant
         post("/{id}/move") {
             val uuid = call.parameters["id"].toUuid("conversation id")
             val request = call.receive<MoveConversationRequest>()
-            val targetAssistantId = request.assistantId.toVisibleAssistantUuid("assistant id")
+            val targetAssistantId = request.assistantId.toAssistantUuid("assistant id")
 
             val settings = settingsStore.settingsFlow.first()
             if (settings.assistants.none { it.id == targetAssistantId }) {
@@ -613,6 +632,90 @@ fun Route.conversationRoutes(
             call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
         }
 
+        // POST /api/conversations/{id}/cli - Switch CLI agent/mode/model/permission or exit CLI
+        post("/{id}/cli") {
+            requireCliControlAllowed(resolveAuthConfig())
+            val uuid = call.parameters["id"].toUuid("conversation id")
+            val body = call.receive<JsonObject>()
+            if ("agentId" in body) {
+                val agentId = body["agentId"]?.let { elem ->
+                    if (elem is JsonNull) null else elem.jsonPrimitive.contentOrNull
+                }
+                chatService.setConversationCli(uuid, agentId)
+            }
+            if ("permissionMode" in body) {
+                val raw = body["permissionMode"]?.jsonPrimitive?.contentOrNull?.lowercase()
+                val mode = when (raw) {
+                    "ask" -> CliPermissionMode.ASK
+                    "auto" -> CliPermissionMode.AUTO
+                    else -> throw BadRequestException("Invalid permissionMode")
+                }
+                chatService.setCliPermissionMode(uuid, mode)
+            }
+            if ("modelId" in body) {
+                val modelId = body["modelId"]?.let { elem ->
+                    if (elem is JsonNull) null else elem.jsonPrimitive.contentOrNull
+                }
+                if (!modelId.isNullOrBlank()) {
+                    chatService.setCliModel(uuid, modelId)
+                }
+            }
+            if ("modeId" in body) {
+                val modeId = body["modeId"]?.let { elem ->
+                    if (elem is JsonNull) null else elem.jsonPrimitive.contentOrNull
+                }
+                if (!modeId.isNullOrBlank()) {
+                    chatService.setCliMode(uuid, modeId)
+                }
+            }
+            call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
+        }
+
+        // POST /api/conversations/{id}/cli/restart - Restart CLI session
+        post("/{id}/cli/restart") {
+            requireCliControlAllowed(resolveAuthConfig())
+            val uuid = call.parameters["id"].toUuid("conversation id")
+            chatService.restartCliSession(uuid)
+            call.respond(HttpStatusCode.OK, mapOf("status" to "restarted"))
+        }
+
+        // POST /api/conversations/{id}/cli/shell - Run one-off shell command in CLI workspace
+        post("/{id}/cli/shell") {
+            requireCliControlAllowed(resolveAuthConfig())
+            val uuid = call.parameters["id"].toUuid("conversation id")
+            val request = call.receive<CliShellCommandRequest>()
+            val command = request.command.trim()
+            if (command.isBlank()) {
+                throw BadRequestException("command must not be blank")
+            }
+            chatService.runCliShellCommand(uuid, command)
+            call.respond(HttpStatusCode.Accepted, mapOf("status" to "accepted"))
+        }
+
+        // GET /api/conversations/{id}/cli/runtime - Current ACP runtime state snapshot
+        get("/{id}/cli/runtime") {
+            val uuid = call.parameters["id"].toUuid("conversation id")
+            val processState = acpSessionManager?.state?.value
+            if (processState != null && processState.conversationId == uuid) {
+                call.respond(
+                    CliRuntimeSnapshotDto(
+                        active = true,
+                        conversationId = uuid.toString(),
+                        agentId = processState.agentId,
+                        busy = processState.busy,
+                        runtime = processState.runtime.value.toDto(),
+                    )
+                )
+            } else {
+                call.respond(
+                    CliRuntimeSnapshotDto(
+                        active = false,
+                        conversationId = uuid.toString(),
+                    )
+                )
+            }
+        }
+
         // SSE /api/conversations/{id}/stream - Stream conversation updates
         route("/{id}/stream") {
             // Validation must run before the sse handler: respond() in the SSE
@@ -659,8 +762,12 @@ fun Route.conversationRoutes(
                             .asSequence()
                             .filter { it.conversationId == uuid && knownErrorIds.add(it.id) }
                             .map { chatError ->
-                                chatError.error.message?.takeIf { it.isNotBlank() }
-                                    ?: chatError.error.toString()
+                                ErrorEvent(
+                                    message = chatError.error.message?.takeIf { it.isNotBlank() }
+                                        ?: chatError.error.toString(),
+                                    solution = chatError.solution?.takeIf { it == ChatErrorSolution.CompressAndRetry }
+                                        ?.let { "compress_and_retry" },
+                                )
                             }
                             .toList()
                     }.map { events ->
@@ -681,7 +788,12 @@ fun Route.conversationRoutes(
                         ConversationStreamPayload.Compress(state)
                     }
 
-                    merge(conversationEvents, errorEvents, queueEvents, cacheWarmEvents, compressEvents).collect { payload ->
+                    // 「仅提醒」档位的压缩提示 → `compress_suggestion`（null 清掉）
+                    val suggestionEvents = chatService.compressSuggestionFlow(uuid).map { suggestion ->
+                        ConversationStreamPayload.Suggestion(suggestion)
+                    }
+
+                    merge(conversationEvents, errorEvents, queueEvents, cacheWarmEvents, compressEvents, suggestionEvents).collect { payload ->
                         when (payload) {
                             is ConversationStreamPayload.Conversation -> {
                                 val conversation = payload.conversation
@@ -694,6 +806,7 @@ fun Route.conversationRoutes(
                                 if (previous == null) {
                                     sequence += 1
                                     sendConversationSnapshot(
+                                        displayProjector,
                                         sequence,
                                         conversation,
                                         isGenerating,
@@ -706,7 +819,10 @@ fun Route.conversationRoutes(
                                     val changedIndices =
                                         if (contentIdentical) emptyList()
                                         else previous.changedNodeIndices(conversation)
+                                    val depthShifted = previous.messageNodes.size != conversation.messageNodes.size &&
+                                            displayProjector?.dependsOnDepth(conversation) == true
                                     val sendSnapshot = metadataChanged ||
+                                            depthShifted ||
                                             changedIndices == null ||
                                             changedIndices.size > MAX_NODE_UPDATES_PER_EVENT ||
                                             // Reordering/index churn is ambiguous for index-based
@@ -718,6 +834,7 @@ fun Route.conversationRoutes(
                                         sendSnapshot -> {
                                             sequence += 1
                                             sendConversationSnapshot(
+                                                displayProjector,
                                                 sequence,
                                                 conversation,
                                                 isGenerating,
@@ -730,6 +847,7 @@ fun Route.conversationRoutes(
                                             for (index in changedIndices) {
                                                 sequence += 1
                                                 sendConversationNodeUpdate(
+                                                    displayProjector,
                                                     sequence,
                                                     conversation,
                                                     conversation.messageNodes[index],
@@ -748,6 +866,7 @@ fun Route.conversationRoutes(
                                             if (lastIndex >= 0) {
                                                 sequence += 1
                                                 sendConversationNodeUpdate(
+                                                    displayProjector,
                                                     sequence,
                                                     conversation,
                                                     conversation.messageNodes[lastIndex],
@@ -764,11 +883,8 @@ fun Route.conversationRoutes(
                             }
 
                             is ConversationStreamPayload.BatchErrors -> {
-                                payload.messages.forEach { message ->
-                                    val json = JsonInstant.encodeToString(
-                                        ErrorEvent(message = message)
-                                    )
-                                    send(data = json, event = "error")
+                                payload.events.forEach { event ->
+                                    send(data = JsonInstant.encodeToString(event), event = "error")
                                 }
                             }
 
@@ -784,6 +900,10 @@ fun Route.conversationRoutes(
 
                             is ConversationStreamPayload.Compress -> {
                                 send(data = JsonInstant.encodeToString(payload.state.toDto(uuid)), event = "compress_state")
+                            }
+
+                            is ConversationStreamPayload.Suggestion -> {
+                                send(data = JsonInstant.encodeToString(payload.suggestion.toEvent(uuid)), event = "compress_suggestion")
                             }
 
                             is ConversationStreamPayload.Queue -> {
@@ -813,42 +933,49 @@ private sealed interface ConversationStreamPayload {
         val isGenerating: Boolean,
     ) : ConversationStreamPayload
 
-    data class BatchErrors(val messages: List<String>) : ConversationStreamPayload
+    data class BatchErrors(val events: List<ErrorEvent>) : ConversationStreamPayload
 
     data class Queue(val queueState: MessageQueueState) : ConversationStreamPayload
 
     data class CacheWarm(val status: me.rerere.ai.claudelife.CacheWarmStatus) : ConversationStreamPayload
 
     data class Compress(val state: me.rerere.rikkihub.service.CompressState) : ConversationStreamPayload
+
+    data class Suggestion(val suggestion: me.rerere.rikkihub.service.CompressSuggestion?) : ConversationStreamPayload
 }
 
 private suspend fun io.ktor.server.sse.ServerSSESession.sendConversationSnapshot(
+    displayProjector: me.rerere.rikkihub.web.dto.WebDisplayProjector?,
     sequence: Long,
     conversation: me.rerere.rikkihub.data.model.Conversation,
     isGenerating: Boolean,
     queueState: MessageQueueState?,
 ) {
+    val dto = conversation.toDto(
+        isGenerating = isGenerating,
+        queueSize = queueState?.messages?.size ?: 0,
+        queuePaused = queueState?.paused ?: false,
+    )
     val json = JsonInstant.encodeToString(
         ConversationSnapshotEvent(
             seq = sequence,
-            conversation = conversation.toDto(
-                isGenerating = isGenerating,
-                queueSize = queueState?.messages?.size ?: 0,
-                queuePaused = queueState?.paused ?: false,
-            )
+            conversation = displayProjector?.project(dto, conversation) ?: dto,
         )
     )
     send(data = json, event = "snapshot")
 }
 
 private suspend fun io.ktor.server.sse.ServerSSESession.sendConversationNodeUpdate(
+    displayProjector: me.rerere.rikkihub.web.dto.WebDisplayProjector?,
     sequence: Long,
     conversation: me.rerere.rikkihub.data.model.Conversation,
     node: me.rerere.rikkihub.data.model.MessageNode,
     nodeIndex: Int,
     isGenerating: Boolean,
 ) {
-    val nodeDto = node.toDto()
+    val nodeDto = node.toDto().let {
+        displayProjector?.projectNode(it, conversation, nodeIndex) ?: it
+    }
     val json = JsonInstant.encodeToString(
         ConversationNodeUpdateEvent(
             seq = sequence,
@@ -873,7 +1000,7 @@ private fun validateConversationInjectionIds(
     modeInjectionIds: List<String>,
     lorebookIds: List<String>,
 ): ConversationInjectionIds {
-    val validModeInjectionIds = settings.modeInjections.map { it.id }.toSet()
+    val validModeInjectionIds = settings.promptLibraryIds()
     val requestedModeInjectionIds = modeInjectionIds.map { it.toUuid("modeInjectionIds") }.toSet()
     if (!validModeInjectionIds.containsAll(requestedModeInjectionIds)) {
         throw BadRequestException("modeInjectionIds contains unknown injection id")
@@ -926,3 +1053,73 @@ private suspend fun applyInitialConversationInjections(
         )
     }
 }
+
+@Serializable
+private data class CliShellCommandRequest(
+    val command: String,
+)
+
+@Serializable
+private data class CliChoiceDto(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+)
+
+@Serializable
+private data class CliConfigOptionDto(
+    val id: String,
+    val name: String,
+    val category: String? = null,
+    val currentValue: String,
+    val options: List<CliChoiceDto> = emptyList(),
+)
+
+@Serializable
+private data class CliCommandDto(
+    val name: String,
+    val description: String,
+    val inputHint: String? = null,
+)
+
+@Serializable
+private data class CliRuntimeInfoDto(
+    val configOptions: List<CliConfigOptionDto> = emptyList(),
+    val models: List<CliChoiceDto> = emptyList(),
+    val currentModelId: String? = null,
+    val modes: List<CliChoiceDto> = emptyList(),
+    val currentModeId: String? = null,
+    val commands: List<CliCommandDto> = emptyList(),
+    val usedTokens: Long? = null,
+    val contextTokens: Long? = null,
+    val title: String? = null,
+)
+
+@Serializable
+private data class CliRuntimeSnapshotDto(
+    val active: Boolean,
+    val conversationId: String,
+    val agentId: String? = null,
+    val busy: Boolean = false,
+    val runtime: CliRuntimeInfoDto? = null,
+)
+
+private fun AcpRuntimeInfo.toDto(): CliRuntimeInfoDto = CliRuntimeInfoDto(
+    configOptions = configOptions.map { option ->
+        CliConfigOptionDto(
+            id = option.id,
+            name = option.name,
+            category = option.category,
+            currentValue = option.currentValue,
+            options = option.options.map { CliChoiceDto(it.id, it.name, it.description) },
+        )
+    },
+    models = models.map { CliChoiceDto(it.id, it.name, it.description) },
+    currentModelId = currentModelId,
+    modes = modes.map { CliChoiceDto(it.id, it.name, it.description) },
+    currentModeId = currentModeId,
+    commands = commands.map { CliCommandDto(it.name, it.description, it.inputHint) },
+    usedTokens = usedTokens,
+    contextTokens = contextTokens,
+    title = title,
+)

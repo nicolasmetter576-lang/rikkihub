@@ -1,53 +1,28 @@
 package me.rerere.rikkihub.ui.pages.setting.components
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import me.rerere.ai.provider.ClaudePromptCacheTtl
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.datastore.DEFAULT_PROVIDERS
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.View
-import me.rerere.hugeicons.stroke.ViewOff
 import me.rerere.rikkihub.ui.context.LocalToaster
 import me.rerere.rikkihub.ui.components.ui.CommitOnDoneTextField
-import me.rerere.rikkihub.ui.theme.JetbrainsMono
+import me.rerere.rikkihub.ui.theme.AppSpacing
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlin.reflect.KClass
 
 @Composable
@@ -57,7 +32,7 @@ fun ProviderConfigure(
     onEdit: (provider: ProviderSetting) -> Unit
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         modifier = modifier
     ) {
         if (!provider.builtIn) {
@@ -98,6 +73,18 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
         is ProviderSetting.Devin -> "" // OAuth, no API key
         is ProviderSetting.Antigravity -> "" // OAuth, no API key
     }
+    val apiKeys = when (this) {
+        is ProviderSetting.OpenAI -> this.apiKeys
+        is ProviderSetting.Google -> this.apiKeys
+        is ProviderSetting.Claude -> this.apiKeys
+        else -> emptyList()
+    }
+    val rotationStrategy = when (this) {
+        is ProviderSetting.OpenAI -> this.rotationStrategy
+        is ProviderSetting.Google -> this.rotationStrategy
+        is ProviderSetting.Claude -> this.rotationStrategy
+        else -> me.rerere.ai.provider.CredentialRotationStrategy.ROUND_ROBIN
+    }
     val sourceBaseUrl = when (this) {
         is ProviderSetting.OpenAI -> this.baseUrl
         is ProviderSetting.Google -> this.baseUrl
@@ -119,19 +106,19 @@ fun ProviderSetting.convertTo(type: KClass<out ProviderSetting>): ProviderSettin
             id = this.id, enabled = this.enabled, name = this.name, models = this.models,
             balanceOption = this.balanceOption, builtIn = this.builtIn, customHeaders = this.customHeaders,
             description = this.description, shortDescription = this.shortDescription,
-            apiKey = apiKey, baseUrl = convertedBaseUrl
+            apiKey = apiKey, apiKeys = apiKeys, rotationStrategy = rotationStrategy, baseUrl = convertedBaseUrl
         )
         ProviderSetting.Google::class -> ProviderSetting.Google(
             id = this.id, enabled = this.enabled, name = this.name, models = this.models,
             balanceOption = this.balanceOption, builtIn = this.builtIn, customHeaders = this.customHeaders,
             description = this.description, shortDescription = this.shortDescription,
-            apiKey = apiKey, baseUrl = convertedBaseUrl
+            apiKey = apiKey, apiKeys = apiKeys, rotationStrategy = rotationStrategy, baseUrl = convertedBaseUrl
         )
         ProviderSetting.Claude::class -> ProviderSetting.Claude(
             id = this.id, enabled = this.enabled, name = this.name, models = this.models,
             balanceOption = this.balanceOption, builtIn = this.builtIn, customHeaders = this.customHeaders,
             description = this.description, shortDescription = this.shortDescription,
-            apiKey = apiKey, baseUrl = convertedBaseUrl
+            apiKey = apiKey, apiKeys = apiKeys, rotationStrategy = rotationStrategy, baseUrl = convertedBaseUrl
         )
         else -> error("Unsupported provider type: $type")
     }
@@ -241,21 +228,9 @@ private fun ProviderConfigureOpenAI(
         modifier = Modifier.fillMaxWidth(),
     )
 
-    var keyVisible by remember { mutableStateOf(false) }
-    CommitOnDoneTextField(
-        commitOnChange = true,
-        value = provider.apiKey,
-        onCommit = { onEdit(provider.copy(apiKey = it)) },
-        label = { Text(stringResource(R.string.setting_provider_page_api_key)) },
-        modifier = Modifier.fillMaxWidth(),
-        maxLines = 3,
-        visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = {
-            IconButton(onClick = { keyVisible = !keyVisible }) {
-                Icon(if (keyVisible) HugeIcons.ViewOff else HugeIcons.View, contentDescription = null)
-            }
-        },
-        transform = { it.trim() },
+    ApiKeyPoolSection(
+        provider = provider,
+        onEdit = { updated -> if (updated is ProviderSetting.OpenAI) onEdit(updated) },
     )
 
     CommitOnDoneTextField(
@@ -345,21 +320,9 @@ private fun ProviderConfigureClaude(
         maxLines = 3,
     )
 
-    var keyVisible by remember { mutableStateOf(false) }
-    CommitOnDoneTextField(
-        commitOnChange = true,
-        value = provider.apiKey,
-        onCommit = { onEdit(provider.copy(apiKey = it)) },
-        label = { Text(stringResource(R.string.setting_provider_page_api_key)) },
-        modifier = Modifier.fillMaxWidth(),
-        maxLines = 3,
-        visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = {
-            IconButton(onClick = { keyVisible = !keyVisible }) {
-                Icon(if (keyVisible) HugeIcons.ViewOff else HugeIcons.View, contentDescription = null)
-            }
-        },
-        transform = { it.trim() },
+    ApiKeyPoolSection(
+        provider = provider,
+        onEdit = { updated -> if (updated is ProviderSetting.Claude) onEdit(updated) },
     )
 
     CommitOnDoneTextField(
@@ -426,38 +389,6 @@ private fun ProviderConfigureGoogle(
     provider: ProviderSetting.Google,
     onEdit: (provider: ProviderSetting.Google) -> Unit
 ) {
-    val context = LocalContext.current
-    val toaster = LocalToaster.current
-    val scope = rememberCoroutineScope()
-    val serviceAccountJsonLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch(Dispatchers.IO) {
-            try {
-                val content = context.contentResolver.openInputStream(uri)
-                    ?.bufferedReader()
-                    ?.readText()
-                    ?: return@launch
-                val json = Json.parseToJsonElement(content).jsonObject
-                withContext(Dispatchers.Main) {
-                    onEdit(
-                        provider.copy(
-                            projectId = json["project_id"]?.jsonPrimitive?.contentOrNull?.ifEmpty { null } ?: provider.projectId,
-                            serviceAccountEmail = json["client_email"]?.jsonPrimitive?.contentOrNull?.ifEmpty { null } ?: provider.serviceAccountEmail,
-                            privateKey = json["private_key"]?.jsonPrimitive?.contentOrNull?.ifEmpty { null } ?: provider.privateKey,
-                        )
-                    )
-                    toaster.show("Service account imported", type = ToastType.Success)
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    toaster.show("Failed to import: ${e.message}", type = ToastType.Error)
-                }
-            }
-        }
-    }
-
     provider.description()
 
     CommitOnDoneTextField(
@@ -469,21 +400,9 @@ private fun ProviderConfigureGoogle(
     )
 
     if (!(provider.vertexAI && provider.useServiceAccount)) {
-        var keyVisible by remember { mutableStateOf(false) }
-        CommitOnDoneTextField(
-            commitOnChange = true,
-            value = provider.apiKey,
-            onCommit = { onEdit(provider.copy(apiKey = it)) },
-            label = { Text(stringResource(R.string.setting_provider_page_api_key)) },
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 3,
-            visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = { keyVisible = !keyVisible }) {
-                    Icon(if (keyVisible) HugeIcons.ViewOff else HugeIcons.View, contentDescription = null)
-                }
-            },
-            transform = { it.trim() },
+        ApiKeyPoolSection(
+            provider = provider,
+            onEdit = { updated -> if (updated is ProviderSetting.Google) onEdit(updated) },
         )
     }
 
@@ -559,6 +478,27 @@ private fun ProviderConfigureGoogle(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.setting_provider_page_stream_function_call_arguments))
+                Text(
+                    stringResource(R.string.setting_provider_page_stream_function_call_arguments_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = provider.streamFunctionCallArguments,
+                onCheckedChange = { onEdit(provider.copy(streamFunctionCallArguments = it)) }
+            )
+        }
+    }
+
+    if (provider.vertexAI) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(stringResource(R.string.setting_provider_page_use_service_account))
             Switch(
                 checked = provider.useServiceAccount,
@@ -568,57 +508,21 @@ private fun ProviderConfigureGoogle(
     }
 
     if (provider.vertexAI && provider.useServiceAccount) {
-        OutlinedButton(
-            onClick = { serviceAccountJsonLauncher.launch(arrayOf("application/json", "*/*")) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(stringResource(R.string.setting_provider_page_import_service_account_json))
-        }
-
-        CommitOnDoneTextField(
-            commitOnChange = true,
-            value = provider.serviceAccountEmail,
-            onCommit = { onEdit(provider.copy(serviceAccountEmail = it)) },
-            label = { Text(stringResource(R.string.setting_provider_page_service_account_email)) },
-            modifier = Modifier.fillMaxWidth(),
-            transform = { it.trim() },
-        )
-
-        var privateKeyVisible by remember { mutableStateOf(false) }
-        CommitOnDoneTextField(
-            commitOnChange = true,
-            value = provider.privateKey,
-            onCommit = { onEdit(provider.copy(privateKey = it)) },
-            label = { Text(stringResource(R.string.setting_provider_page_private_key)) },
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 6,
-            minLines = 3,
-            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = JetbrainsMono),
-            visualTransformation = if (privateKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = { privateKeyVisible = !privateKeyVisible }) {
-                    Icon(if (privateKeyVisible) HugeIcons.ViewOff else HugeIcons.View, contentDescription = null)
-                }
-            },
-            transform = { it.trim() },
-        )
-
         CommitOnDoneTextField(
             commitOnChange = true,
             value = provider.location,
             onCommit = { onEdit(provider.copy(location = it)) },
             label = { Text(stringResource(R.string.setting_provider_page_location)) },
+            supportingText = {
+                Text(stringResource(R.string.setting_provider_page_default_location_hint))
+            },
             modifier = Modifier.fillMaxWidth(),
             transform = { it.trim() },
         )
 
-        CommitOnDoneTextField(
-            commitOnChange = true,
-            value = provider.projectId,
-            onCommit = { onEdit(provider.copy(projectId = it)) },
-            label = { Text(stringResource(R.string.setting_provider_page_project_id)) },
-            modifier = Modifier.fillMaxWidth(),
-            transform = { it.trim() },
+        VertexServiceAccountPoolSection(
+            provider = provider,
+            onEdit = onEdit,
         )
     }
 }

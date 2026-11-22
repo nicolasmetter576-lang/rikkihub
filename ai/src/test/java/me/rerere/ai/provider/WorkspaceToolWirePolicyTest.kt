@@ -19,7 +19,6 @@ import me.rerere.ai.provider.providers.google.GoogleProvider
 import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.providers.openai.ResponseAPI
 import me.rerere.ai.ui.UIMessage
-import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.json
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
@@ -486,7 +485,7 @@ class WorkspaceToolWirePolicyTest {
     private fun buildChatCompletionsBody(
         params: TextGenerationParams,
     ): JsonObject {
-        val api = ChatCompletionsAPI(OkHttpClient(), KeyRoulette.default())
+        val api = ChatCompletionsAPI(OkHttpClient())
         val method = ChatCompletionsAPI::class.java.getDeclaredMethod(
             "buildChatCompletionRequest",
             List::class.java,

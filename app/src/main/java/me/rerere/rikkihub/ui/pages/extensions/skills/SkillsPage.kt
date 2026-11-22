@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.extensions.skills
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -14,25 +15,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -44,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -76,6 +73,12 @@ import me.rerere.rikkihub.ui.context.LocalToaster
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
 
 @Composable
 fun SkillsPage() {
@@ -83,7 +86,6 @@ fun SkillsPage() {
     val vm = koinViewModel<SkillsVM>()
     val skills by vm.skills.collectAsStateWithLifecycle()
     val invalidSkillDirs by vm.invalidSkillDirs.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val toaster = LocalToaster.current
     val context = LocalContext.current
     var showImportSheet by rememberSaveable { mutableStateOf(false) }
@@ -111,11 +113,11 @@ fun SkillsPage() {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.skills_page_title)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         floatingActionButton = {
@@ -123,18 +125,16 @@ fun SkillsPage() {
                 Icon(HugeIcons.Add01, contentDescription = null)
             }
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = innerPadding + PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = 16.dp,
-                bottom = 16.dp + 72.dp,
+                start = AppSpacing.sm,
+                end = AppSpacing.sm,
+                top = AppSpacing.sm,
+                bottom = AppSpacing.sm + 72.dp,
             ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (skills.isEmpty()) {
                 item {
@@ -170,7 +170,9 @@ fun SkillsPage() {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it.take(SKILL_SEARCH_QUERY_MAX_CHARS) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = AppSpacing.sm),
                         placeholder = { Text(stringResource(R.string.skills_page_search_placeholder)) },
                         leadingIcon = { Icon(HugeIcons.Search01, contentDescription = null) },
                         trailingIcon = {
@@ -198,9 +200,11 @@ fun SkillsPage() {
                 }
             }
 
-            items(filteredSkills, key = { it.skillDir.absolutePath }) { skill ->
+            itemsIndexed(filteredSkills, key = { _, skill -> skill.skillDir.absolutePath }) { index, skill ->
                 SkillCard(
                     skill = skill,
+                    shape = cardGroupItemShape(index, filteredSkills.size),
+                    divider = index > 0,
                     onClick = { navController.navigate(Screen.SkillDetail(skill.name)) },
                     onDelete = { deleteTarget = skill },
                 )
@@ -213,11 +217,16 @@ fun SkillsPage() {
                         text = stringResource(R.string.skills_page_invalid_dirs_title),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+                        modifier = Modifier.padding(start = 4.dp, top = AppSpacing.lg, bottom = AppSpacing.xs),
                     )
                 }
-                items(filteredInvalidDirs, key = { "invalid-" + it.dirName }) { dir ->
-                    InvalidSkillDirCard(dir = dir, onDelete = { invalidDeleteTarget = dir })
+                itemsIndexed(filteredInvalidDirs, key = { _, dir -> "invalid-" + dir.dirName }) { index, dir ->
+                    InvalidSkillDirCard(
+                        dir = dir,
+                        shape = cardGroupItemShape(index, filteredInvalidDirs.size),
+                        divider = index > 0,
+                        onDelete = { invalidDeleteTarget = dir },
+                    )
                 }
             }
         }
@@ -310,16 +319,20 @@ fun SkillsPage() {
 @Composable
 private fun InvalidSkillDirCard(
     dir: InvalidSkillDir,
+    shape: Shape,
+    divider: Boolean,
     onDelete: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = shape,
         colors = CustomColors.cardColorsOnSurfaceContainer,
     ) {
+        if (divider) CardGroupDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                .padding(start = AppSpacing.sm, top = 10.dp, bottom = 10.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -367,6 +380,8 @@ private fun invalidSkillReasonRes(reason: InvalidSkillReason): Int = when (reaso
 @Composable
 private fun SkillCard(
     skill: SkillMetadata,
+    shape: Shape,
+    divider: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -375,12 +390,14 @@ private fun SkillCard(
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
+        shape = shape,
         colors = CustomColors.cardColorsOnSurfaceContainer,
     ) {
+        if (divider) CardGroupDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                .padding(start = AppSpacing.sm, top = 10.dp, bottom = 10.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -498,7 +515,7 @@ private fun SkillImportSheetItem(
     text: String,
     onClick: () -> Unit,
 ) {
-    ListItem(
+    CompactListItem(
         leadingContent = icon,
         headlineContent = { Text(text) },
         modifier = Modifier
@@ -529,7 +546,7 @@ private fun AddSkillDialog(
                 label = { Text(stringResource(R.string.skills_page_skill_content_label)) },
                 placeholder = {
                     Text(
-                        "---\nname: my-skill\ndescription: \"...\"\n---\n\n指令内容...",
+                        "---\nname: my-skill\ndescription: \"...\"\n---\n\n" + stringResource(R.string.skills_page_skill_content_placeholder_body),
                         fontFamily = FontFamily.Monospace,
                     )
                 },

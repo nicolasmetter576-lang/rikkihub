@@ -24,9 +24,12 @@ import me.rerere.rikkihub.data.files.FilesManager
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.data.workspace.WorkspaceUnavailableException
 import me.rerere.rikkihub.utils.generateUnifiedDiff
+import me.rerere.workspace.WORKSPACE_TEMP_FILE_GLOB
+import me.rerere.workspace.WORKSPACE_TEMP_FILE_MAX_AGE_MINUTES
 import me.rerere.workspace.WorkspaceCommandResult
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.workspaceTempFileName
 import org.koin.java.KoinJavaComponent.getKoin
 import java.io.ByteArrayOutputStream
 
@@ -748,7 +751,25 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
             fi
             parent=${'$'}(dirname -- $pathArg) || exit 1
             mkdir -p -- "${'$'}parent" || exit 1
-            cat > $pathArg || exit 1
+            # Write a sibling temp file, then rename it over the target, so an interrupted write (timeout,
+            # stop, full disk) leaves the old file whole. A symlink keeps pointing at the file it names.
+            target=$pathArg
+            if [ -L "${'$'}target" ]; then target=${'$'}(readlink -f -- "${'$'}target") || exit 1; fi
+            target_dir=${'$'}(dirname -- "${'$'}target") || exit 1
+            tmp="${'$'}{target_dir%/}/${workspaceTempFileName()}"
+            trap 'rm -f -- "${'$'}tmp"' EXIT
+            cat > "${'$'}tmp" || exit 1
+            if [ -e "${'$'}target" ]; then
+              mode=${'$'}(stat -c '%a' -- "${'$'}target") || exit 1
+              [ "${'$'}(stat -c '%a' -- "${'$'}tmp")" = "${'$'}mode" ] || chmod "${'$'}mode" "${'$'}tmp" || exit 1
+            fi
+            mv -f -- "${'$'}tmp" "${'$'}target" || exit 1
+            for __rikki_tmp in "${'$'}{target_dir%/}"/$WORKSPACE_TEMP_FILE_GLOB; do
+              if [ -e "${'$'}__rikki_tmp" ] || [ -L "${'$'}__rikki_tmp" ]; then
+                find -H "${'$'}target_dir" -maxdepth 1 -name '$WORKSPACE_TEMP_FILE_GLOB' -type f -mmin +$WORKSPACE_TEMP_FILE_MAX_AGE_MINUTES -exec rm -f -- {} +
+              fi
+              break
+            done >/dev/null 2>&1 || true
             ${statEntryCommand(path)}
         """.trimIndent(),
         stdin = text.toByteArray(Charsets.UTF_8),

@@ -106,7 +106,7 @@ internal fun WorkspaceExtractDialog(
                             state.errorCode == WorkspaceArchiveException.ARCHIVE_WRONG_PASSWORD,
                     )
                     Box {
-                        OutlinedButton(onClick = { encodingMenu = true }) {
+                        OutlinedButton(onClick = { encodingMenu = true }, shape = MaterialTheme.shapes.medium) {
                             Text(stringResource(R.string.workspace_extract_encoding, encoding ?: autoLabel))
                         }
                         DropdownMenu(expanded = encodingMenu, onDismissRequest = { encodingMenu = false }) {

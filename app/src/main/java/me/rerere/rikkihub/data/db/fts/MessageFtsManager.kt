@@ -5,10 +5,17 @@ import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import me.rerere.ai.ui.displayTextOf
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkihub.data.cli.AcpParts
 import me.rerere.rikkihub.data.db.AppDatabase
 import me.rerere.rikkihub.data.model.Conversation
+import me.rerere.rikkihub.utils.JsonInstant
 import java.time.Instant
 
 data class MessageSearchResult(
@@ -152,7 +159,9 @@ class MessageFtsManager(private val database: AppDatabase) {
         assistantIds: Collection<String>? = null,
     ): List<MessageSearchResult> = withContext(Dispatchers.IO) {
         val results = mutableListOf<MessageSearchResult>()
-        if (assistantIds != null && assistantIds.isEmpty()) return@withContext results
+        // simple 扩展的 jieba_query 遇到首尾空白会生成以 AND 开头的查询，fts5 直接报语法错误（App 搜索页输入「 ty」即崩溃）
+        val query = keyword.trim()
+        if (query.isEmpty() || assistantIds != null && assistantIds.isEmpty()) return@withContext results
         val assistantFilter = if (assistantIds != null) {
             "AND conversation.assistant_id IN (${assistantIds.joinToString { "?" }})"
         } else {
@@ -171,9 +180,9 @@ class MessageFtsManager(private val database: AppDatabase) {
             ORDER BY ${sort.orderBy}
             LIMIT 50
             """.trimIndent(),
-            arrayOf(keyword, *assistantIds.orEmpty().toTypedArray())
+            arrayOf(query, *assistantIds.orEmpty().toTypedArray())
         )
-        Log.i(TAG, "search: $keyword")
+        Log.i(TAG, "search: $query")
         cursor.use {
             while (it.moveToNext()) {
                 results.add(
@@ -192,7 +201,114 @@ class MessageFtsManager(private val database: AppDatabase) {
     }
 }
 
-private fun UIMessage.extractFtsText(): String =
-    parts.filterIsInstance<UIMessagePart.Text>()
-        .joinToString("\n") { it.text }
-        .take(10_000)
+private const val MAX_FTS_TEXT_CHARS = 10_000
+private const val MAX_ACP_OUTPUT_CHARS = 500
+private val ACP_STATUS_PLACEHOLDERS = setOf(
+    "[completed]",
+    "[failed]",
+    "[pending]",
+    "[in_progress]",
+    "[cancelled]",
+    "[denied]",
+    "[not run]",
+)
+private val RAW_INPUT_PATH_KEYS = setOf(
+    "path",
+    "file_path",
+    "filepath",
+    "target_file",
+    "targetfile",
+    "absolute_path",
+    "absolutepath",
+    "cwd",
+    "dir",
+    "directory",
+    "file",
+    "uri",
+)
+
+internal fun UIMessage.extractFtsText(): String {
+    // 每轮标题放最前面：标签从正文里去掉，标题本身要能搜到
+    val textContent = (listOfNotNull(title) + parts.filterIsInstance<UIMessagePart.Text>().map { displayTextOf(it) })
+        .joinToString("\n")
+    if (textContent.length >= MAX_FTS_TEXT_CHARS) {
+        return textContent.take(MAX_FTS_TEXT_CHARS)
+    }
+
+    val sb = StringBuilder(textContent)
+    for (part in parts) {
+        if (part !is UIMessagePart.Tool) continue
+        if (!part.toolName.startsWith(AcpParts.TOOL_PREFIX) && !AcpParts.isAcpTool(part)) continue
+        val separatorLen = if (sb.isNotEmpty()) 1 else 0
+        val remaining = MAX_FTS_TEXT_CHARS - sb.length - separatorLen
+        if (remaining <= 0) break
+        val snippet = extractAcpFtsSnippet(part, remaining)
+        if (snippet.isBlank()) continue
+        if (sb.isNotEmpty()) sb.append('\n')
+        sb.append(snippet.take(remaining))
+    }
+    return sb.toString().take(MAX_FTS_TEXT_CHARS)
+}
+
+private fun extractAcpFtsSnippet(part: UIMessagePart.Tool, maxChars: Int): String {
+    val acp = part.metadata?.get(AcpParts.META_KEY) as? JsonObject
+    val title = acp?.stringField("title")
+        ?.replace('\n', ' ')
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: part.toolName.removePrefix(AcpParts.TOOL_PREFIX).replace('_', ' ').trim()
+
+    val paths = buildList {
+        (acp?.get("locations") as? JsonArray)?.forEach { item ->
+            (item as? JsonObject)?.stringField("path")?.trim()?.takeIf { it.isNotEmpty() }?.let(::add)
+        }
+        (acp?.get("content") as? JsonArray)?.forEach { item ->
+            val obj = item as? JsonObject ?: return@forEach
+            if (obj.stringField("type") == "diff") {
+                obj.stringField("path")?.trim()?.takeIf { it.isNotEmpty() }?.let(::add)
+            }
+        }
+        if (part.input.isNotBlank() && part.input != "{}") {
+            val inputObj = runCatching { JsonInstant.parseToJsonElement(part.input) }.getOrNull() as? JsonObject
+            inputObj?.forEach { (key, value) ->
+                if (key.lowercase() in RAW_INPUT_PATH_KEYS) {
+                    (value as? JsonPrimitive)
+                        ?.takeIf { it.isString }
+                        ?.contentOrNull
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?.let(::add)
+                }
+            }
+        }
+    }.distinct()
+
+    val outputBudget = minOf(MAX_ACP_OUTPUT_CHARS, maxChars)
+    val output = part.output.filterIsInstance<UIMessagePart.Text>()
+        .mapNotNull { out ->
+            val trimmed = out.text.trim()
+            if (trimmed.isEmpty() || trimmed in ACP_STATUS_PLACEHOLDERS) return@mapNotNull null
+            if (isLargeDiff(trimmed) || isRawJsonBlob(trimmed)) return@mapNotNull null
+            trimmed
+        }
+        .joinToString("\n")
+        .take(outputBudget)
+
+    return listOfNotNull(
+        title.takeIf { it.isNotBlank() },
+        paths.joinToString(" ").takeIf { it.isNotBlank() },
+        output.takeIf { it.isNotBlank() },
+    ).joinToString("\n").take(maxChars)
+}
+
+private fun JsonObject.stringField(key: String): String? =
+    (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+
+private fun isLargeDiff(text: String): Boolean =
+    text.startsWith("diff --git ") ||
+        (text.contains("\n@@ ") && (text.contains("--- ") || text.contains("+++ "))) ||
+        (text.startsWith("--- ") && text.contains("\n+++ "))
+
+private fun isRawJsonBlob(text: String): Boolean =
+    ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) &&
+        runCatching { JsonInstant.parseToJsonElement(text) }.isSuccess

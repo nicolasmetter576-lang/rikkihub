@@ -77,8 +77,11 @@ class ConversationSession(
             title = current.title,
             customSystemPrompt = current.customSystemPrompt,
             workspaceCwd = current.workspaceCwd,
+            workspaceCwdScoped = current.workspaceCwdScoped,
             modeInjectionIds = current.modeInjectionIds,
             lorebookIds = current.lorebookIds,
+            cliSession = current.cliSession,
+            compression = current.compression,
         ) else conversation
         onReplace(updated, current)
         state.value = updated
@@ -139,6 +142,13 @@ class ConversationSession(
     // 处理状态（如 OCR 识别中）
     val processingStatus = MutableStateFlow<String?>(null)
 
+    // 最近一轮正在写的助手消息，这一轮还没有输出时为空。重新生成较早的消息时它不在会话末尾，
+    // 生成期间那个节点还可能被切到别的分支，只能按 id 找；生成结束后保留到下一轮开始
+    val replyMessageId = MutableStateFlow<Uuid?>(null)
+
+    // 最近一次生成任务开始的时间，用来认出这一轮报的错。在任务启动前同步记下，任务里报的错不会早于它
+    val generationStartedAt = MutableStateFlow<Long?>(null)
+
     // 生成任务（内聚在 session 中）
     private val _generationJob = MutableStateFlow<Job?>(null)
     private val activeJobs = mutableSetOf<Job>()
@@ -169,6 +179,16 @@ class ConversationSession(
 
     val isCompressing: Boolean get() = compressJob?.isActive == true
 
+    /** 「先看再采用」时等用户决定：采用（可能改过的摘要）或丢弃（null）。只在压缩任务内读写。 */
+    @Volatile
+    internal var compressReview: kotlinx.coroutines.CompletableDeferred<String?>? = null
+
+    /** 「仅提醒」档位下用量越过触发比例时的提示；用户关掉、开始压缩或用量回落后清空。 */
+    val compressSuggestion = MutableStateFlow<CompressSuggestion?>(null)
+
+    /** 最近一次自动压缩 / 提醒针对的历史（节点数 + 最后一个检查点），同一份历史不重复触发。 */
+    internal var autoCompressHistoryKey: String? = null
+
     // 空闲检查任务
     private var idleCheckJob: Job? = null
 
@@ -193,6 +213,7 @@ class ConversationSession(
     @Synchronized
     fun setJob(job: Job?, cancelPrevious: Boolean = true) {
         val previous = _generationJob.value
+        if (job != null) generationStartedAt.value = System.currentTimeMillis()
         _generationJob.value = job
         if (cancelPrevious) previous?.cancel()
         if (job != null) activeJobs.add(job)
@@ -295,6 +316,19 @@ internal fun ConversationSession.rollbackProtocolFailedAttempt(
         updateState { restored }
         return true
     }
+}
+
+/**
+ * Rolls back a protocol-failed attempt and persists the result. The final save skipped this
+ * failure, so persist even when nothing was rolled back: the turn's earlier steps, executed
+ * tools included, otherwise exist only in memory and vanish when the session unloads.
+ */
+internal suspend fun ConversationSession.recoverProtocolFailedAttempt(
+    failure: GenerationAttemptProtocolException,
+    persist: suspend (Conversation) -> Unit,
+) {
+    rollbackProtocolFailedAttempt(failure)
+    persist(state.value)
 }
 
 /** Serialize approval saves without cancelling earlier decisions; stopping cancels the whole chain. */

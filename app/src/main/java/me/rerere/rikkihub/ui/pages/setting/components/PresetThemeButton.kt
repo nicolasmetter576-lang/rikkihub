@@ -37,6 +37,7 @@ import androidx.compose.ui.util.fastForEach
 import me.rerere.rikkihub.ui.theme.LocalDarkMode
 import me.rerere.rikkihub.ui.theme.PresetTheme
 import me.rerere.rikkihub.ui.theme.PresetThemes
+import me.rerere.rikkihub.ui.components.ui.CardGroupCorner
 
 @Composable
 fun PresetThemeButton(
@@ -52,7 +53,7 @@ fun PresetThemeButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(CardGroupCorner))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = LocalIndication.current,

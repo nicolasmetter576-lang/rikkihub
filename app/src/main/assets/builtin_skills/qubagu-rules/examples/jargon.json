@@ -1,0 +1,191 @@
+{
+  "type": "rikkihub.qubagu.rules",
+  "version": 1,
+  "packs": [
+    {
+      "id": "jargon",
+      "name": "出戏的说明书与心理学术语",
+      "description": "捕食者打量猎物、完美面具剥落、多巴胺飙升、无形张力蔓延、宣示主权、理智的弦崩断、条件反射",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "jarg_predator_prey",
+          "name": "动物世界（捕食者与猎物）",
+          "sample": "像一只耐心的捕食者审视着落入陷阱的猎物",
+          "find": "(?:像|如同|宛如|好似)(?:一只|一头)?(?:耐心的|优雅的|顶级的|经验丰富的)?(?:捕食者|猎食者|猎人|野兽)(?:在)?(?:审视|打量|注视|锁定|欣赏)(?:着)?(?:自己的|落入陷阱的|无处可逃的|到手的)?猎物",
+          "regex": true,
+          "replacements": [
+            "目光紧盯着对方",
+            "不动声色地打量着对方",
+            "视线牢牢锁在对方身上",
+            "眼神里带着几分审视",
+            "好整以暇地看着对方",
+            "目光专注而富有侵略性",
+            "饶有兴致地端详着对方",
+            "视线一刻也没有移开"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_mask_peel",
+          "name": "完美面具碎裂/剥落",
+          "sample": "脸上那层完美的温和面具出现了一丝裂痕",
+          "find": "(?:脸上|平日里)?(?:那层|完美的|温和的|冰冷的|社交)?(?:名为[^的]{1,6}的)?(?:面具|假面|伪装|保护色)(?:出现了一丝裂痕|寸寸碎裂|被轻易撕下|剥落|荡然无存)",
+          "regex": true,
+          "replacements": [
+            "一向克制的神情终于动摇",
+            "平日的从容有些维持不住",
+            "神色间露出一丝破绽",
+            "没能再掩饰住真实情绪",
+            "脸上的笑意淡了下去",
+            "罕见地失了态",
+            "露出了几分真实的心绪",
+            "表情一时有些绷不住"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_hormone_science",
+          "name": "多巴胺/肾上腺素/防卫机制",
+          "sample": "肾上腺素在血管里疯狂飙升 / 心理防卫机制",
+          "find": "(?:多巴胺|肾上腺素|荷尔蒙|费洛蒙|内啡肽|催产素)(?:在血管里|在体内|在空气中)?(?:疯狂分泌|飙升|作祟|冲撞|发酵|爆棚)|(?:心理)?防卫机制",
+          "regex": true,
+          "replacements": [
+            "本能的冲动",
+            "心跳骤然加快",
+            "心底的戒备",
+            "满腔的躁动",
+            "难以抑制的心悸",
+            "下意识的防备",
+            "情绪一阵高涨",
+            "血液有些发烫"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_tension_pull",
+          "name": "无形的磁场在空气中蔓延",
+          "sample": "某种微妙的磁场在两人之间蔓延",
+          "find": "某种(?:无形的|微妙的|紧绷的|暧昧的|危险的)(?:拉扯感?|张力|磁场)在(?:两人之间|空气中|彼此之间)(?:蔓延|流淌|发酵|噼啪作响)",
+          "regex": true,
+          "replacements": [
+            "两人之间的气氛微妙起来",
+            "彼此间多了一丝紧绷感",
+            "空气里多了几分暧昧",
+            "谁都不肯先退让一步",
+            "气氛一时有些僵持",
+            "对视间多了几分暗涌",
+            "屋里的氛围渐渐变得有些微妙",
+            "两人之间隔着一层说不清的试探"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_claim_sovereignty",
+          "name": "宣示主权/领地意识",
+          "sample": "像是在无声地宣示主权 / 强烈的领地意识",
+          "find": "(?:像是|仿佛|好似)?(?:在)?(?:无声地|霸道地|向全世界)?宣示(?:着)?(?:自己的)?主权|(?:强烈的|雄性的)?领地意识",
+          "regex": true,
+          "replacements": [
+            "带着几分独占欲",
+            "显出几分护短的意味",
+            "刻意拉近了两人的距离",
+            "不动声色地将人护在身边",
+            "透着一点不容旁人插手的强势",
+            "动作间带着明显的偏爱",
+            "姿态亲昵而笃定"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_sanity_string_snap",
+          "name": "名为理智的弦彻底崩断",
+          "sample": "脑海中那根名为理智的弦啪地一声断了",
+          "find": "(?:脑海中|脑子里|心底)?(?:那根)?(?:名为[“\"「]?理智[”\"」]?的|紧绷的理智之)弦(?:啪地一声|彻底|瞬间|骤然)?(?:崩断|断裂|断了)",
+          "regex": true,
+          "replacements": [
+            "再也克制不住情绪",
+            "彻底失去了耐性",
+            "把原本的顾忌抛到了脑后",
+            "终于不再压抑自己",
+            "一时冲动占了上风",
+            "再也顾不上什么分寸",
+            "积攒的情绪彻底决堤"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_pavlov_defense",
+          "name": "条件反射/防御姿态/应激反应",
+          "sample": "身体本能地摆出防御姿态 / 巴甫洛夫式的条件反射",
+          "find": "身体(?:本能地|下意识地)?(?:摆出|进入|竖起)(?:了)?(?:防御姿态|戒备状态|全身的刺)|(?:巴甫洛夫式的)?(?:条件反射|应激反应|生理性厌恶)",
+          "regex": true,
+          "replacements": [
+            "下意识地后退了半步",
+            "本能地生出几分抗拒",
+            "全身紧绷地防备着",
+            "打心底里感到排斥",
+            "动作僵硬地避开",
+            "眼中多了一丝警惕",
+            "不由自主地绷紧了神经"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "jarg_en_testament_tapestry",
+          "name": "英文公文腔 (Testament to / Tapestry)",
+          "sample": "a testament to / a dance as old as time",
+          "find": "/\\ba testament to\\b|\\brich tapestry of\\b|\\ba dance as old as time\\b|\\bunspoken agreement\\b/i",
+          "regex": true,
+          "replacements": [
+            "a sign of",
+            "proof of",
+            "a reflection of",
+            "a quiet sign of"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    }
+  ]
+}

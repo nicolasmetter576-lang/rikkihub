@@ -36,7 +36,7 @@ class CodexProviderConfigureTest {
         )
         val added = Model(modelId = "gpt-5.1-codex")
 
-        val merged = mergeCodexModels(
+        val merged = mergeOAuthModels(
             existing = listOf(existing, missing),
             refreshed = listOf(refreshed, added),
         )

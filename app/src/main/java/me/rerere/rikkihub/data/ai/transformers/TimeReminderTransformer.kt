@@ -16,7 +16,7 @@ import kotlin.time.toJavaInstant
  *
  * 在时间间隔较大的消息之前自动注入 <time_reminder>，帮助 AI 了解对话的时间间隔
  */
-object TimeReminderTransformer : InputMessageTransformer {
+object TimeReminderTransformer : PreAssemblyTransformer {
     override suspend fun transform(
         ctx: TransformerContext,
         messages: List<UIMessage>,

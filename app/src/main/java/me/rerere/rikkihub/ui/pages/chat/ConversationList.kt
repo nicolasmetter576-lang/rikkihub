@@ -58,6 +58,8 @@ import me.rerere.rikkihub.utils.toLocalString
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.components.ui.CardGroupCorner
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 /**
  * Represents different types of items in the conversation list
@@ -114,15 +116,15 @@ fun ColumnScope.ConversationList(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    shape = RoundedCornerShape(8.dp),
+                        .padding(AppSpacing.sm),
+                    shape = RoundedCornerShape(CardGroupCorner),
                     color = MaterialTheme.colorScheme.surfaceContainerLow
                 ) {
                     Text(
                         text = stringResource(id = R.string.chat_page_no_conversations),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(AppSpacing.sm)
                     )
                 }
             }

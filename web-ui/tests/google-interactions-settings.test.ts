@@ -58,3 +58,18 @@ test("Google-only UI keeps saved checked flag disabled with Vertex and explanato
   assert.match(en.providers.interactions_hint, /Off by default/);
   assert.match(en.providers.interactions_vertex_hint, /retained/);
 });
+
+test("stream tool arguments: missing means on, saved off survives, Vertex-only switch is sent on save", () => {
+  assert.equal(connectionDraft(provider).streamFunctionCallArguments, true);
+  assert.equal(connectionDraft({ ...provider, streamFunctionCallArguments: false }).streamFunctionCallArguments, false);
+  const payload = source.slice(source.indexOf("const payload ="), source.indexOf("const saved = await api.put<ProviderProfile>"));
+  assert.equal(payload.match(/streamFunctionCallArguments: draft\.streamFunctionCallArguments/g)?.length, 1);
+  const block = source.slice(source.indexOf('{type === "google" ? (', source.indexOf('providers.fields.enabled')),
+    source.indexOf('{type === "google" && draft.vertexAI ? ('));
+  assert.match(block, /\{draft\.vertexAI \? \([\s\S]*checked=\{draft\.streamFunctionCallArguments\}/);
+  assert.ok(block.includes("updateDraft({ streamFunctionCallArguments: checked })"));
+  for (const locale of [en, zh]) {
+    assert.ok(locale.providers.fields.stream_function_call_arguments);
+    assert.ok(locale.providers.stream_function_call_arguments_hint);
+  }
+});

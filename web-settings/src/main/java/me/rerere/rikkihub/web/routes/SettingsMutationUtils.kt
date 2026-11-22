@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.web.routes
 
+import me.rerere.rikkihub.data.model.promptLibraryIds
+import me.rerere.rikkihub.data.model.regexScripts
+import me.rerere.rikkihub.data.model.withRegexScripts
+import me.rerere.tavern.prompt.PromptPreset
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -7,11 +11,16 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import me.rerere.ai.provider.ApiKeyEntry
+import me.rerere.ai.provider.CredentialRotationStrategy
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
 import me.rerere.ai.util.toHeaders
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.provider.VertexServiceAccount
+import me.rerere.ai.provider.effectiveApiKeyEntries
+import me.rerere.ai.provider.effectiveServiceAccounts
 import me.rerere.ai.provider.MAX_MODEL_CONTEXT_LENGTH
 import me.rerere.rikkihub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkihub.data.ai.tools.local.LocalToolOption
@@ -35,7 +44,7 @@ internal fun isBuiltInProvider(id: Uuid): Boolean = id in BUILTIN_PROVIDER_IDS
  * distinct values exist, so anything larger is either a duplicate-heavy or
  * malformed payload — reject it rather than silently truncating.
  */
-private const val LOCAL_TOOL_MAX_ITEMS = 8
+private const val LOCAL_TOOL_MAX_ITEMS = 9
 
 private val LOCAL_TOOL_OPTIONS: Map<String, LocalToolOption> = mapOf(
     "javascript_engine" to LocalToolOption.JavascriptEngine,
@@ -46,6 +55,7 @@ private val LOCAL_TOOL_OPTIONS: Map<String, LocalToolOption> = mapOf(
     "screen_time" to LocalToolOption.ScreenTime,
     "calendar" to LocalToolOption.Calendar,
     "chart_display" to LocalToolOption.ChartDisplay,
+    "pseudo_io" to LocalToolOption.PseudoIo,
 )
 
 /**
@@ -150,8 +160,19 @@ internal fun parseAssistantWorkspaceId(body: kotlinx.serialization.json.JsonObje
 
 internal fun withWorkspaceId(assistants: List<Assistant>, id: Uuid, workspaceId: Uuid?): List<Assistant>? {
     if (assistants.none { it.id == id }) return null
-    return assistants.map { if (it.id == id) it.copy(workspaceId = workspaceId) else it }
+    return assistants.map { if (it.id == id) it.withWorkspace(workspaceId) else it }
 }
+
+/**
+ * 提示词预设按「提示词、顺序、选项、助手作用域正则」四块合并，预设里其余的字段（导入时带进来的采样参数等）保留最新值。
+ * 网页端编辑器拿到的是完整预设，改完整块交回来。
+ */
+internal fun mergePromptPreset(existing: PromptPreset, incoming: PromptPreset): PromptPreset =
+    existing.copy(
+        prompts = incoming.prompts,
+        promptOrder = incoming.promptOrder,
+        options = incoming.options,
+    ).withRegexScripts(incoming.regexScripts)
 
 internal fun mergeAssistant(
     existing: Assistant,
@@ -165,6 +186,8 @@ internal fun mergeAssistant(
         localTools = localTools ?: existing.localTools,
         enabledSkills = enabledSkills ?: existing.enabledSkills,
         name = incoming.name,
+        // 旧版网页不带这个键时保持原样
+        enabled = if (present("enabled")) incoming.enabled else existing.enabled,
         tags = incoming.tags,
         chatModelId = incoming.chatModelId,
         temperature = incoming.temperature,
@@ -173,19 +196,19 @@ internal fun mergeAssistant(
         streamOutput = incoming.streamOutput,
         reasoningLevel = incoming.reasoningLevel,
         maxTokens = incoming.maxTokens,
-        systemPrompt = incoming.systemPrompt,
-        systemPromptMode = if (present("systemPromptMode")) incoming.systemPromptMode else existing.systemPromptMode,
-        promptSections = if (present("promptSections")) incoming.promptSections else existing.promptSections,
         messageTemplate = incoming.messageTemplate,
         allowConversationSystemPrompt = incoming.allowConversationSystemPrompt,
         allowConversationPromptInjection = incoming.allowConversationPromptInjection,
+        // 旧版网页不带这个键，不能拿默认值（关）盖掉
+        tavernMode = if (present("tavernMode")) incoming.tavernMode else existing.tavernMode,
+        enableMessageTitle = if (present("enableMessageTitle")) incoming.enableMessageTitle else existing.enableMessageTitle,
         mcpServers = incoming.mcpServers,
-        modeInjectionIds = incoming.modeInjectionIds,
         lorebookIds = incoming.lorebookIds,
         quickMessageIds = incoming.quickMessageIds,
         enableWebSearch = incoming.enableWebSearch,
         useAssistantAvatar = incoming.useAssistantAvatar,
         workspaceId = incoming.workspaceId,
+        defaultCliAgentId = if (incoming.workspaceId == null || incoming.workspaceId != existing.workspaceId) null else existing.defaultCliAgentId,
         enableMemory = incoming.enableMemory,
         useGlobalMemory = incoming.useGlobalMemory,
         // 旧版网页不带这个键，不能拿默认值覆盖用户关掉的设置
@@ -193,6 +216,20 @@ internal fun mergeAssistant(
         enableRecentChatsReference = incoming.enableRecentChatsReference,
         enableTimeReminder = incoming.enableTimeReminder,
         timeReminderIntervalMinutes = incoming.timeReminderIntervalMinutes,
+        // 提示词预设和提示词库引用：请求里没有这两个键（旧页面）就保持原样，不拿默认值盖掉
+        libraryEntryIds = if (present("libraryEntryIds")) incoming.libraryEntryIds else existing.libraryEntryIds,
+        promptPreset = if (present("promptPreset")) mergePromptPreset(existing.promptPreset, incoming.promptPreset) else existing.promptPreset,
+        // 采样参数：键不在请求里就保持原样（旧页面不带），在则按请求（null = 不发送）
+        topK = if (present("topK")) incoming.topK else existing.topK,
+        frequencyPenalty = if (present("frequencyPenalty")) incoming.frequencyPenalty else existing.frequencyPenalty,
+        presencePenalty = if (present("presencePenalty")) incoming.presencePenalty else existing.presencePenalty,
+        repetitionPenalty = if (present("repetitionPenalty")) incoming.repetitionPenalty else existing.repetitionPenalty,
+        minP = if (present("minP")) incoming.minP else existing.minP,
+        topA = if (present("topA")) incoming.topA else existing.topA,
+        seed = if (present("seed")) incoming.seed else existing.seed,
+        // 双栏卡片展示字段：网页端不带这两个键时保留 App 原值
+        cardNote = if (present("cardNote")) incoming.cardNote else existing.cardNote,
+        cardWide = if (present("cardWide")) incoming.cardWide else existing.cardWide,
     )
 }
 
@@ -213,9 +250,8 @@ internal fun validateAssistantWritable(assistant: Assistant, settings: Settings)
         throw BadRequestException("mcpServers contains unknown server id")
     }
 
-    val modeInjectionIds = settings.modeInjections.map { it.id }.toSet()
-    if (!modeInjectionIds.containsAll(assistant.modeInjectionIds)) {
-        throw BadRequestException("modeInjectionIds contains unknown injection id")
+    if (!settings.promptLibraryIds().containsAll(assistant.libraryEntryIds)) {
+        throw BadRequestException("libraryEntryIds contains unknown prompt entry id")
     }
 
     val lorebookIds = settings.lorebooks.map { it.id }.toSet()
@@ -238,6 +274,13 @@ internal fun validateAssistantWritable(assistant: Assistant, settings: Settings)
             throw BadRequestException("topP must be 0-1")
         }
     }
+    assistant.topK?.let { if (it !in 1..100_000) throw BadRequestException("topK must be 1-100000") }
+    assistant.frequencyPenalty?.let { if (it !in -2f..2f) throw BadRequestException("frequencyPenalty must be -2 to 2") }
+    assistant.presencePenalty?.let { if (it !in -2f..2f) throw BadRequestException("presencePenalty must be -2 to 2") }
+    assistant.repetitionPenalty?.let { if (it !in 0.01f..3f) throw BadRequestException("repetitionPenalty must be 0.01-3") }
+    assistant.minP?.let { if (it !in 0f..1f) throw BadRequestException("minP must be 0-1") }
+    assistant.topA?.let { if (it !in 0f..1f) throw BadRequestException("topA must be 0-1") }
+    assistant.seed?.let { if (it < 0) throw BadRequestException("seed must be >= 0") }
     if (assistant.contextMessageLimit < 0) {
         throw BadRequestException("contextMessageLimit must be >= 0")
     }
@@ -249,9 +292,17 @@ internal fun validateAssistantWritable(assistant: Assistant, settings: Settings)
     if (assistant.timeReminderIntervalMinutes < 1) {
         throw BadRequestException("timeReminderIntervalMinutes must be >= 1")
     }
-    if (assistant.promptSections.map { it.id }.distinct().size != assistant.promptSections.size) {
-        throw BadRequestException("promptSections[].id must be unique")
-    }
+    validatePromptPreset(assistant.promptPreset)
+}
+
+/** 预设里条目标识符不能为空或重复（顺序按标识符引用条目），正则脚本 id 同理。 */
+internal fun validatePromptPreset(preset: PromptPreset) {
+    val ids = preset.prompts.map { it.identifier }
+    if (ids.any { it.isBlank() }) throw BadRequestException("promptPreset.prompts[].identifier must not be blank")
+    if (ids.distinct().size != ids.size) throw BadRequestException("promptPreset.prompts[].identifier must be unique")
+    val scriptIds = preset.regexScripts.map { it.id }
+    if (scriptIds.any { it.isBlank() }) throw BadRequestException("regex script id must not be blank")
+    if (scriptIds.distinct().size != scriptIds.size) throw BadRequestException("regex script id must be unique")
 }
 
 /** One `{name,value}` header slot; null newValue preserves the stored value for that name. */
@@ -259,6 +310,25 @@ internal data class HeaderValueDraft(val name: String, val newValue: String?)
 
 /** One `{key,value}` body slot; null newValue preserves the stored value for that key. */
 internal data class BodyValueDraft(val key: String, val newValue: JsonElement?)
+
+/** One API key slot in `apiKeys[]`; null [newKey] preserves the stored key for [id]. */
+internal data class ApiKeyEntryDraft(
+    val id: String,
+    val label: String,
+    val enabled: Boolean,
+    val newKey: String?,
+)
+
+/** One Vertex SA slot in `serviceAccounts[]`; null [newPrivateKey] preserves stored privateKey for [id]. */
+internal data class VertexServiceAccountDraft(
+    val id: String,
+    val label: String,
+    val projectId: String,
+    val serviceAccountEmail: String,
+    val location: String,
+    val enabled: Boolean,
+    val newPrivateKey: String?,
+)
 
 /**
  * Presence-aware provider write draft: every credential slot is independently
@@ -273,7 +343,15 @@ internal data class ProviderUpdateDraft(
     val apiKey: String?,
     /** null when absent → preserve stored privateKey (Google SA only). */
     val privateKey: String?,
+    /** Google switches: null when absent → keep the stored value (see [parseGoogleFlag]). */
     val useInteractionsApi: Boolean?,
+    val streamFunctionCallArguments: Boolean?,
+    /** null when absent → preserve stored apiKeys list. */
+    val apiKeys: List<ApiKeyEntryDraft>? = null,
+    /** null when absent (or non-Google) → preserve stored serviceAccounts list. */
+    val serviceAccounts: List<VertexServiceAccountDraft>? = null,
+    /** null when absent → preserve stored rotationStrategy. */
+    val rotationStrategy: CredentialRotationStrategy? = null,
 )
 
 /** Read a credential slot: absent → preserve; null or ""+valueConfigured → preserve; else literal. */
@@ -415,6 +493,10 @@ internal fun sanitizeCredentialPayloadForDecode(obj: JsonObject): JsonObject {
                 out[key] = JsonPrimitive("")
             }
 
+            (key == "apiKeys" || key == "serviceAccounts") && value is JsonArray -> {
+                out[key] = JsonArray(emptyList())
+            }
+
             key == "providerOverwrite" && value is JsonObject -> {
                 out[key] = sanitizeCredentialPayloadForDecode(value)
             }
@@ -425,11 +507,120 @@ internal fun sanitizeCredentialPayloadForDecode(obj: JsonObject): JsonObject {
     return JsonObject(out)
 }
 
+private const val MAX_CREDENTIAL_POOL_SIZE = 200
+
+internal fun parseRotationStrategy(raw: JsonObject): CredentialRotationStrategy? {
+    if (!raw.containsKey("rotationStrategy")) return null
+    val value = raw["rotationStrategy"] as? JsonPrimitive
+    if (value?.isString != true) throw BadRequestException("rotationStrategy must be a string")
+    return when (value.content.lowercase()) {
+        "round_robin" -> CredentialRotationStrategy.ROUND_ROBIN
+        "failover" -> CredentialRotationStrategy.FAILOVER
+        else -> throw BadRequestException("Invalid rotationStrategy")
+    }
+}
+
+internal fun parseApiKeyDraftList(obj: JsonObject, field: String): List<ApiKeyEntryDraft>? {
+    if (!obj.containsKey(field)) return null
+    val arr = obj[field] as? JsonArray ?: throw BadRequestException("$field must be an array")
+    if (arr.size > MAX_CREDENTIAL_POOL_SIZE) {
+        throw BadRequestException("$field cannot exceed $MAX_CREDENTIAL_POOL_SIZE entries")
+    }
+    return arr.map { element ->
+        val entry = element as? JsonObject ?: throw BadRequestException("$field entries must be objects")
+        val id = ((entry["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim())
+            ?.takeIf { it.isNotEmpty() } ?: Uuid.random().toString()
+        val labelPrim = entry["label"]
+        val label = when {
+            labelPrim == null || labelPrim is JsonNull -> ""
+            labelPrim is JsonPrimitive && labelPrim.isString -> labelPrim.content.trim()
+            else -> throw BadRequestException("$field[].label must be a string")
+        }
+        if (label.length > 256) throw BadRequestException("$field[].label too long")
+        val enabledEl = entry["enabled"]
+        val enabled = when {
+            enabledEl == null || enabledEl is JsonNull -> true
+            enabledEl is JsonPrimitive && !enabledEl.isString -> enabledEl.booleanOrNull
+                ?: throw BadRequestException("$field[].enabled must be a boolean")
+            else -> throw BadRequestException("$field[].enabled must be a boolean")
+        }
+        val configuredFlag = (entry["keyConfigured"] as? JsonPrimitive)?.booleanOrNull == true
+        val newKey: String? = when (val keyEl = entry["key"]) {
+            null, JsonNull -> null
+            else -> {
+                val p = keyEl as? JsonPrimitive ?: throw BadRequestException("$field[].key must be a string")
+                if (!p.isString) throw BadRequestException("$field[].key must be a string")
+                if (configuredFlag && p.content.isEmpty()) null else p.content.trim()
+            }
+        }
+        if (newKey != null && newKey.length > 64 * 1024) {
+            throw BadRequestException("$field[].key too long")
+        }
+        ApiKeyEntryDraft(id = id, label = label, enabled = enabled, newKey = newKey)
+    }
+}
+
+internal fun parseServiceAccountDraftList(raw: JsonObject, field: String): List<VertexServiceAccountDraft>? {
+    if (raw["type"] != JsonPrimitive("google") || !raw.containsKey(field)) return null
+    val arr = raw[field] as? JsonArray ?: throw BadRequestException("$field must be an array")
+    if (arr.size > MAX_CREDENTIAL_POOL_SIZE) {
+        throw BadRequestException("$field cannot exceed $MAX_CREDENTIAL_POOL_SIZE entries")
+    }
+    fun optStr(entry: JsonObject, k: String, maxLen: Int): String {
+        val el = entry[k] ?: return ""
+        if (el is JsonNull) return ""
+        val p = el as? JsonPrimitive ?: throw BadRequestException("$field[].$k must be a string")
+        if (!p.isString) throw BadRequestException("$field[].$k must be a string")
+        return p.content.trim().also {
+            if (it.length > maxLen) throw BadRequestException("$field[].$k too long")
+        }
+    }
+    return arr.map { element ->
+        val entry = element as? JsonObject ?: throw BadRequestException("$field entries must be objects")
+        val id = optStr(entry, "id", 256).ifEmpty { Uuid.random().toString() }
+        val label = optStr(entry, "label", 256)
+        val projectId = optStr(entry, "projectId", 1024)
+        val email = optStr(entry, "serviceAccountEmail", 1024)
+        val location = optStr(entry, "location", 256)
+        val enabledEl = entry["enabled"]
+        val enabled = when {
+            enabledEl == null || enabledEl is JsonNull -> true
+            enabledEl is JsonPrimitive && !enabledEl.isString -> enabledEl.booleanOrNull
+                ?: throw BadRequestException("$field[].enabled must be a boolean")
+            else -> throw BadRequestException("$field[].enabled must be a boolean")
+        }
+        val configuredFlag = (entry["privateKeyConfigured"] as? JsonPrimitive)?.booleanOrNull == true
+        val newPrivateKey: String? = when (val pkEl = entry["privateKey"]) {
+            null, JsonNull -> null
+            else -> {
+                val p = pkEl as? JsonPrimitive ?: throw BadRequestException("$field[].privateKey must be a string")
+                if (!p.isString) throw BadRequestException("$field[].privateKey must be a string")
+                if (configuredFlag && p.content.isEmpty()) null else p.content.trim()
+            }
+        }
+        if (newPrivateKey != null && newPrivateKey.length > 64 * 1024) {
+            throw BadRequestException("$field[].privateKey too long")
+        }
+        VertexServiceAccountDraft(
+            id = id,
+            label = label,
+            projectId = projectId,
+            serviceAccountEmail = email,
+            location = location,
+            enabled = enabled,
+            newPrivateKey = newPrivateKey,
+        )
+    }
+}
+
 /** Provider PUT is presence-aware; invalid literal types/HTTP headers are always 400. */
 internal fun parseProviderUpdate(raw: JsonObject): ProviderUpdateDraft {
     val customHeaders = parseHeaderDraftList(raw, "customHeaders")
     val apiKey = parseSecretStringField(raw, "apiKey")
     val privateKey = parseSecretStringField(raw, "privateKey")
+    val apiKeys = parseApiKeyDraftList(raw, "apiKeys")
+    val serviceAccounts = parseServiceAccountDraftList(raw, "serviceAccounts")
+    val rotationStrategy = parseRotationStrategy(raw)
     val incoming = try {
         JsonInstant.decodeFromJsonElement(
             ProviderSetting.serializer(),
@@ -438,17 +629,17 @@ internal fun parseProviderUpdate(raw: JsonObject): ProviderUpdateDraft {
     } catch (_: IllegalArgumentException) {
         throw BadRequestException("Invalid provider payload")
     }
-    val useInteractionsApi = if (incoming is ProviderSetting.Google) {
-        parseGoogleInteractionsField(raw)
-    } else {
-        null
-    }
+    val google = incoming is ProviderSetting.Google
     return ProviderUpdateDraft(
         incoming = incoming,
         customHeaders = customHeaders,
         apiKey = apiKey,
         privateKey = privateKey,
-        useInteractionsApi = useInteractionsApi,
+        useInteractionsApi = if (google) parseGoogleFlag(raw, "useInteractionsApi") else null,
+        streamFunctionCallArguments = if (google) parseGoogleFlag(raw, "streamFunctionCallArguments") else null,
+        apiKeys = apiKeys,
+        serviceAccounts = serviceAccounts,
+        rotationStrategy = rotationStrategy,
     )
 }
 
@@ -485,13 +676,13 @@ internal fun mergeProviderOverwrite(
     else -> throw BadRequestException("providerOverwrite must be an object or null")
 }
 
-/** Missing means preserve the latest lock-held setting, not the decoder default. */
-internal fun parseGoogleInteractionsField(raw: JsonObject): Boolean? {
+/** A Google switch: missing means preserve the latest lock-held setting, not the decoder default. */
+internal fun parseGoogleFlag(raw: JsonObject, field: String): Boolean? {
     // Unknown fields on other provider types do not expand their writable allowlist.
-    if (raw["type"] != JsonPrimitive("google") || !raw.containsKey("useInteractionsApi")) return null
-    val value = raw["useInteractionsApi"] as? JsonPrimitive
+    if (raw["type"] != JsonPrimitive("google") || !raw.containsKey(field)) return null
+    val value = raw[field] as? JsonPrimitive
     if (value == null || value.isString || value.content !in setOf("true", "false")) {
-        throw BadRequestException("useInteractionsApi must be a boolean")
+        throw BadRequestException("$field must be a boolean")
     }
     return value.content == "true"
 }
@@ -508,14 +699,45 @@ internal fun mergeProvider(
     }
     val mergedHeaders = draft.customHeaders?.let { mergeHeaderDrafts(existing.customHeaders, it) }
         ?: existing.customHeaders
+
+    fun mergeApiKeys(
+        currentProvider: ProviderSetting,
+        currentApiKey: String,
+        currentApiKeys: List<ApiKeyEntry>,
+    ): Pair<String, List<ApiKeyEntry>> {
+        val drafts = draft.apiKeys ?: return (draft.apiKey ?: currentApiKey) to currentApiKeys
+        if (drafts.isEmpty() && currentApiKeys.isEmpty()) {
+            return (draft.apiKey ?: currentApiKey) to emptyList()
+        }
+        val existingById = currentProvider.effectiveApiKeyEntries().associateBy { it.id }
+        val mergedList = drafts.map { item ->
+            val preserved = existingById[item.id]?.key.orEmpty()
+            ApiKeyEntry(
+                id = item.id,
+                key = item.newKey ?: preserved,
+                label = item.label,
+                enabled = item.enabled,
+            )
+        }
+        val nextLegacyKey = if (mergedList.isEmpty()) {
+            draft.apiKey?.takeIf { it.isNotEmpty() } ?: ""
+        } else {
+            ""
+        }
+        return nextLegacyKey to mergedList
+    }
+
     return when (existing) {
         is ProviderSetting.OpenAI -> {
             val next = incoming as ProviderSetting.OpenAI
+            val (nextApiKey, nextApiKeys) = mergeApiKeys(existing, existing.apiKey, existing.apiKeys)
             existing.copy(
                 enabled = next.enabled,
                 name = next.name,
                 customHeaders = mergedHeaders,
-                apiKey = draft.apiKey ?: existing.apiKey,
+                apiKey = nextApiKey,
+                apiKeys = nextApiKeys,
+                rotationStrategy = draft.rotationStrategy ?: existing.rotationStrategy,
                 baseUrl = next.baseUrl,
                 chatCompletionsPath = next.chatCompletionsPath,
                 useResponseApi = next.useResponseApi,
@@ -531,19 +753,65 @@ internal fun mergeProvider(
 
         is ProviderSetting.Google -> {
             val next = incoming as ProviderSetting.Google
+            val (nextApiKey, nextApiKeys) = mergeApiKeys(existing, existing.apiKey, existing.apiKeys)
+            val saDrafts = draft.serviceAccounts
+            val (nextPriv, nextEmail, nextProj, nextServiceAccounts) = when {
+                saDrafts == null -> arrayOf<Any>(
+                    draft.privateKey ?: existing.privateKey,
+                    next.serviceAccountEmail,
+                    next.projectId,
+                    existing.serviceAccounts,
+                )
+                saDrafts.isEmpty() && existing.serviceAccounts.isEmpty() -> arrayOf<Any>(
+                    draft.privateKey ?: existing.privateKey,
+                    next.serviceAccountEmail,
+                    next.projectId,
+                    emptyList<VertexServiceAccount>(),
+                )
+                else -> {
+                    val existingById = existing.effectiveServiceAccounts().associateBy { it.id }
+                    val mergedSas = saDrafts.map { item ->
+                        val preserved = existingById[item.id]?.privateKey.orEmpty()
+                        VertexServiceAccount(
+                            id = item.id,
+                            label = item.label,
+                            projectId = item.projectId,
+                            serviceAccountEmail = item.serviceAccountEmail,
+                            privateKey = item.newPrivateKey ?: preserved,
+                            location = item.location,
+                            enabled = item.enabled,
+                        )
+                    }
+                    if (mergedSas.isEmpty()) {
+                        arrayOf<Any>(
+                            draft.privateKey ?: "",
+                            "",
+                            "",
+                            emptyList<VertexServiceAccount>(),
+                        )
+                    } else {
+                        arrayOf<Any>("", "", "", mergedSas)
+                    }
+                }
+            }
+            @Suppress("UNCHECKED_CAST")
             existing.copy(
                 enabled = next.enabled,
                 name = next.name,
                 customHeaders = mergedHeaders,
-                apiKey = draft.apiKey ?: existing.apiKey,
+                apiKey = nextApiKey,
+                apiKeys = nextApiKeys,
+                rotationStrategy = draft.rotationStrategy ?: existing.rotationStrategy,
                 baseUrl = next.baseUrl,
                 vertexAI = next.vertexAI,
                 useInteractionsApi = draft.useInteractionsApi ?: existing.useInteractionsApi,
+                streamFunctionCallArguments = draft.streamFunctionCallArguments ?: existing.streamFunctionCallArguments,
                 useServiceAccount = next.useServiceAccount,
-                privateKey = draft.privateKey ?: existing.privateKey,
-                serviceAccountEmail = next.serviceAccountEmail,
+                privateKey = nextPriv as String,
+                serviceAccountEmail = nextEmail as String,
                 location = next.location,
-                projectId = next.projectId,
+                projectId = nextProj as String,
+                serviceAccounts = nextServiceAccounts as List<VertexServiceAccount>,
                 models = existing.models,
                 builtIn = existing.builtIn,
                 description = existing.description,
@@ -554,11 +822,14 @@ internal fun mergeProvider(
 
         is ProviderSetting.Claude -> {
             val next = incoming as ProviderSetting.Claude
+            val (nextApiKey, nextApiKeys) = mergeApiKeys(existing, existing.apiKey, existing.apiKeys)
             existing.copy(
                 enabled = next.enabled,
                 name = next.name,
                 customHeaders = mergedHeaders,
-                apiKey = draft.apiKey ?: existing.apiKey,
+                apiKey = nextApiKey,
+                apiKeys = nextApiKeys,
+                rotationStrategy = draft.rotationStrategy ?: existing.rotationStrategy,
                 baseUrl = next.baseUrl,
                 promptCaching = next.promptCaching,
                 promptCacheTtl = next.promptCacheTtl,
@@ -629,6 +900,8 @@ internal data class ModelUpdateDraft(
     val providerOverwrite: JsonElement?,
     /** 请求里带了 contextLength 才改；旧版客户端不带时保留原值，不回落成默认 1M */
     val contextLengthPresent: Boolean = true,
+    /** 同上：旧版客户端不带 pricing 时保留原来的价格 */
+    val pricingPresent: Boolean = true,
 )
 
 internal fun parseModelUpdate(raw: JsonObject): ModelUpdateDraft {
@@ -645,12 +918,18 @@ internal fun parseModelUpdate(raw: JsonObject): ModelUpdateDraft {
     if (incoming.contextLength !in 1..MAX_MODEL_CONTEXT_LENGTH) {
         throw BadRequestException("contextLength must be 1..$MAX_MODEL_CONTEXT_LENGTH")
     }
+    incoming.pricing?.let { p ->
+        if (!listOfNotNull(p.input, p.output, p.cachedInput).all { it.isFinite() && it in 0.0..1_000_000.0 }) {
+            throw BadRequestException("pricing values are per million tokens and must be 0..1000000")
+        }
+    }
     return ModelUpdateDraft(
         incoming = incoming,
         customHeaders = customHeaders,
         customBodies = customBodies,
         providerOverwrite = providerOverwrite,
         contextLengthPresent = raw.containsKey("contextLength"),
+        pricingPresent = raw.containsKey("pricing"),
     )
 }
 
@@ -659,6 +938,7 @@ internal fun mergeModel(existing: Model, draft: ModelUpdateDraft): Model {
     return incoming.copy(
         id = existing.id,
         contextLength = if (draft.contextLengthPresent) incoming.contextLength else existing.contextLength,
+        pricing = if (draft.pricingPresent) incoming.pricing?.takeUnless { it.isEmpty } else existing.pricing,
         customHeaders = draft.customHeaders?.let { mergeHeaderDrafts(existing.customHeaders, it) }
             ?: existing.customHeaders,
         customBodies = draft.customBodies?.let { mergeBodyDrafts(existing.customBodies, it) }

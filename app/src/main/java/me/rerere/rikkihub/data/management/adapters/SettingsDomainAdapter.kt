@@ -86,11 +86,14 @@ class SettingsDomainAdapter(override val domain: ManagementDomain) : ManagementD
         fun ref(id: String) = ObjectRef(commandDomain, when (collection) {
             "settings.assistantTags" -> "tag:$id"
             SettingsCollectionInterpreter.PROVIDERS -> "provider:$id"
-            else -> id
+            else -> NativeCollections.refId(collection, id) ?: id
         })
         fun diffLine(path: String, field: String, before: String?, after: String?) =
             if (SettingsCollectionInterpreter.isSecretField(collection, field)) DiffLine(path, null, null, secret = true)
             else DiffLine(path, before, after)
+        // a whole SillyTavern preset is far too long for a diff line; say what it is instead
+        fun diffValue(field: String, value: JsonElement): String =
+            if (field == "fromPreset" && value is JsonObject) "SillyTavern preset (${(value["prompts"] as? JsonArray)?.size ?: 0} prompts)" else value.toString()
         fun objectBaseline(id: String): JsonObject {
             if (commandDomain == ManagementDomain.ASSISTANT && collection == "settings.assistants") {
                 val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: rejectNotFound("Assistant id '$id' is not a valid id")
@@ -116,38 +119,75 @@ class SettingsDomainAdapter(override val domain: ManagementDomain) : ManagementD
 
         when (val action = command.action) {
             is SettingsAction.Create -> {
-                val id = ctx.hostIds.newObjectId(); acc.assigned[label] = id
-                val fields = materializeNestedIds(SettingsCollectionInterpreter.normalizeFields(collection, action.fields), null, ctx)
+                val id = SettingsCollectionInterpreter.nextObjectId(settings, collection) ?: ctx.hostIds.newObjectId()
+                acc.assigned[label] = id
+                val fields = SettingsCollectionInterpreter.normalizeFields(collection, action.fields)
                 acc.operations += SettingsCollectionOp(collection, CollectionPatch.Create(id, fields), listOf(ref(id)), "create-object")
                 acc.refs += ref(id)
-                acc.diff += fields.map { diffLine("$collection[$id].${it.key}", it.key, null, it.value.toString()) }
+                acc.diff += fields.map { diffLine("$collection[$id].${it.key}", it.key, null, diffValue(it.key, it.value)) }
             }
             is SettingsAction.Patch -> {
                 val old = objectBaseline(action.id)
                 // Echoing an unchanged field (or the id itself) is not an error, just not a change.
-                val changed = SettingsCollectionInterpreter.normalizeFields(collection, action.fields)
-                    .filter { (key, value) -> key != "id" && old[key] != value }
+                val given = SettingsCollectionInterpreter.normalizeFields(collection, action.fields)
+                val createOnly = (NativeCollections.resolve(collection)?.createOnly.orEmpty() +
+                    if (collection == "settings.assistants") setOf("systemPrompt", "copyFrom", "fromPreset") else emptySet())
+                    .filter { it in given }
+                if (createOnly.isNotEmpty()) rejectForbidden("$createOnly only apply when the object is created" + when {
+                    "systemPrompt" in createOnly -> "; change an assistant's prompt text with PRESET_ENTRY Patch (targetId \"<assistant id>/main\", fields {content})"
+                    else -> ""
+                })
+                val changed = given.filter { (key, value) -> key != "id" && old[key] != value }
                 if (changed.isEmpty()) rejectInvalid("Patch changes nothing: every given field already has that value")
-                val fields = materializeNestedIds(changed, old, ctx)
+                val fields = changed
                 addPatch(action.id, fields)
-                acc.diff += fields.map { diffLine("$collection[${action.id}].${it.key}", it.key, old[it.key]?.toString(), it.value.toString()) }
+                acc.diff += fields.map { diffLine("$collection[${action.id}].${it.key}", it.key, old[it.key]?.toString(), diffValue(it.key, it.value)) }
+            }
+            is SettingsAction.CreateMany -> {
+                requireBulk(collection, action.items.size)
+                val base = SettingsCollectionInterpreter.nextObjectId(settings, collection)?.toIntOrNull()
+                val ids = action.items.indices.map { i -> base?.let { (it + i).toString() } ?: ctx.hostIds.newObjectId() }
+                val patches = action.items.mapIndexed { i, item ->
+                    CollectionPatch.Create(ids[i], SettingsCollectionInterpreter.normalizeFields(collection, item))
+                }
+                acc.operations += SettingsCollectionOp(collection, CollectionPatch.Batch(patches), ids.map(::ref), "create-objects")
+                ids.forEachIndexed { i, id -> acc.assigned["$label[$i]"] = id }
+                acc.refs += ids.map(::ref)
+                acc.diff += ids.mapIndexed { i, id -> DiffLine("$collection[$id]", null, action.items[i].toString().take(300)) }
+            }
+            is SettingsAction.PatchMany -> {
+                requireBulk(collection, action.patches.size)
+                require(action.patches.map { it.id }.distinct().size == action.patches.size) { "patches must name each object once" }
+                val patches = action.patches.mapNotNull { one ->
+                    val old = objectBaseline(one.id)
+                    val changed = SettingsCollectionInterpreter.normalizeFields(collection, one.fields)
+                        .filter { (key, value) -> key != "id" && old[key] != value }
+                    if (changed.isEmpty()) null else {
+                        acc.diff += changed.map { diffLine("$collection[${one.id}].${it.key}", it.key, old[it.key]?.toString(), it.value.toString()) }
+                        CollectionPatch.PatchFields(one.id, changed)
+                    }
+                }
+                if (patches.isEmpty()) rejectInvalid("Patch changes nothing: every given field already has that value")
+                acc.operations += SettingsCollectionOp(collection, CollectionPatch.Batch(patches), patches.map { ref(it.id) }, "patch-objects")
+            }
+            is SettingsAction.DeleteMany -> {
+                requireBulk(collection, action.ids.size)
+                val olds = action.ids.map { it to objectBaseline(it) }
+                acc.operations += SettingsCollectionOp(collection, CollectionPatch.Remove(action.ids), action.ids.map(::ref), "delete-objects")
+                acc.diff += olds.map { (id, old) -> DiffLine("$collection[$id]", old.toString().take(300), null) }
             }
             is SettingsAction.Clone -> {
                 val old = objectBaseline(action.id)
                 if (action.name.isBlank() || action.name.length > 1024) rejectInvalid("Clone name must be 1..1024 characters")
+                if (NativeCollections.resolve(collection)?.let { it.singleton || it.refPrefix.isNotEmpty() } == true)
+                    rejectInvalid("Clone applies to quick messages, prompt library entries, lorebooks, assistants and models")
                 val fields = old.filterKeys { it != "id" }.toMutableMap()
                 val naming = if (collection == "settings.quickMessages") "title" else if (collection.endsWith(".models")) "displayName" else "name"
                 fields[naming] = JsonPrimitive(action.name)
-                // Safe projection already excludes credentials. Media remains managed shared data.
-                fields["regexes"]?.let { value -> fields["regexes"] = JsonArray(value.jsonArray.map {
-                    JsonObject(it.jsonObject - "id") }) }
-                fields["entries"]?.let { value -> fields["entries"] = JsonArray(value.jsonArray.map {
-                    JsonObject(it.jsonObject - "id") }) }
-                fields["promptSections"]?.let { value -> fields["promptSections"] = JsonArray(value.jsonArray.map {
-                    JsonObject(it.jsonObject - "id") }) }
+                // A lorebook / assistant clone also copies the entries / the prompt layout, options and regex scripts.
+                if (collection == "settings.lorebooks" || collection == "settings.assistants") fields["copyFrom"] = JsonPrimitive(action.id)
                 val id = ctx.hostIds.newObjectId(); acc.assigned[label] = id
-                acc.operations += SettingsCollectionOp(collection, CollectionPatch.Create(id,
-                    materializeNestedIds(fields, null, ctx)), listOf(ref(id)), "clone-object")
+                acc.operations += SettingsCollectionOp(collection, CollectionPatch.Create(id, fields), listOf(ref(id)), "clone-object")
                 acc.refs += ref(id)
                 acc.diff += DiffLine("$collection[$id]", null, "clone of ${action.id}; credentials not copied")
             }
@@ -238,7 +278,7 @@ class SettingsDomainAdapter(override val domain: ManagementDomain) : ManagementD
                 val target = ObjectRef(ManagementDomain.ASSISTANT, action.assistantId); acc.refs += target
                 snapshot.objects[SettingsManagementPort.objectKey(target)]?.let { acc.entries += ReadSetEntry.Object(target, it) }
                 val field = when (commandDomain) { ManagementDomain.QUICK_MESSAGE -> "quickMessageIds"; ManagementDomain.WORLD_BOOK -> "lorebookIds"; else -> "modeInjectionIds" }
-                val old = when (commandDomain) { ManagementDomain.QUICK_MESSAGE -> assistant.quickMessageIds; ManagementDomain.WORLD_BOOK -> assistant.lorebookIds; else -> assistant.modeInjectionIds }.map { it.toString() }
+                val old = when (commandDomain) { ManagementDomain.QUICK_MESSAGE -> assistant.quickMessageIds; ManagementDomain.WORLD_BOOK -> assistant.lorebookIds; else -> assistant.libraryEntryIds }.map { it.toString() }
                 val after = if (action.enabled) (old + action.targetId).distinct() else old - action.targetId
                 if (after == old) rejectInvalid(if (action.enabled) "Already bound to this assistant" else "Not bound to this assistant")
                 addPatch(action.assistantId, mapOf(field to JsonArray(after.map(::JsonPrimitive))), "settings.assistants", ManagementDomain.ASSISTANT)
@@ -252,6 +292,14 @@ class SettingsDomainAdapter(override val domain: ManagementDomain) : ManagementD
                 addDefaultField(commandDomain, "settings.defaults.prompt.${action.slot}", JsonPrimitive(text), snapshot, settings, acc)
             }
         }
+    }
+
+    private fun requireBulk(collection: String, count: Int) {
+        val native = NativeCollections.resolve(collection)
+        if (native == null || native.singleton) rejectInvalid(
+            "Bulk create/patch/delete (items, patches, ids) is for lorebooks, prompt library entries, lorebook entries, " +
+                "preset entries and regex scripts; send one operation per object for ${collectionLabel(collection)}")
+        require(count in 1..MAX_BULK) { "A bulk operation holds 1..$MAX_BULK objects (got $count); send several operations" }
     }
 
     private fun addDefaultField(commandDomain: ManagementDomain, field: String, value: JsonElement,
@@ -273,22 +321,6 @@ class SettingsDomainAdapter(override val domain: ManagementDomain) : ManagementD
         acc.diff += DiffLine(field, raw[key]?.toString(), value.toString())
     }
 
-    /** Only retained existing IDs may come from input; every new nested ID is host allocated. */
-    private fun materializeNestedIds(fields: Map<String, JsonElement>, old: JsonObject?, ctx: PlanContext): Map<String, JsonElement> =
-        fields.mapValues { (name, value) ->
-            if (name !in NESTED_ID_LISTS) value else {
-                val rows = value as? JsonArray ?: rejectInvalid("$name must be an array of objects")
-                val known = old?.get(name)?.jsonArray.orEmpty().mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.content }.toSet()
-                JsonArray(rows.map { child ->
-                    val row = child as? JsonObject ?: rejectInvalid("$name must be an array of objects")
-                    val requested = row["id"]?.jsonPrimitive?.contentOrNull
-                    if (requested != null && requested !in known) rejectInvalid(
-                        "$name[].id '$requested' is not an existing entry of this object; omit id for new entries (the app assigns it)")
-                    JsonObject(row + ("id" to JsonPrimitive(requested ?: ctx.hostIds.newEntryId(name))))
-                })
-            }
-        }
-
     override suspend fun inverse(ctx: PlanContext, command: ManagementCommand): ManagementCommand? = null
     override fun needsRecyclePayload(command: ManagementCommand): Boolean = true
     override fun decodeCommand(json: String): ManagementCommand {
@@ -301,9 +333,7 @@ class SettingsDomainAdapter(override val domain: ManagementDomain) : ManagementD
         val SETTINGS_DOMAINS = setOf(ManagementDomain.QUICK_MESSAGE, ManagementDomain.MODE_INJECTION,
             ManagementDomain.WORLD_BOOK, ManagementDomain.ASSISTANT, ManagementDomain.MODEL_AND_PROMPT_DEFAULTS)
         const val MAX_TRANSACTION_OPS = 64
-
-        /** Nested lists whose element ids are kept when echoed and host-allocated when omitted. */
-        private val NESTED_ID_LISTS = setOf("entries", "regexes", "promptSections")
+        const val MAX_BULK = 200
 
         /**
          * Replaces string values equal to the label of an earlier Create/Clone with its host-allocated id.
@@ -320,22 +350,20 @@ class SettingsDomainAdapter(override val domain: ManagementDomain) : ManagementD
                 is JsonPrimitive -> if (e.isString) assigned[e.content]?.let(::JsonPrimitive) ?: e else e
             }
             val resolved = strict.decodeFromJsonElement(SettingsDomainCommand.serializer(), walk(element))
-            // The models of a provider created earlier in the batch: "settings.providers.$0.models".
-            val label = PROVIDER_MODELS_LABEL.matchEntire(resolved.collectionId)?.groupValues?.get(1)
-            return label?.let(assigned::get)?.let { resolved.copy(collectionId = "settings.providers.$it.models") } ?: resolved
+            // The models / entries / prompt entries / regex scripts of a parent created earlier in the batch: "settings.lorebooks.$0.entries".
+            val match = NativeCollections.NESTED_LABEL.matchEntire(resolved.collectionId) ?: return resolved
+            val id = assigned[match.groupValues[2]] ?: return resolved
+            return resolved.copy(collectionId = "settings.${match.groupValues[1]}.$id.${match.groupValues[3]}")
         }
-
-        private val PROVIDER_MODELS_LABEL = Regex("^settings\\.providers\\.(\\$\\d+)\\.models$")
 
         fun collectionLabel(collection: String): String = when {
             collection == "settings.quickMessages" -> "quick messages"
-            collection == "settings.modeInjections" -> "mode injections"
             collection == "settings.lorebooks" -> "lorebooks"
             collection == "settings.assistants" -> "assistants"
             collection == "settings.assistantTags" -> "assistant tags"
             collection == SettingsCollectionInterpreter.PROVIDERS -> "providers"
             collection.endsWith(".models") -> "the models of this provider"
-            else -> collection
+            else -> NativeCollections.resolve(collection)?.label ?: collection
         }
     }
 }

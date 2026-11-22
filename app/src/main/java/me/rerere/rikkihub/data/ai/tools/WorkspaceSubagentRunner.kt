@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.data.ai.tools
 
+import me.rerere.rikkihub.data.ai.UsageSource
+import me.rerere.rikkihub.data.ai.UsageTag
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -32,7 +34,7 @@ import me.rerere.rikkihub.data.ai.GenerationChunk
 import me.rerere.rikkihub.data.ai.GenerationEventObserver
 import me.rerere.rikkihub.data.ai.GenerationLoop
 import me.rerere.rikkihub.data.ai.GenerationRunStats
-import me.rerere.rikkihub.data.ai.RateLimitRetryPolicy
+import me.rerere.rikkihub.data.ai.replaceToolProgressMetadata
 import me.rerere.rikkihub.data.ai.rollbackProtocolFailedAttempt
 import me.rerere.rikkihub.data.ai.subagentCompletionReason
 import me.rerere.rikkihub.data.ai.toChatToolSnapshot
@@ -46,6 +48,7 @@ import me.rerere.rikkihub.data.datastore.findModelById
 import me.rerere.rikkihub.data.datastore.findProvider
 import me.rerere.rikkihub.data.files.FileFolders
 import me.rerere.rikkihub.data.model.Assistant
+import me.rerere.rikkihub.data.model.mainPromptText
 import me.rerere.rikkihub.utils.JsonInstant
 import me.rerere.rikkihub.utils.JsonInstantPretty
 import java.io.File
@@ -240,7 +243,7 @@ class WorkspaceSubagentRunner(
                     request = request,
                     transcript = transcript,
                     result = result,
-                    workerSystemPrompt = worker.systemPrompt,
+                    workerSystemPrompt = worker.mainPromptText,
                     generationConfig = generationConfig,
                     modelConfigId = model.id.toString(),
                 )
@@ -291,8 +294,6 @@ class WorkspaceSubagentRunner(
                 processingStatus = MutableStateFlow(null),
                 conversationSystemPrompt = null,
                 conversationId = runConversationId,
-                conversationModeInjectionIds = emptySet(),
-                conversationLorebookIds = emptySet(),
                 workspaceCwd = cwd,
                 harnessMinimalWorkspace = harnessMinimal,
                 exposeUpload = true,
@@ -301,8 +302,7 @@ class WorkspaceSubagentRunner(
                 // StepFinished/GenerationEnd, 与真实生产顺序一致。observer 只
                 // 做轻量统计 (synchronized 内存记账), 不做 IO。
                 eventsObserver = GenerationEventObserver(runStats::onChunk),
-                // 并行的子代理同时请求时更容易撞限流：429/503 按 Retry-After 退避重试
-                rateLimitRetry = RateLimitRetryPolicy(),
+                usageTag = UsageTag(UsageSource.SUBAGENT, assistantId = parentAssistant.id),
             ).collect { chunk ->
                 when (chunk) {
                     is GenerationChunk.Messages -> {
@@ -337,7 +337,9 @@ class WorkspaceSubagentRunner(
             // 协程已取消: 只完成日志 IO，绝不向外层 Flow 再发射。
             val result = buildResult(
                 resultStatus = "cancelled",
-                resultError = cancelled.message?.takeIf { it.isNotBlank() } ?: "Subagent was cancelled.",
+                // The exception text is coroutine internals ("LazyStandaloneCoroutine was cancelled"),
+                // not something to show the user or feed back to the model.
+                resultError = "Subagent was cancelled.",
                 completedAt = System.currentTimeMillis(),
                 completionReason = "cancelled",
             )
@@ -571,7 +573,10 @@ internal fun finishInterruptedSubagentTool(
         presetName = metadata.presetName,
         presetRevision = metadata.presetRevision,
     )
-    return tool.copy(output = resultParts(result), metadata = result.toSubagentMetadata().toMetadata())
+    return tool.copy(
+        output = resultParts(result),
+        metadata = replaceToolProgressMetadata(tool.metadata, result.toSubagentMetadata().toMetadata()),
+    )
 }
 
 private fun subagentLogObject(

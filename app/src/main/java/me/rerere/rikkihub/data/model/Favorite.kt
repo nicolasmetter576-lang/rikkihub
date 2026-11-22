@@ -2,6 +2,7 @@ package me.rerere.rikkihub.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import me.rerere.ai.ui.displayTextOf
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -44,7 +45,7 @@ data class NodeFavoriteTarget(
 fun UIMessage.buildFavoritePreview(maxLength: Int = 160): String {
     val plainText = parts
         .filterIsInstance<UIMessagePart.Text>()
-        .joinToString("\n") { it.text.trim() }
+        .joinToString("\n") { displayTextOf(it).trim() }
         .trim()
     if (plainText.isNotBlank()) {
         return plainText.take(maxLength)

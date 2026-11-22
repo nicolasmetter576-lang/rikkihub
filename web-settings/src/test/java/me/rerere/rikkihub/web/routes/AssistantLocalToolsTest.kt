@@ -100,7 +100,7 @@ class AssistantLocalToolsTest {
     fun `every sealed subclass is reachable from wire names`() {
         val wireNames = listOf(
             "javascript_engine", "time_info", "clipboard", "tts",
-            "ask_user", "screen_time", "calendar", "chart_display",
+            "ask_user", "screen_time", "calendar", "chart_display", "pseudo_io",
         )
         val parsed = parseLocalToolsField(
             buildJsonObject {
@@ -109,8 +109,8 @@ class AssistantLocalToolsTest {
                 })
             }
         )!!
-        assertEquals(8, parsed.size)
-        // 覆盖全部 8 个 sealed subclass，防漏映射
+        assertEquals(9, parsed.size)
+        // 覆盖全部 9 个 sealed subclass，防漏映射
         assertEquals(
             LocalToolOption::class.sealedSubclasses.map { it.objectInstance }.toSet(),
             parsed.toSet(),

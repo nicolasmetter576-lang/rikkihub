@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.ai
 
+import me.rerere.ai.util.CredentialLogTag
 import me.rerere.common.android.LogEntry
 import me.rerere.common.android.Logging
 import okhttp3.Interceptor
@@ -24,9 +25,14 @@ class RequestLoggingInterceptor : Interceptor {
         val startTime = System.currentTimeMillis()
 
         val requestHeaders = request.headers.toRedactedMap()
-        val requestBody = request.body?.let { body -> loggedRequestBody(body, MAX_LOGGED_BODY_BYTES) }
+        val requestBody = if (request.url.host == "oauth2.googleapis.com" && request.url.encodedPath == "/token") {
+            "[token exchange body not captured]"
+        } else {
+            request.body?.let { body -> loggedRequestBody(body, MAX_LOGGED_BODY_BYTES) }
+        }
 
         val loggedUrl = redactLoggedUrl(request.url.toString())
+        val credentialLabel = request.tag(CredentialLogTag::class.java)?.label?.takeIf { it.isNotBlank() }
 
         val response: Response
         var error: String? = null
@@ -42,7 +48,8 @@ class RequestLoggingInterceptor : Interceptor {
                     method = request.method,
                     requestHeaders = requestHeaders,
                     requestBody = requestBody,
-                    error = error
+                    error = error,
+                    credentialLabel = credentialLabel
                 )
             )
             throw e
@@ -61,7 +68,8 @@ class RequestLoggingInterceptor : Interceptor {
                 responseCode = response.code,
                 responseHeaders = responseHeaders,
                 durationMs = durationMs,
-                error = error
+                error = error,
+                credentialLabel = credentialLabel
             )
         )
 
@@ -111,7 +119,7 @@ private const val REDACTED = "██"
  * Headers that can carry credential material (auth tokens, cookies, API keys,
  * signatures). Compared case-insensitively; anything matching is masked.
  */
-private val SENSITIVE_HEADER_NAMES = setOf(
+internal val SENSITIVE_HEADER_NAMES = setOf(
     "authorization",
     "proxy-authorization",
     "www-authenticate",
@@ -133,7 +141,7 @@ private val SENSITIVE_HEADER_NAMES = setOf(
 )
 
 /** Query parameters whose values may be credential material in a logged URL. */
-private val SENSITIVE_QUERY_PARAMS = setOf(
+internal val SENSITIVE_QUERY_PARAMS = setOf(
     "access_token",
     "ticket",
     "token",

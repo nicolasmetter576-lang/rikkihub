@@ -3,6 +3,7 @@ package me.rerere.rikkihub.web.dto
 import kotlinx.serialization.Serializable
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.ui.ContextCheckpointMetadata
 import me.rerere.ai.ui.ModelSnapshot
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessage
@@ -178,6 +179,7 @@ data class ConversationListDto(
     val title: String,
     val isPinned: Boolean,
     val folderId: String? = null,
+    val characterId: String? = null,
     val createAt: Long,
     val updateAt: Long,
     val isGenerating: Boolean = false
@@ -227,6 +229,11 @@ data class ConversationDto(
     val workspaceCwd: String? = null,
     val workspaceCwdScoped: Boolean = true,
     val folderId: String? = null,
+    val characterId: String? = null,
+    // 工作区 CLI 会话（只读；网页端界面下一轮再做）
+    val cliSession: me.rerere.rikkihub.data.cli.ConversationCliSession? = null,
+    /** 本会话的压缩设置（mode: off | notify | auto，templateId）；null 或缺字段 = 跟随全局 */
+    val compression: me.rerere.rikkihub.data.ai.ConversationCompressionOverride? = null,
     val createAt: Long,
     val updateAt: Long,
     val isGenerating: Boolean = false,
@@ -267,18 +274,30 @@ data class MessageDto(
     val modelId: String? = null,
     /** 模型名称快照：模型被删除后用它显示这条消息由谁生成 */
     val modelSnapshot: ModelSnapshot? = null,
-    /** 多步工具调用时是各步累计值 */
+    val contextLength: Int? = null,
+    /** 同一消息各逻辑模型步骤已报告用量的累计 */
     val usage: TokenUsage? = null,
-    /** 模型实际生成耗时（毫秒），不含首 token 延迟、工具执行和审批等待 */
+    /** true = 完整成功累计；false = 生成中或已知不完整；null = 旧数据未知 */
+    val usageComplete: Boolean? = null,
+    /** 应用侧观测耗时（毫秒）：流式从首 chunk 起，非流式含请求等待；不含工具/审批 */
     val generationTimeMs: Long? = null,
-    /** 最后一次请求自己的 usage（上下文占用、缓存命中看这个） */
+    /** 最近逻辑模型步骤的 usage 参考，不是下一次请求的精确上下文容量 */
     val lastUsage: TokenUsage? = null,
     val stepCount: Int? = null,
     val translation: String? = null,
+    /** 每轮标题；正文里的 `<rk-title>` 标签由网页端显示时去掉 */
+    val title: String? = null,
     /** 压缩检查点：此消息是它之前全部历史的摘要，之前的消息不再发送给模型 */
     val isContextCheckpoint: Boolean = false,
+    /** 检查点元数据（生成方式、模板、覆盖范围、用量等）；旧检查点缺省为 null */
+    val checkpointMeta: ContextCheckpointMetadata? = null,
     /** Validated chart_display results; null when the message has none. */
     val charts: List<ChartDto>? = null,
+    /**
+     * 「仅显示」正则处理后的文字，键是 `parts` 的下标（只有文字和推理部分，且只含被改过的）。
+     * 存储里的文字不变；没有这类脚本时为 null。
+     */
+    val display: Map<Int, String>? = null,
 )
 
 @Serializable
@@ -357,7 +376,9 @@ data class ConversationQueueEvent(
 @Serializable
 data class ErrorEvent(
     val type: String = "error",
-    val message: String
+    val message: String,
+    /** compress_and_retry：回复超出上下文窗口，可「压缩后重试」 */
+    val solution: String? = null,
 )
 
 @Serializable
@@ -391,6 +412,7 @@ fun Conversation.toListDto(isGenerating: Boolean = false) = ConversationListDto(
     title = title,
     isPinned = isPinned,
     folderId = folderId?.toString(),
+    characterId = characterId?.toString(),
     createAt = createAt.toEpochMilli(),
     updateAt = updateAt.toEpochMilli(),
     isGenerating = isGenerating
@@ -421,6 +443,9 @@ fun Conversation.toDto(
     workspaceCwd = workspaceCwd,
     workspaceCwdScoped = workspaceCwdScoped,
     folderId = folderId?.toString(),
+    characterId = characterId?.toString(),
+    cliSession = cliSession,
+    compression = compression,
     createAt = createAt.toEpochMilli(),
     updateAt = updateAt.toEpochMilli(),
     isGenerating = isGenerating,
@@ -456,11 +481,15 @@ fun UIMessage.toDto() = MessageDto(
     finishedAt = finishedAt?.toString(),
     modelId = modelId?.toString(),
     modelSnapshot = modelSnapshot,
+    contextLength = contextLength,
     usage = usage,
+    usageComplete = usageComplete,
     generationTimeMs = generationTimeMs,
     lastUsage = lastUsage,
     stepCount = stepCount,
     translation = translation,
+    title = title,
     isContextCheckpoint = isContextCheckpoint,
+    checkpointMeta = checkpointMeta,
     charts = WebChartProjection.chartsOf(this),
 )

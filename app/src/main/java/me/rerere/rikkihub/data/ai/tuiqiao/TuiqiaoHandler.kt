@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.data.ai.tuiqiao
 
+import me.rerere.rikkihub.data.ai.UsageRecorder
+import me.rerere.rikkihub.data.ai.UsageSource
+import me.rerere.rikkihub.data.ai.UsageTag
+import me.rerere.rikkihub.data.ai.wrapOrSelf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -117,7 +121,10 @@ sealed interface TuiqiaoEvent {
  * （助手没指定就用全局对话模型）。只发一条 user 消息：不带助手提示词、工具、温度，推理关闭。
  * 候选逐个发出；与原文相同、重复、标记不合格的丢弃；某个候选位一条都没有时发 [TuiqiaoEvent.SlotFailed]。
  */
-class TuiqiaoHandler(private val providerManager: ProviderManager) {
+class TuiqiaoHandler(
+    private val providerManager: ProviderManager,
+    private val usageRecorder: UsageRecorder? = null,
+) {
     fun events(settings: Settings, prepared: TuiqiaoPrepared): Flow<TuiqiaoEvent> = channelFlow {
         for (slot in prepared.slots) {
             launch {
@@ -142,7 +149,7 @@ class TuiqiaoHandler(private val providerManager: ProviderManager) {
     ) {
         val model = resolveModel(settings, slot.role) ?: throw TuiqiaoException(TuiqiaoException.Reason.NO_MODEL)
         val provider = model.findProvider(settings.providers) ?: throw TuiqiaoException(TuiqiaoException.Reason.NO_MODEL)
-        val handler = providerManager.getProviderByType(provider)
+        val handler = usageRecorder.wrapOrSelf(providerManager.getProviderByType(provider), UsageTag(UsageSource.TUIQIAO))
         val parser = Tuiqiao.StreamParser()
         val collector = TuiqiaoCollector(prepared.original, slot.count, settings.tuiqiao.explanation, slot.markup,
             keepTone = slot.role == null)

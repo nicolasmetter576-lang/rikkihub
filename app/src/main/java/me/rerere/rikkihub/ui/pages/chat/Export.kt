@@ -28,7 +28,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.OutlinedCard
@@ -73,6 +72,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import me.rerere.ai.ui.displayTextOf
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -82,8 +82,9 @@ import me.rerere.rikkihub.R
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
 import me.rerere.rikkihub.data.ai.tools.MemoryToolNames
 import me.rerere.rikkihub.data.ai.tools.resolveBuiltinToolId
+import me.rerere.rikkihub.data.cli.AcpParts
+import me.rerere.rikkihub.data.cli.displayModelOrNull
 import me.rerere.rikkihub.data.datastore.Settings
-import me.rerere.rikkihub.data.datastore.findModelById
 import me.rerere.rikkihub.data.model.Conversation
 import me.rerere.rikkihub.ui.components.charts.ChartCard
 import me.rerere.rikkihub.ui.components.ui.LocalExportContext
@@ -92,6 +93,7 @@ import me.rerere.rikkihub.ui.components.message.MessagePartBlock
 import me.rerere.rikkihub.ui.components.message.ThinkingStep
 import me.rerere.rikkihub.ui.components.message.ChatMessageServerToolStep
 import me.rerere.rikkihub.ui.components.message.groupMessageParts
+import me.rerere.rikkihub.ui.components.richtext.DiffView
 import me.rerere.rikkihub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkihub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkihub.ui.components.ui.BitmapComposer
@@ -110,6 +112,7 @@ import java.io.FileOutputStream
 import java.time.LocalDateTime
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
 
 @Composable
 fun ChatExportSheet(
@@ -142,7 +145,7 @@ fun ChatExportSheet(
                 Text(text = stringResource(id = R.string.chat_page_export_format))
 
                 OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                    ListItem(
+                    CompactListItem(
                         headlineContent = { Text(stringResource(R.string.chat_page_export_include_reasoning)) },
                         trailingContent = {
                             Switch(
@@ -186,7 +189,7 @@ fun ChatExportSheet(
                     enabled = !exporting,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    ListItem(
+                    CompactListItem(
                         headlineContent = {
                             Text(stringResource(id = R.string.chat_page_export_markdown))
                         },
@@ -205,7 +208,7 @@ fun ChatExportSheet(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column {
-                        ListItem(
+                        CompactListItem(
                             headlineContent = {
                                 Text(stringResource(id = R.string.chat_page_export_image))
                             },
@@ -219,7 +222,7 @@ fun ChatExportSheet(
 
                         HorizontalDivider()
 
-                        ListItem(
+                        CompactListItem(
                             headlineContent = { Text(stringResource(R.string.chat_page_export_image_expand_reasoning)) },
                             trailingContent = {
                                 Switch(
@@ -274,6 +277,7 @@ fun ChatExportSheet(
                                     }
                                 },
                                 enabled = !exporting,
+                                shape = MaterialTheme.shapes.medium,
                             ) {
                                 Text(stringResource(R.string.mermaid_export))
                             }
@@ -437,7 +441,7 @@ private fun ExportedChatMessage(
     if (parts.isEmptyUIMessage()) return
     val context = LocalContext.current
     val settings = LocalSettings.current
-    val model = message.modelId?.let { settings.findModelById(it) } ?: message.snapshotModel()
+    val model = message.displayModelOrNull(settings.providers)
     // Always show model icon for assistant messages in exported images
     val showModelIcon = message.role == MessageRole.ASSISTANT && prevMessage?.role == MessageRole.USER
     val iconLabel = when {
@@ -493,14 +497,15 @@ private fun ExportedChatMessage(
                     is MessagePartBlock.ContentBlock -> {
                         when (val part = block.part) {
                             is UIMessagePart.Text -> {
-                                if (part.text.isNotBlank()) {
+                                val text = message.displayTextOf(part)
+                                if (text.isNotBlank()) {
                                     ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
                                         if (message.role == MessageRole.USER) {
                                             Card(
                                                 shape = MaterialTheme.shapes.medium,
                                             ) {
                                                 MarkdownBlock(
-                                                    content = part.text,
+                                                    content = text,
                                                     modifier = Modifier.padding(8.dp)
                                                 )
                                             }
@@ -513,13 +518,13 @@ private fun ExportedChatMessage(
                                                     )
                                                 ) {
                                                     MarkdownBlock(
-                                                        content = part.text,
+                                                        content = text,
                                                         modifier = Modifier.padding(8.dp)
                                                     )
                                                 }
                                             } else {
                                                 MarkdownBlock(
-                                                    content = part.text,
+                                                    content = text,
                                                 )
                                             }
                                         }
@@ -628,30 +633,36 @@ private fun ChainOfThoughtScope.ExportedToolStep(
     tool: UIMessagePart.Tool
 ) {
     val settings = LocalSettings.current
+    val isAcp = AcpParts.isAcpTool(tool) || tool.toolName.startsWith(AcpParts.TOOL_PREFIX)
+    val diff = remember(tool) { if (isAcp) AcpParts.unifiedDiffOf(tool) else null }
     val toolId = resolveBuiltinToolId(tool.toolName, settings.toolOverrides)
     val arguments = runCatching { tool.inputAsJson() }.getOrNull()
     // 旧版单一记忆工具 memory_tool 的 action
     val memoryAction = runCatching {
         arguments?.jsonObject?.get("action")?.jsonPrimitiveOrNull?.contentOrNull
     }.getOrNull()
-    val title = when (toolId) {
-        LEGACY_MEMORY_TOOL -> when (memoryAction) {
-            "create" -> stringResource(R.string.chat_message_tool_create_memory)
-            "edit" -> stringResource(R.string.chat_message_tool_edit_memory)
-            "delete" -> stringResource(R.string.chat_message_tool_delete_memory)
-            else -> stringResource(R.string.chat_message_tool_call_generic, tool.toolName)
-        }
+    val title = if (isAcp) {
+        AcpParts.titleOf(tool)
+    } else {
+        when (toolId) {
+            LEGACY_MEMORY_TOOL -> when (memoryAction) {
+                "create" -> stringResource(R.string.chat_message_tool_create_memory)
+                "edit" -> stringResource(R.string.chat_message_tool_edit_memory)
+                "delete" -> stringResource(R.string.chat_message_tool_delete_memory)
+                else -> stringResource(R.string.chat_message_tool_call_generic, tool.toolName)
+            }
 
-        BuiltinToolIds.SEARCH_WEB -> {
-            val query = runCatching {
-                tool.inputAsJson().jsonObject["query"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
-            }.getOrDefault("")
-            stringResource(R.string.chat_message_tool_search_web, query)
-        }
+            BuiltinToolIds.SEARCH_WEB -> {
+                val query = runCatching {
+                    tool.inputAsJson().jsonObject["query"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                }.getOrDefault("")
+                stringResource(R.string.chat_message_tool_search_web, query)
+            }
 
-        BuiltinToolIds.SCRAPE_WEB -> stringResource(R.string.chat_message_tool_scrape_web)
-        else -> memoryToolTitle(toolId, arguments)
-            ?: stringResource(R.string.chat_message_tool_call_generic, tool.toolName)
+            BuiltinToolIds.SCRAPE_WEB -> stringResource(R.string.chat_message_tool_scrape_web)
+            else -> memoryToolTitle(toolId, arguments)
+                ?: stringResource(R.string.chat_message_tool_call_generic, tool.toolName)
+        }
     }
     ControlledChainOfThoughtStep(
         expanded = true,
@@ -686,8 +697,19 @@ private fun ChainOfThoughtScope.ExportedToolStep(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        contentVisible = false,
-        content = null,
+        contentVisible = diff != null,
+        content = if (diff != null) {
+            {
+                DiffView(
+                    diff = diff,
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 8,
+                    showFileHeader = true,
+                )
+            }
+        } else {
+            null
+        },
     )
 }
 

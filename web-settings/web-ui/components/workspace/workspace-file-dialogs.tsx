@@ -289,7 +289,7 @@ export function useWorkspaceFileDialogs({
       />
 
       <WorkspaceExtractDialog
-        workspaceId={workspaceId}
+        extract={(path, password, nameEncoding) => workspaceApi.extract(workspaceId, path, password, nameEncoding)}
         entry={area === "FILES" ? extractTarget : null}
         onOpenChange={(open) => {
           if (!open) setExtractTarget(null);

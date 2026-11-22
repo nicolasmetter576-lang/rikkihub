@@ -13,16 +13,19 @@ import { safeStringArray } from "~/lib/type-guards";
 import { cn } from "~/lib/utils";
 import api from "~/services/api";
 import { useChatInputStore } from "~/stores";
-import type { ConversationDto, LorebookProfile, ModeInjectionProfile, QuickMessage } from "~/types";
+import type { ConversationDto, QuickMessage } from "~/types";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "~/components/ui/popover";
 import { skillsApi, skillsQueryKey, toggleSkillName } from "@overlay/lib/skills";
+import { entryDepth, entryPlacement, isUuid, libraryAnchor, libraryEnabled } from "@overlay/lib/tavern";
+import type { LorebookSummary, PromptEntry } from "@overlay/types/tavern";
 
 import { PickerErrorAlert } from "./picker-error-alert";
 
 export interface ExtensionPickerButtonProps {
   disabled?: boolean;
+  isCliSession?: boolean;
   className?: string;
   conversationId?: string | null;
   conversationModeInjectionIds?: string[];
@@ -30,22 +33,40 @@ export interface ExtensionPickerButtonProps {
   draftKey?: string | null;
 }
 
-function getModeInjections(source: unknown): ModeInjectionProfile[] {
-  if (!Array.isArray(source)) {
-    return [];
-  }
-
-  return source.filter((item): item is ModeInjectionProfile =>
-    Boolean(item && typeof item === "object" && typeof item.id === "string"),
-  );
+/** A prompt library entry as the picker lists it (picked by its UUID identifier; others cannot be selected). */
+interface LibraryItem {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** Where it goes: before/after the prompt, before the chat, or in chat at a depth. */
+  place: "before_system" | "after_system" | "before_history" | "in_chat";
+  depth: number;
 }
 
-function getLorebooks(source: unknown): LorebookProfile[] {
+function getLibraryItems(source: unknown): LibraryItem[] {
   if (!Array.isArray(source)) {
     return [];
   }
 
-  return source.filter((item): item is LorebookProfile =>
+  return source
+    .filter((item): item is PromptEntry =>
+      Boolean(item && typeof item === "object" && typeof item.identifier === "string" && isUuid(item.identifier)),
+    )
+    .map((entry) => ({
+      id: entry.identifier,
+      name: entry.name ?? "",
+      enabled: libraryEnabled(entry),
+      place: entryPlacement(entry) === "in_chat" ? "in_chat" : (libraryAnchor(entry) ?? "after_system"),
+      depth: entryDepth(entry),
+    }));
+}
+
+function getLorebooks(source: unknown): LorebookSummary[] {
+  if (!Array.isArray(source)) {
+    return [];
+  }
+
+  return source.filter((item): item is LorebookSummary =>
     Boolean(item && typeof item === "object" && typeof item.id === "string"),
   );
 }
@@ -69,9 +90,16 @@ function getQuickMessages(source: unknown): QuickMessage[] {
 type ActiveTab = "quickmessages" | "mode" | "lorebook" | "skills";
 /** Same four tabs as the App's ExtensionSelector, always shown (empty ones link to their manager). */
 export const EXTENSION_TABS: ReadonlyArray<ActiveTab> = ["quickmessages", "mode", "lorebook", "skills"];
+/** CLI chats only support quick messages and plain-text prompt library entries. */
+export const CLI_EXTENSION_TABS: ReadonlyArray<ActiveTab> = ["quickmessages", "mode"];
+
+export function visibleExtensionTabs(isCliSession: boolean): ReadonlyArray<ActiveTab> {
+  return isCliSession ? CLI_EXTENSION_TABS : EXTENSION_TABS;
+}
+
 export const EXTENSION_MANAGE_LINKS: Record<ActiveTab, string> = {
   quickmessages: "/settings/extensions?tab=quick",
-  mode: "/settings/extensions?tab=mode",
+  mode: "/settings/extensions?tab=library",
   lorebook: "/settings/extensions?tab=lorebook",
   skills: "/settings/skills",
 };
@@ -99,6 +127,7 @@ const EMPTY_ID_LIST: string[] = [];
 
 export function ExtensionPickerButton({
   disabled = false,
+  isCliSession = false,
   className,
   conversationId = null,
   conversationModeInjectionIds,
@@ -124,6 +153,8 @@ export function ExtensionPickerButton({
   const setDraftPromptInjectionIds = useChatInputStore((state) => state.setPromptInjectionIds);
 
   const [activeTab, setActiveTab] = React.useState<ActiveTab>("quickmessages");
+  const tabs = visibleExtensionTabs(isCliSession);
+  const currentTab: ActiveTab = tabs.includes(activeTab) ? activeTab : "quickmessages";
 
   const canUse = Boolean(settings && currentAssistant && !disabled);
   const { error, setError, popoverProps } = usePickerPopover(canUse);
@@ -132,7 +163,7 @@ export function ExtensionPickerButton({
   const skillsQuery = useQuery({
     queryKey: skillsQueryKey,
     queryFn: skillsApi.list,
-    enabled: Boolean(settings && currentAssistant),
+    enabled: Boolean(settings && currentAssistant && !isCliSession),
     staleTime: 30_000,
   });
   const skills = skillsQuery.data ?? [];
@@ -143,8 +174,8 @@ export function ExtensionPickerButton({
   );
 
   const modeInjections = React.useMemo(
-    () => getModeInjections(settings?.modeInjections),
-    [settings?.modeInjections],
+    () => getLibraryItems(settings?.promptLibrary),
+    [settings?.promptLibrary],
   );
   const lorebooks = React.useMemo(() => getLorebooks(settings?.lorebooks), [settings?.lorebooks]);
   const quickMessages = React.useMemo(
@@ -163,8 +194,8 @@ export function ExtensionPickerButton({
   );
 
   const assistantModeInjectionIds = React.useMemo(
-    () => safeStringArray(currentAssistant?.modeInjectionIds),
-    [currentAssistant?.modeInjectionIds],
+    () => safeStringArray(currentAssistant?.libraryEntryIds),
+    [currentAssistant?.libraryEntryIds],
   );
   const assistantLorebookIds = React.useMemo(
     () => safeStringArray(currentAssistant?.lorebookIds),
@@ -197,9 +228,8 @@ export function ExtensionPickerButton({
 
   const selectedCount =
     selectedModeInjectionIds.length +
-    selectedLorebookIds.length +
     selectedQuickMessageIds.length +
-    selectedSkillNames.length;
+    (isCliSession ? 0 : selectedLorebookIds.length + selectedSkillNames.length);
   React.useEffect(() => {
     if (!canUse) {
       popoverProps.onOpenChange(false);
@@ -211,12 +241,12 @@ export function ExtensionPickerButton({
       setActiveTab("quickmessages");
     } else if (modeInjections.length > 0) {
       setActiveTab("mode");
-    } else if (lorebooks.length > 0) {
+    } else if (!isCliSession && lorebooks.length > 0) {
       setActiveTab("lorebook");
-    } else if (skills.length > 0) {
+    } else if (!isCliSession && skills.length > 0) {
       setActiveTab("skills");
     }
-  }, [quickMessages.length, modeInjections.length, lorebooks.length, skills.length]);
+  }, [isCliSession, quickMessages.length, modeInjections.length, lorebooks.length, skills.length]);
 
   const updateAssistantExtensionsMutation = useMutation({
     mutationFn: ({
@@ -472,15 +502,15 @@ export function ExtensionPickerButton({
           <PickerErrorAlert error={error} />
 
           <div className="bg-muted flex flex-wrap rounded-xl p-1" role="tablist">
-            {EXTENSION_TABS.map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab}
                 type="button"
                 role="tab"
-                aria-selected={activeTab === tab}
+                aria-selected={currentTab === tab}
                 className={cn(
                   "rounded-full px-3 py-1 text-xs transition",
-                  activeTab === tab
+                  currentTab === tab
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground",
                 )}
@@ -494,7 +524,7 @@ export function ExtensionPickerButton({
           </div>
 
           <div className="max-h-64 overflow-y-auto">
-            {activeTab === "skills" ? (
+            {currentTab === "skills" ? (
               skills.length > 0 ? (
                 <div className="space-y-2">
                   {skills.map((skill) => {
@@ -541,7 +571,7 @@ export function ExtensionPickerButton({
                   onNavigate={() => popoverProps.onOpenChange(false)}
                 />
               )
-            ) : activeTab === "quickmessages" ? (
+            ) : currentTab === "quickmessages" ? (
               quickMessages.length > 0 ? (
                 <div className="space-y-2">
                   {quickMessages.map((item) => {
@@ -589,8 +619,17 @@ export function ExtensionPickerButton({
                   onNavigate={() => popoverProps.onOpenChange(false)}
                 />
               )
-            ) : activeTab === "mode" ? (
-              modeInjections.length > 0 ? (
+            ) : currentTab === "mode" ? (
+              <>
+                {isCliSession ? (
+                  <p
+                    className="mb-2 rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground"
+                    data-testid="cli-mode-plain-text-hint"
+                  >
+                    {t("injection.cli_mode_plain_text_hint")}
+                  </p>
+                ) : null}
+                {modeInjections.length > 0 ? (
                 <div className="space-y-2">
                   {modeInjections.map((item) => {
                     const checked = selectedModeInjectionIds.includes(item.id);
@@ -624,11 +663,12 @@ export function ExtensionPickerButton({
                           <div className="truncate text-sm font-medium">
                             {getDisplayName(item.name, t("injection.unnamed_mode"))}
                           </div>
-                          {item.enabled === false ? (
-                            <div className="text-muted-foreground mt-0.5 text-xs">
-                              {t("injection.disabled")}
-                            </div>
-                          ) : null}
+                          <div className="text-muted-foreground mt-0.5 text-xs">
+                            {item.place === "in_chat"
+                              ? t("injection.place_in_chat", { depth: item.depth })
+                              : t(`injection.place_${item.place}`)}
+                            {item.enabled === false ? ` · ${t("injection.disabled")}` : ""}
+                          </div>
                         </div>
                       </label>
                     );
@@ -640,7 +680,8 @@ export function ExtensionPickerButton({
                   to={EXTENSION_MANAGE_LINKS.mode}
                   onNavigate={() => popoverProps.onOpenChange(false)}
                 />
-              )
+              )}
+              </>
             ) : lorebooks.length > 0 ? (
               <div className="space-y-2">
                 {lorebooks.map((item) => {
@@ -676,12 +717,12 @@ export function ExtensionPickerButton({
                         <div className="truncate text-sm font-medium">
                           {getDisplayName(item.name, t("injection.unnamed_lorebook"))}
                         </div>
-                        {typeof item.description === "string" &&
-                        item.description.trim().length > 0 ? (
-                          <div className="text-muted-foreground mt-0.5 line-clamp-1 text-xs">
-                            {item.description}
-                          </div>
-                        ) : null}
+                        <div className="text-muted-foreground mt-0.5 line-clamp-1 text-xs">
+                          {t("injection.entries_count", { count: item.entryCount })}
+                          {typeof item.description === "string" && item.description.trim().length > 0
+                            ? ` · ${item.description}`
+                            : ""}
+                        </div>
                         {item.enabled === false ? (
                           <div className="text-muted-foreground mt-0.5 text-xs">
                             {t("injection.disabled")}

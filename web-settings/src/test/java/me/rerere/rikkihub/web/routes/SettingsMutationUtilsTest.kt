@@ -5,6 +5,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.Model
@@ -18,13 +19,24 @@ import me.rerere.rikkihub.data.datastore.DEFAULT_ASSISTANT_ID
 import me.rerere.rikkihub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import me.rerere.rikkihub.data.datastore.DEFAULT_PROVIDERS
 import me.rerere.rikkihub.data.datastore.Settings
+import me.rerere.rikkihub.data.cli.CliPermissionMode
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.Avatar
 import me.rerere.rikkihub.data.model.Lorebook
-import me.rerere.rikkihub.data.model.PromptInjection
 import me.rerere.rikkihub.data.model.QuickMessage
-import me.rerere.rikkihub.data.model.SystemPromptMode
-import me.rerere.rikkihub.data.model.SystemPromptSection
+import me.rerere.rikkihub.data.model.AssistantPresets
+import me.rerere.rikkihub.data.model.mainPromptText
+import me.rerere.rikkihub.data.model.newPromptTextEntry
+import me.rerere.rikkihub.data.model.newRegexScript
+import me.rerere.rikkihub.data.model.regexScripts
+import me.rerere.rikkihub.data.model.withEntryAdded
+import me.rerere.rikkihub.data.model.withMainPromptText
+import me.rerere.rikkihub.data.model.withOptions
+import me.rerere.rikkihub.data.model.withRegexScripts
+import kotlinx.serialization.json.JsonObject
+import me.rerere.rikkihub.data.model.promptLibraryIds
+import me.rerere.tavern.core.PromptRole
+import me.rerere.tavern.prompt.PromptEntry
 import me.rerere.rikkihub.data.model.Tag
 import me.rerere.rikkihub.utils.JsonInstant
 import me.rerere.rikkihub.web.BadRequestException
@@ -56,7 +68,6 @@ class SettingsMutationUtilsTest {
             streamOutput = false,
             reasoningLevel = ReasoningLevel.HIGH,
             maxTokens = 1024,
-            systemPrompt = "hi",
             messageTemplate = "{{ message }}",
             allowConversationSystemPrompt = true,
             allowConversationPromptInjection = true,
@@ -72,7 +83,10 @@ class SettingsMutationUtilsTest {
             timeReminderIntervalMinutes = 30,
         )
 
-        val merged = mergeAssistant(existing, incoming)
+        val merged = mergeAssistant(
+            existing, incoming.withMainPromptText("hi"),
+            presentKeys = setOf("name", "promptPreset"),
+        )
 
         assertEquals("new", merged.name)
         assertEquals(0.8f, merged.temperature)
@@ -81,7 +95,7 @@ class SettingsMutationUtilsTest {
         assertFalse(merged.streamOutput)
         assertEquals(ReasoningLevel.HIGH, merged.reasoningLevel)
         assertEquals(1024, merged.maxTokens)
-        assertEquals("hi", merged.systemPrompt)
+        assertEquals("hi", merged.mainPromptText)
         assertTrue(merged.allowConversationSystemPrompt)
         assertTrue(merged.enableWebSearch)
         assertEquals(Avatar.Emoji("🤖"), merged.avatar)
@@ -123,52 +137,153 @@ class SettingsMutationUtilsTest {
         assertEquals(listOf(LocalToolOption.Clipboard), kept.localTools)
     }
 
-    @Test
-    fun `mergeAssistant keeps prompt mode and sections when the raw body omits them`() {
-        val section = SystemPromptSection(title = "t", content = "c", enabled = false)
-        val existing = Assistant(systemPromptMode = SystemPromptMode.SECTIONS, promptSections = listOf(section))
-        val incoming = Assistant(systemPrompt = "whole")
-
-        val kept = mergeAssistant(existing, incoming, presentKeys = setOf("systemPrompt"))
-        assertEquals(SystemPromptMode.SECTIONS, kept.systemPromptMode)
-        assertEquals(listOf(section), kept.promptSections)
-        assertEquals("whole", kept.systemPrompt)
-
-        val cleared = mergeAssistant(existing, incoming, presentKeys = setOf("systemPromptMode", "promptSections"))
-        assertEquals(SystemPromptMode.WHOLE, cleared.systemPromptMode)
-        assertEquals(emptyList<SystemPromptSection>(), cleared.promptSections)
+    private fun sectionsAssistant(): Assistant {
+        val entry = PromptEntry(
+            identifier = Uuid.random().toString(), name = "t", role = PromptRole.SYSTEM, content = "c",
+            systemPrompt = false, marker = false, enabled = false,
+        )
+        return Assistant(promptPreset = AssistantPresets.create(listOf(entry)))
     }
 
     @Test
-    fun `parseAssistantUpdate decodes prompt sections and rejects an unknown mode`() {
-        val body = buildJsonObject {
-            put("name", "a")
-            put("systemPromptMode", "sections")
-            put("promptSections", buildJsonArray {
-                add(buildJsonObject { put("title", "x"); put("content", "y"); put("enabled", false) })
-            })
-        }
-        val (incoming, _) = parseAssistantUpdate(body)
-        assertEquals(SystemPromptMode.SECTIONS, incoming.systemPromptMode)
-        assertEquals("y", incoming.promptSections.single().content)
-        assertFalse(incoming.promptSections.single().enabled)
+    fun `mergeAssistant keeps the prompt preset and library ids when the raw body carries neither key`() {
+        val existing = sectionsAssistant().copy(libraryEntryIds = setOf(Uuid.random()))
+        val incoming = Assistant(name = "renamed")
 
-        val bad = buildJsonObject { put("name", "a"); put("systemPromptMode", "blocks") }
-        try {
-            parseAssistantUpdate(bad)
-            throw AssertionError("expected BadRequestException")
-        } catch (_: BadRequestException) {
-        }
+        val kept = mergeAssistant(existing, incoming, presentKeys = setOf("name"))
+        assertEquals(existing.promptPreset, kept.promptPreset)
+        assertEquals(existing.libraryEntryIds, kept.libraryEntryIds)
+        assertEquals("renamed", kept.name)
     }
 
     @Test
-    fun `validateAssistantWritable rejects duplicate prompt section ids`() {
-        val section = SystemPromptSection(content = "c")
+    fun `mergeAssistant takes prompts, order, options and regexes from the body and keeps other preset fields`() {
+        val kept = buildJsonObject { put("temperature_hint", 0.5) }
+        val existing = sectionsAssistant().let { it.copy(promptPreset = it.promptPreset.copy(extra = kept)) }
+        val script = newRegexScript("fix").copy(findRegex = "/a/g", replaceString = "b")
+        val edited = existing.promptPreset
+            .withEntryAdded(newPromptTextEntry("fresh").copy(content = "hello"))
+            .withOptions { it.copy(contextSize = 8000) }
+            .withRegexScripts(listOf(script))
+        // 交回来的预设里没有 temperature_hint（网页端没碰它），只带助手正则所在的 extensions
+        val incoming = Assistant(name = "x", promptPreset = edited.copy(extra = JsonObject(edited.extra.filterKeys { it == "extensions" })))
+
+        val merged = mergeAssistant(existing, incoming, presentKeys = setOf("name", "promptPreset"))
+
+        assertEquals(edited.prompts, merged.promptPreset.prompts)
+        assertEquals(edited.promptOrder, merged.promptPreset.promptOrder)
+        assertEquals(8000, merged.promptPreset.options.contextSize)
+        assertEquals(listOf(script.id), merged.promptPreset.regexScripts.map { it.id })
+        // 预设里网页端没碰的字段保留最新值
+        assertEquals(kept, merged.promptPreset.extra.filterKeys { it == "temperature_hint" }.let { JsonObject(it) })
+    }
+
+    @Test
+    fun `mergeAssistant applies libraryEntryIds only when the body carries the key`() {
+        val id = Uuid.random()
+        val existing = Assistant(name = "a")
+        val incoming = Assistant(name = "a", libraryEntryIds = setOf(id))
+        assertEquals(setOf(id), mergeAssistant(existing, incoming, presentKeys = setOf("libraryEntryIds")).libraryEntryIds)
+        assertEquals(emptySet<Uuid>(), mergeAssistant(existing, incoming, presentKeys = setOf("name")).libraryEntryIds)
+    }
+
+    @Test
+    fun `mergeAssistant keeps the SillyTavern mode unless the body carries the key`() {
+        val existing = Assistant(name = "a", tavernMode = true)
+        assertEquals(true, mergeAssistant(existing, Assistant(name = "a"), presentKeys = setOf("name")).tavernMode)
+        assertEquals(false, mergeAssistant(existing, Assistant(name = "a", tavernMode = false), presentKeys = setOf("name", "tavernMode")).tavernMode)
+        assertEquals(true, mergeAssistant(Assistant(name = "a"), Assistant(name = "a", tavernMode = true), presentKeys = setOf("tavernMode")).tavernMode)
+    }
+
+    @Test
+    fun `mergeAssistant keeps per-turn titles unless the body carries the key`() {
+        val existing = Assistant(name = "a", enableMessageTitle = true)
+        assertEquals(true, mergeAssistant(existing, Assistant(name = "a"), presentKeys = setOf("name")).enableMessageTitle)
+        assertEquals(false, mergeAssistant(existing, Assistant(name = "a"), presentKeys = setOf("enableMessageTitle")).enableMessageTitle)
+        assertEquals(true, mergeAssistant(Assistant(name = "a"), existing, presentKeys = setOf("enableMessageTitle")).enableMessageTitle)
+    }
+
+    @Test
+    fun `mergeAssistant keeps a disabled assistant disabled unless the body carries the key`() {
+        val existing = Assistant(name = "a", enabled = false)
+        // 旧版网页不带 enabled：默认值（开）不能把停用的助手重新打开
+        assertEquals(false, mergeAssistant(existing, Assistant(name = "b"), presentKeys = setOf("name")).enabled)
+        assertEquals(true, mergeAssistant(existing, Assistant(name = "a", enabled = true), presentKeys = setOf("enabled")).enabled)
+        assertEquals(false, mergeAssistant(Assistant(name = "a"), Assistant(name = "a", enabled = false), presentKeys = setOf("enabled")).enabled)
+    }
+
+    @Test
+    fun `mergeAssistant applies a sampling parameter only when the body carries its key, and null unsets it`() {
+        val existing = Assistant(name = "a", topK = 40, frequencyPenalty = 0.3f, seed = 7L)
+        // an older page does not know the keys: the stored values stay
+        val kept = mergeAssistant(existing, Assistant(name = "a"), presentKeys = setOf("name"))
+        assertEquals(40, kept.topK)
+        assertEquals(0.3f, kept.frequencyPenalty)
+        assertEquals(7L, kept.seed)
+        // the key with a value sets it, the key with null clears it, the other keys are left alone
+        val changed = mergeAssistant(existing, Assistant(name = "a", topK = 10, seed = null), presentKeys = setOf("name", "topK", "seed"))
+        assertEquals(10, changed.topK)
+        assertNull(changed.seed)
+        assertEquals(0.3f, changed.frequencyPenalty)
+    }
+
+    @Test
+    fun `mergeAssistant keeps cardNote and cardWide unless explicitly sent`() {
+        val existing = Assistant(name = "a", cardNote = "主力", cardWide = true)
+        val kept = mergeAssistant(existing, Assistant(name = "renamed"), presentKeys = setOf("name"))
+        assertEquals("renamed", kept.name)
+        assertEquals("主力", kept.cardNote)
+        assertTrue(kept.cardWide)
+
+        val updated = mergeAssistant(
+            existing,
+            Assistant(name = "renamed", cardNote = "新备注", cardWide = false),
+            presentKeys = setOf("name", "cardNote", "cardWide"),
+        )
+        assertEquals("新备注", updated.cardNote)
+        assertFalse(updated.cardWide)
+    }
+
+    @Test
+    fun `validateAssistantWritable keeps sampling parameters inside the same ranges as the app`() {
+        fun bad(assistant: Assistant, key: String) {
+            try {
+                validateAssistantWritable(assistant, Settings())
+                throw AssertionError("expected BadRequestException for $key")
+            } catch (e: BadRequestException) {
+                assertTrue(e.message!!, e.message!!.contains(key))
+            }
+        }
+        validateAssistantWritable(
+            Assistant(topK = 1, frequencyPenalty = -2f, presencePenalty = 2f, repetitionPenalty = 0.01f, minP = 1f, topA = 0f, seed = 0L),
+            Settings(),
+        )
+        bad(Assistant(topK = 0), "topK")
+        bad(Assistant(topK = 100_001), "topK")
+        bad(Assistant(frequencyPenalty = 2.1f), "frequencyPenalty")
+        bad(Assistant(presencePenalty = -2.1f), "presencePenalty")
+        bad(Assistant(repetitionPenalty = 0f), "repetitionPenalty")
+        bad(Assistant(repetitionPenalty = 3.1f), "repetitionPenalty")
+        bad(Assistant(minP = 1.1f), "minP")
+        bad(Assistant(topA = -0.1f), "topA")
+        bad(Assistant(seed = -1L), "seed")
+    }
+
+    @Test
+    fun `validateAssistantWritable rejects duplicate prompt identifiers and unknown library ids`() {
+        val entry = PromptEntry(identifier = "dup", role = PromptRole.SYSTEM, content = "c", systemPrompt = false, marker = false)
+        val duplicated = Assistant(promptPreset = AssistantPresets.create(listOf(entry, entry)))
         try {
-            validateAssistantWritable(Assistant(promptSections = listOf(section, section)), Settings())
+            validateAssistantWritable(duplicated, Settings())
             throw AssertionError("expected BadRequestException")
         } catch (e: BadRequestException) {
-            assertTrue(e.message!!.contains("promptSections"))
+            assertTrue(e.message!!.contains("identifier"))
+        }
+        try {
+            validateAssistantWritable(Assistant(libraryEntryIds = setOf(Uuid.random())), Settings())
+            throw AssertionError("expected BadRequestException")
+        } catch (e: BadRequestException) {
+            assertTrue(e.message!!.contains("libraryEntryIds"))
         }
     }
 
@@ -277,7 +392,7 @@ class SettingsMutationUtilsTest {
                 put(
                     "localTools",
                     buildJsonArray {
-                        repeat(9) { add(buildJsonObject { put("type", "tts") }) }
+                        repeat(10) { add(buildJsonObject { put("type", "tts") }) }
                     },
                 )
             },
@@ -314,6 +429,7 @@ class SettingsMutationUtilsTest {
                 apiKey = incoming.apiKey,
                 privateKey = null,
                 useInteractionsApi = null,
+                streamFunctionCallArguments = null,
             ),
         ) as ProviderSetting.OpenAI
 
@@ -350,6 +466,7 @@ class SettingsMutationUtilsTest {
                 apiKey = null,
                 privateKey = null,
                 useInteractionsApi = null,
+                streamFunctionCallArguments = null,
             ),
         ) as ProviderSetting.Devin
 
@@ -373,6 +490,7 @@ class SettingsMutationUtilsTest {
                 apiKey = null,
                 privateKey = null,
                 useInteractionsApi = null,
+                streamFunctionCallArguments = null,
             ),
         ) as ProviderSetting.Antigravity
 
@@ -393,6 +511,7 @@ class SettingsMutationUtilsTest {
                 apiKey = null,
                 privateKey = null,
                 useInteractionsApi = null,
+                streamFunctionCallArguments = null,
             ),
         )
     }
@@ -439,14 +558,14 @@ class SettingsMutationUtilsTest {
     fun `validateAssistantWritable accepts known bindings`() {
         val tag = Tag(id = Uuid.random(), name = "work")
         val mcp = McpServerConfig.SseTransportServer()
-        val injection = PromptInjection.ModeInjection()
+        val injection = me.rerere.rikkihub.data.datastore.DEFAULT_PROMPT_LIBRARY.first()
         val lorebook = Lorebook()
         val quick = QuickMessage()
         val model = Model(modelId = "gpt", displayName = "gpt")
         val settings = Settings(
             assistantTags = listOf(tag),
             mcpServers = listOf(mcp),
-            modeInjections = listOf(injection),
+            promptLibrary = listOf(injection),
             lorebooks = listOf(lorebook),
             quickMessages = listOf(quick),
             providers = listOf(ProviderSetting.OpenAI(models = listOf(model))),
@@ -455,7 +574,7 @@ class SettingsMutationUtilsTest {
             tags = listOf(tag.id),
             chatModelId = model.id,
             mcpServers = setOf(mcp.id),
-            modeInjectionIds = setOf(injection.id),
+            libraryEntryIds = setOf(Uuid.parse(injection.identifier)),
             lorebookIds = setOf(lorebook.id),
             quickMessageIds = setOf(quick.id),
             temperature = 1f,
@@ -530,5 +649,75 @@ class SettingsMutationUtilsTest {
     @Test(expected = BadRequestException::class)
     fun `createProvider rejects unknown type`() {
         createProvider("azure", null)
+    }
+
+    @Test
+    fun `Assistant withWorkspace preserves defaultCliAgentId only when workspaceId is unchanged and non-null`() {
+        val ws1 = Uuid.random()
+        val ws2 = Uuid.random()
+        val assistant = Assistant(
+            workspaceId = ws1,
+            defaultCliAgentId = "builtin:agy",
+            defaultCliPermissionMode = CliPermissionMode.AUTO,
+        )
+
+        val same = assistant.withWorkspace(ws1)
+        assertEquals(ws1, same.workspaceId)
+        assertEquals("builtin:agy", same.defaultCliAgentId)
+        assertEquals(CliPermissionMode.AUTO, same.defaultCliPermissionMode)
+
+        val rebound = assistant.withWorkspace(ws2)
+        assertEquals(ws2, rebound.workspaceId)
+        assertNull(rebound.defaultCliAgentId)
+        assertEquals(CliPermissionMode.AUTO, rebound.defaultCliPermissionMode)
+
+        val unbound = assistant.withWorkspace(null)
+        assertNull(unbound.workspaceId)
+        assertNull(unbound.defaultCliAgentId)
+    }
+
+    @Test
+    fun `withWorkspaceId clears defaultCliAgentId when workspace changes or unbinds`() {
+        val ws1 = Uuid.random()
+        val ws2 = Uuid.random()
+        val target = Assistant(name = "cli", workspaceId = ws1, defaultCliAgentId = "builtin:droid")
+        val other = Assistant(name = "other", workspaceId = ws1, defaultCliAgentId = "builtin:agy")
+
+        val kept = withWorkspaceId(listOf(other, target), target.id, ws1)!!
+        assertEquals("builtin:droid", kept[1].defaultCliAgentId)
+        assertEquals(other, kept[0])
+
+        val switched = withWorkspaceId(kept, target.id, ws2)!!
+        assertEquals(ws2, switched[1].workspaceId)
+        assertNull(switched[1].defaultCliAgentId)
+        assertEquals("builtin:agy", switched[0].defaultCliAgentId)
+
+        val unbound = withWorkspaceId(kept, target.id, null)!!
+        assertNull(unbound[1].workspaceId)
+        assertNull(unbound[1].defaultCliAgentId)
+    }
+
+    @Test
+    fun `mergeAssistant clears defaultCliAgentId when workspaceId changes or becomes null`() {
+        val ws1 = Uuid.random()
+        val ws2 = Uuid.random()
+        val existing = Assistant(
+            name = "cli",
+            workspaceId = ws1,
+            defaultCliAgentId = "builtin:agy",
+            defaultCliPermissionMode = CliPermissionMode.AUTO,
+        )
+
+        val kept = mergeAssistant(existing, Assistant(name = "renamed", workspaceId = ws1))
+        assertEquals(ws1, kept.workspaceId)
+        assertEquals("builtin:agy", kept.defaultCliAgentId)
+
+        val switched = mergeAssistant(existing, Assistant(name = "rebound", workspaceId = ws2))
+        assertEquals(ws2, switched.workspaceId)
+        assertNull(switched.defaultCliAgentId)
+
+        val unbound = mergeAssistant(existing, Assistant(name = "unbound", workspaceId = null))
+        assertNull(unbound.workspaceId)
+        assertNull(unbound.defaultCliAgentId)
     }
 }

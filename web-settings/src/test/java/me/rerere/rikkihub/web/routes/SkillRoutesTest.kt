@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.web.routes
 
+import me.rerere.rikkihub.data.model.mainPromptText
+import me.rerere.rikkihub.data.model.AssistantPresets
 import io.ktor.client.HttpClient
 import io.ktor.client.request.delete
 import io.ktor.client.request.forms.formData
@@ -232,11 +234,11 @@ class SkillRoutesTest {
 
     @Test
     fun `picker update replaces only the target assistant's skills`() {
-        val target = Assistant(name = "t", systemPrompt = "keep", enabledSkills = setOf("old"))
+        val target = Assistant(name = "t", promptPreset = AssistantPresets.withSystemPrompt("keep"), enabledSkills = setOf("old"))
         val other = Assistant(name = "o", enabledSkills = setOf("old"))
         val updated = withEnabledSkills(listOf(target, other), target.id, setOf("new"))!!
         assertEquals(setOf("new"), updated[0].enabledSkills)
-        assertEquals("keep", updated[0].systemPrompt)
+        assertEquals("keep", updated[0].mainPromptText)
         assertEquals(other, updated[1])
         assertNull(withEnabledSkills(listOf(other), target.id, setOf("new")))
     }

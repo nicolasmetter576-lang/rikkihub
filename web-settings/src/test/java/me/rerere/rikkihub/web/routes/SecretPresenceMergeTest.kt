@@ -218,4 +218,79 @@ class SecretPresenceMergeTest {
             runCatching { parseProviderUpdate(body) }.exceptionOrNull() is BadRequestException
         )
     }
+
+    @Test
+    fun `structured apiKeys and serviceAccounts preserve masked secrets update labels and clear legacy fields`() {
+        val legacyGoogle = ProviderSetting.Google(
+            apiKey = "sk-legacy-1234",
+            vertexAI = true,
+            useServiceAccount = true,
+            projectId = "leg-proj",
+            serviceAccountEmail = "leg@sa",
+            privateKey = "LEGACY-SA-PEM",
+        )
+        val legacyKeyId = me.rerere.ai.provider.legacyApiKeyId("sk-legacy-1234")
+        val body = buildJsonObject {
+            put("type", "google")
+            put("id", legacyGoogle.id.toString())
+            put("enabled", true)
+            put("name", "Google Multi")
+            put("rotationStrategy", "failover")
+            put(
+                "apiKeys",
+                JsonArray(
+                    listOf(
+                        buildJsonObject {
+                            put("id", legacyKeyId)
+                            put("label", "Migrated")
+                            put("enabled", true)
+                            put("key", "")
+                            put("keyConfigured", true)
+                        },
+                        buildJsonObject {
+                            put("id", "k2")
+                            put("label", "Second")
+                            put("enabled", false)
+                            put("key", "sk-brand-new")
+                        },
+                    )
+                ),
+            )
+            put(
+                "serviceAccounts",
+                JsonArray(
+                    listOf(
+                        buildJsonObject {
+                            put("id", "legacy")
+                            put("label", "Migrated SA")
+                            put("projectId", "leg-proj")
+                            put("serviceAccountEmail", "leg@sa")
+                            put("location", "global")
+                            put("enabled", true)
+                            put("privateKey", "")
+                            put("privateKeyConfigured", true)
+                        },
+                        buildJsonObject {
+                            put("id", "sa-2")
+                            put("label", "New SA")
+                            put("projectId", "p2")
+                            put("serviceAccountEmail", "sa2@e")
+                            put("location", "")
+                            put("enabled", true)
+                            put("privateKey", "NEW-PEM")
+                        },
+                    )
+                ),
+            )
+        }
+        val merged = mergeProvider(legacyGoogle, parseProviderUpdate(body)) as ProviderSetting.Google
+        assertEquals(me.rerere.ai.provider.CredentialRotationStrategy.FAILOVER, merged.rotationStrategy)
+        assertEquals("", merged.apiKey)
+        assertEquals(listOf("sk-legacy-1234", "sk-brand-new"), merged.apiKeys.map { it.key })
+        assertEquals("", merged.privateKey)
+        assertEquals("", merged.projectId)
+        assertEquals("", merged.serviceAccountEmail)
+        assertEquals(listOf("LEGACY-SA-PEM", "NEW-PEM"), merged.serviceAccounts.map { it.privateKey })
+        assertEquals("global", merged.serviceAccounts[0].location)
+    }
 }

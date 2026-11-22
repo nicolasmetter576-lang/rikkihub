@@ -1,6 +1,7 @@
 package me.rerere.rikkihub
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -31,6 +32,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -65,8 +70,17 @@ import me.rerere.rikkihub.data.db.DatabaseMigrationTracker
 import me.rerere.rikkihub.data.db.MigrationState
 import me.rerere.rikkihub.data.event.AppEvent
 import me.rerere.rikkihub.data.event.AppEventBus
+import me.rerere.rikkihub.data.sync.BackupDeviceStateStore
+import me.rerere.rikkihub.data.sync.BackupManager
+import me.rerere.rikkihub.data.sync.LocalSnapshotService
+import me.rerere.rikkihub.data.sync.RestoreOutcome
+import me.rerere.rikkihub.data.sync.RestoreReceipt
+import me.rerere.rikkihub.data.sync.RestoreSource
 import me.rerere.rikkihub.ui.activity.SafeModeActivity
 import me.rerere.rikkihub.ui.components.ui.TTSController
+import me.rerere.rikkihub.ui.components.ui.toast.ToastType
+import me.rerere.rikkihub.ui.pages.backup.components.BackupDialog
+import me.rerere.rikkihub.ui.pages.backup.components.RestoreReceiptDialog
 import me.rerere.rikkihub.ui.context.LocalASRState
 import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.context.LocalSettings
@@ -91,7 +105,13 @@ import me.rerere.rikkihub.ui.pages.assistant.detail.AssistantRequestPage
 import me.rerere.rikkihub.ui.pages.backup.BackupPage
 import me.rerere.rikkihub.ui.pages.chat.ChatPage
 import me.rerere.rikkihub.ui.pages.debug.DebugPage
+import me.rerere.rikkihub.ui.pages.extensions.LorebookDetailPage
 import me.rerere.rikkihub.ui.pages.extensions.PromptPage
+import me.rerere.rikkihub.ui.pages.character.CharacterDetailPage
+import me.rerere.rikkihub.ui.pages.character.CharacterListPage
+import me.rerere.rikkihub.ui.pages.character.PersonaPage
+import me.rerere.rikkihub.ui.pages.extensions.SettingRegexPage
+import me.rerere.rikkihub.ui.pages.extensions.SettingWorldInfoPage
 import me.rerere.rikkihub.ui.pages.extensions.QuickMessagesPage
 import me.rerere.rikkihub.ui.pages.extensions.skills.SkillDetailPage
 import me.rerere.rikkihub.ui.pages.extensions.skills.SkillsPage
@@ -99,6 +119,7 @@ import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspacePage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceDetailPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceDeviceDirectoryPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceFileEditorPage
+import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceReaderPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceTerminalPage
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.rikkihub.ui.pages.favorite.FavoritePage
@@ -108,10 +129,12 @@ import me.rerere.rikkihub.ui.pages.log.LogPage
 import me.rerere.rikkihub.ui.pages.search.SearchPage
 import me.rerere.rikkihub.ui.pages.setting.SettingPromptPolishPage
 import me.rerere.rikkihub.ui.pages.setting.SettingMemoryDreamPage
+import me.rerere.rikkihub.ui.pages.setting.SettingCompressionPage
+import me.rerere.rikkihub.ui.pages.memory.GlobalMemoryPage
 import me.rerere.rikkihub.ui.pages.memory.MemoryFilePage
+import me.rerere.rikkihub.ui.pages.setting.SettingQubaguPage
 import me.rerere.rikkihub.ui.pages.setting.SettingTuiqiaoPage
 import me.rerere.rikkihub.ui.pages.setting.SettingZaizaoPage
-import me.rerere.rikkihub.ui.pages.setting.SettingPreferencesPage
 import me.rerere.rikkihub.ui.pages.setting.SettingPreferencesThemePage
 import me.rerere.rikkihub.ui.pages.setting.SettingPreferencesNotificationPage
 import me.rerere.rikkihub.ui.pages.setting.SettingPreferencesGeneralPage
@@ -125,6 +148,9 @@ import me.rerere.rikkihub.ui.pages.setting.SettingToolDetailPage
 import me.rerere.rikkihub.ui.pages.setting.subagent.SubagentLibraryPage
 import me.rerere.rikkihub.ui.pages.setting.SettingToolsPage
 import me.rerere.rikkihub.ui.pages.setting.SettingFilesPage
+import me.rerere.rikkihub.ui.pages.files.FileManagerEditorPage
+import me.rerere.rikkihub.ui.pages.files.FileManagerPage
+import me.rerere.rikkihub.data.files.FileManagerRoot
 import me.rerere.rikkihub.ui.pages.setting.SettingMcpPage
 import me.rerere.rikkihub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkihub.ui.pages.setting.SettingPage
@@ -158,6 +184,14 @@ private const val TAG = "RouteActivity"
 private const val ACTION_TRANSLATE = "me.rerere.rikkihub.action.TRANSLATE"
 private const val ACTION_IMAGE_GEN = "me.rerere.rikkihub.action.IMAGE_GEN"
 private const val ACTION_MEDIA_CREATION = "me.rerere.rikkihub.action.MEDIA_CREATION"
+private const val EXTRA_CONVERSATION_ID = "conversationId"
+
+/** 打开指定会话的聊天页 */
+fun conversationIntent(context: Context, conversationId: String): Intent =
+    Intent(context, RouteActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        putExtra(EXTRA_CONVERSATION_ID, conversationId)
+    }
 
 class RouteActivity : ComponentActivity() {
     companion object {
@@ -284,7 +318,7 @@ class RouteActivity : ComponentActivity() {
                 text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty(),
             )
             else -> mediaCreationDestination(intent)
-                ?: intent.getStringExtra("conversationId")?.let { Screen.Chat(it) }
+                ?: intent.getStringExtra(EXTRA_CONVERSATION_ID)?.let { Screen.Chat(it) }
         }
         if (destination != null && backStack.lastOrNull() != destination) {
             backStack.add(destination)
@@ -313,7 +347,26 @@ class RouteActivity : ComponentActivity() {
         val tts = rememberCustomTtsState()
         val asr = rememberCustomAsrState()
         val eventBus = koinInject<AppEventBus>()
+        val deviceStateStore = koinInject<BackupDeviceStateStore>()
+        val snapshotService = koinInject<LocalSnapshotService>()
+        val backupManager = koinInject<BackupManager>()
         val context = androidx.compose.ui.platform.LocalContext.current
+        val appUiScope = rememberCoroutineScope()
+        var pendingReceipt by remember { mutableStateOf<RestoreReceipt?>(null) }
+        var canUndoPendingReceipt by remember { mutableStateOf(false) }
+        var showUndoRestartDialog by remember { mutableStateOf(false) }
+
+        LaunchedEffect(deviceStateStore) {
+            val receipt = deviceStateStore.reloadReceipt()
+            if (receipt != null && !receipt.acknowledged) {
+                val undoId = receipt.preRestoreSnapshotId
+                canUndoPendingReceipt = receipt.outcome == RestoreOutcome.COMMITTED &&
+                    receipt.source != RestoreSource.UNDO &&
+                    !undoId.isNullOrBlank() &&
+                    snapshotService.findById(undoId) != null
+                pendingReceipt = receipt
+            }
+        }
         LaunchedEffect(settingsStore) {
             settingsStore.writeFailures.collect { failure ->
                 val message = when (failure) {
@@ -330,8 +383,16 @@ class RouteActivity : ComponentActivity() {
                 when (event) {
                     is AppEvent.Speak -> tts.speak(event.text)
                     is AppEvent.OpenUsageAccessSettings -> this@RouteActivity.openUsageAccessSettings()
+                    is AppEvent.ProviderSpendLimitReached -> toastState.show(
+                        message = event.message,
+                        type = me.rerere.rikkihub.ui.components.ui.toast.ToastType.Warning,
+                    )
                     is AppEvent.ChatGenerationUpdate -> Unit // 由 ChatNotificationManager 消费
                     is AppEvent.ChatGenerationEnded -> Unit // 由 ChatNotificationManager 消费
+                    is AppEvent.BackupNotice -> toastState.show(
+                        message = event.message,
+                        type = if (event.isError) ToastType.Error else ToastType.Info,
+                    )
                 }
             }
         }
@@ -404,7 +465,8 @@ class RouteActivity : ComponentActivity() {
                                     id = Uuid.parse(key.id),
                                     text = key.text,
                                     files = key.files.map { it.toUri() },
-                                    nodeId = key.nodeId?.let { Uuid.parse(it) }
+                                    nodeId = key.nodeId?.let { Uuid.parse(it) },
+                                    characterId = key.characterId?.let { runCatching { Uuid.parse(it) }.getOrNull() },
                                 )
                             }
 
@@ -445,6 +507,10 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.MemoryFile> { key ->
                                 MemoryFilePage(memoryId = key.memoryId, path = key.path)
+                            }
+
+                            entry<Screen.GlobalMemory> {
+                                GlobalMemoryPage()
                             }
 
                             entry<Screen.AssistantRequest> { key ->
@@ -498,10 +564,6 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.SettingTheme> {
                                 SettingThemePage()
-                            }
-
-                            entry<Screen.SettingPreferences> {
-                                SettingPreferencesPage()
                             }
 
                             entry<Screen.SettingPreferencesTheme> {
@@ -569,12 +631,20 @@ class RouteActivity : ComponentActivity() {
                                 SettingZaizaoPage()
                             }
 
+                            entry<Screen.SettingQubagu> {
+                                SettingQubaguPage()
+                            }
+
                             entry<Screen.SettingPromptPolish> {
                                 SettingPromptPolishPage()
                             }
 
                             entry<Screen.SettingMemoryDream> {
                                 SettingMemoryDreamPage()
+                            }
+
+                            entry<Screen.SettingCompression> {
+                                SettingCompressionPage()
                             }
 
                             entry<Screen.SettingSearch> {
@@ -606,6 +676,14 @@ class RouteActivity : ComponentActivity() {
                                 SettingFilesPage()
                             }
 
+                            entry<Screen.FileManager> { key ->
+                                FileManagerPage(pickRequest = key.pickRequest, importToWorkspace = key.importToWorkspace)
+                            }
+
+                            entry<Screen.FileManagerEditor> { key ->
+                                FileManagerEditorPage(root = key.root, path = key.path)
+                            }
+
                             entry<Screen.SettingWeb> {
                                 SettingWebPage()
                             }
@@ -626,6 +704,30 @@ class RouteActivity : ComponentActivity() {
                                 PromptPage(initialTab = key.tab)
                             }
 
+                            entry<Screen.Lorebook> { key ->
+                                LorebookDetailPage(id = key.id)
+                            }
+
+                            entry<Screen.Characters> {
+                                CharacterListPage()
+                            }
+
+                            entry<Screen.Persona> {
+                                PersonaPage()
+                            }
+
+                            entry<Screen.CharacterDetail> { key ->
+                                CharacterDetailPage(id = key.id)
+                            }
+
+                            entry<Screen.SettingWorldInfo> {
+                                SettingWorldInfoPage()
+                            }
+
+                            entry<Screen.SettingRegex> {
+                                SettingRegexPage()
+                            }
+
                             entry<Screen.Skills> {
                                 SkillsPage()
                             }
@@ -639,11 +741,19 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.WorkspaceTerminal> { key ->
-                                WorkspaceTerminalPage(key.id)
+                                WorkspaceTerminalPage(key.id, key.command)
                             }
 
                             entry<Screen.WorkspaceFileEditor> { key ->
                                 WorkspaceFileEditorPage(
+                                    id = key.id,
+                                    area = WorkspaceStorageArea.valueOf(key.area),
+                                    path = key.path,
+                                )
+                            }
+
+                            entry<Screen.WorkspaceReader> { key ->
+                                WorkspaceReaderPage(
                                     id = key.id,
                                     area = WorkspaceStorageArea.valueOf(key.area),
                                     path = key.path,
@@ -717,6 +827,39 @@ class RouteActivity : ComponentActivity() {
                     )
                 }
             }
+
+            pendingReceipt?.let { receipt ->
+                RestoreReceiptDialog(
+                    receipt = receipt,
+                    canUndo = canUndoPendingReceipt,
+                    onDismiss = {
+                        pendingReceipt = null
+                        appUiScope.launch { deviceStateStore.acknowledgeReceipt() }
+                    },
+                    onUndo = { snapshotId ->
+                        pendingReceipt = null
+                        appUiScope.launch {
+                            runCatching {
+                                check(!backupManager.hasPendingRestore()) {
+                                    context.getString(R.string.backup_page_pending_restore_exists)
+                                }
+                                snapshotService.stageUndoRestore(snapshotId)
+                                deviceStateStore.acknowledgeReceipt()
+                                showUndoRestartDialog = true
+                            }.onFailure { err ->
+                                toastState.show(
+                                    message = err.message ?: context.getString(R.string.backup_page_unknown_error),
+                                    type = ToastType.Error,
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+
+            if (showUndoRestartDialog) {
+                BackupDialog()
+            }
         }
     }
 }
@@ -727,7 +870,9 @@ sealed interface Screen : NavKey {
         val id: String,
         val text: String? = null,
         val files: List<String> = emptyList(),
-        val nodeId: String? = null
+        val nodeId: String? = null,
+        // 新会话要聊的角色（会话已存在时忽略）
+        val characterId: String? = null,
     ) : Screen
 
     @Serializable
@@ -757,6 +902,9 @@ sealed interface Screen : NavKey {
     /** 记忆库 [memoryId] 里的一个文件，[path] 为 null 时新建 */
     @Serializable
     data class MemoryFile(val memoryId: String, val path: String? = null) : Screen
+
+    @Serializable
+    data object GlobalMemory : Screen
 
     @Serializable
     data class AssistantRequest(val id: String) : Screen
@@ -793,9 +941,6 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingTheme : Screen
-
-    @Serializable
-    data object SettingPreferences : Screen
 
     @Serializable
     data object SettingPreferencesTheme : Screen
@@ -846,10 +991,16 @@ sealed interface Screen : NavKey {
     data object SettingZaizao : Screen
 
     @Serializable
+    data object SettingQubagu : Screen
+
+    @Serializable
     data object SettingPromptPolish : Screen
 
     @Serializable
     data object SettingMemoryDream : Screen
+
+    @Serializable
+    data object SettingCompression : Screen
 
     @Serializable
     data object SettingSearch : Screen
@@ -888,6 +1039,24 @@ sealed interface Screen : NavKey {
     data class Prompts(val tab: Int = 0) : Screen
 
     @Serializable
+    data class Lorebook(val id: String) : Screen
+
+    @Serializable
+    data object Characters : Screen
+
+    @Serializable
+    data object Persona : Screen
+
+    @Serializable
+    data class CharacterDetail(val id: String) : Screen
+
+    @Serializable
+    data object SettingWorldInfo : Screen
+
+    @Serializable
+    data object SettingRegex : Screen
+
+    @Serializable
     data object Skills : Screen
 
     @Serializable
@@ -896,14 +1065,25 @@ sealed interface Screen : NavKey {
     @Serializable
     data class WorkspaceDetail(val id: String) : Screen
 
+    /** [command] runs in a new tab (CLI install/login from a chat). */
     @Serializable
-    data class WorkspaceTerminal(val id: String) : Screen
+    data class WorkspaceTerminal(val id: String, val command: String? = null) : Screen
 
     @Serializable
     data class WorkspaceFileEditor(val id: String, val area: String, val path: String) : Screen
 
     @Serializable
+    data class WorkspaceReader(val id: String, val area: String, val path: String) : Screen
+
+    @Serializable
     data class WorkspaceDeviceDirectory(val id: String) : Screen
+
+    @Serializable
+    /** [importToWorkspace]: the pick returns files and folders to copy into a workspace, not chat attachments. */
+    data class FileManager(val pickRequest: String? = null, val importToWorkspace: Boolean = false) : Screen
+
+    @Serializable
+    data class FileManagerEditor(val root: FileManagerRoot, val path: String) : Screen
 
     @Serializable
     data class SkillDetail(val skillName: String) : Screen

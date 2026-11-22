@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { AlertTriangle, Loader2, X } from "lucide-react";
+import { AlertTriangle, Gauge, Loader2, ScrollText, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { compressErrorKey } from "~/components/compress-dialog";
@@ -16,12 +16,17 @@ interface ConversationNoticesProps {
   compressFailure: CompressStateDto | null;
   sizeInfo: ConversationSizeInfo;
   sizeWarningDismissed: boolean;
+  isCliSession?: boolean;
   cancelling: boolean;
   onCancelCompression: () => void;
   onOpenCompress: () => void;
   onDismissFailure: () => void;
   onDismissSizeWarning: () => void;
   onNewConversation: () => void;
+  /** "Notify only" hint from the server; null when there is nothing to suggest. */
+  compressSuggestion?: { percent: number; exact: boolean } | null;
+  onDismissSuggestion?: () => void;
+  onOpenReview?: () => void;
 }
 
 function Notice({
@@ -59,15 +64,20 @@ export function ConversationNotices({
   compressFailure,
   sizeInfo,
   sizeWarningDismissed,
+  isCliSession = false,
   cancelling,
   onCancelCompression,
   onOpenCompress,
   onDismissFailure,
   onDismissSizeWarning,
   onNewConversation,
+  compressSuggestion = null,
+  onDismissSuggestion,
+  onOpenReview,
 }: ConversationNoticesProps) {
   const { t } = useTranslation("page");
   const running = compressState?.status === "running";
+  const awaitingReview = compressState?.status === "awaiting_review";
 
   return (
     <>
@@ -87,12 +97,64 @@ export function ConversationNotices({
             </Button>
           }
         >
-          {compressState?.origin === "app"
-            ? t("conversations.compress.running_from_app")
-            : t("conversations.compress.running")}
+          {compressState?.chunked && (compressState.totalChunks ?? 0) > 0
+            ? t("conversations.compress.running_chunked", {
+                current: Math.min((compressState.completedChunks ?? 0) + 1, compressState.totalChunks!),
+                total: compressState.totalChunks!,
+              })
+            : compressState?.origin === "app"
+              ? t("conversations.compress.running_from_app")
+              : compressState?.origin === "auto"
+                ? t("conversations.compress.running_auto")
+                : t("conversations.compress.running")}
           <span className="block text-xs text-muted-foreground">
             {t("conversations.compress.running_hint")}
           </span>
+        </Notice>
+      ) : null}
+
+      {awaitingReview ? (
+        <Notice
+          tone="info"
+          icon={<ScrollText className="size-4" />}
+          actions={
+            <>
+              <Button type="button" size="sm" variant="ghost" onClick={onOpenReview} data-testid="compress-review-open">
+                {t("conversations.compress.review_open")}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" disabled={cancelling} onClick={onCancelCompression}>
+                {t("conversations.compress.review_discard")}
+              </Button>
+            </>
+          }
+        >
+          {t("conversations.compress.review_ready")}
+        </Notice>
+      ) : null}
+
+      {!running && !awaitingReview && compressSuggestion && !isCliSession ? (
+        <Notice
+          tone="warning"
+          icon={<Gauge className="size-4" />}
+          actions={
+            <>
+              <Button type="button" size="sm" variant="ghost" onClick={onOpenCompress} data-testid="compress-suggestion-open">
+                {t("conversations.compress.suggestion_action")}
+              </Button>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t("conversations.compress.dismiss")}
+                onClick={onDismissSuggestion}
+              >
+                <X className="size-4" />
+              </Button>
+            </>
+          }
+        >
+          {(compressSuggestion.exact ? "" : "≈ ") +
+            t("conversations.compress.suggestion", { percent: compressSuggestion.percent })}
         </Notice>
       ) : null}
 
@@ -127,7 +189,7 @@ export function ConversationNotices({
         </Notice>
       ) : null}
 
-      {!running && sizeInfo.showWarning && !sizeWarningDismissed ? (
+      {!running && !isCliSession && sizeInfo.showWarning && !sizeWarningDismissed ? (
         <Notice
           tone="warning"
           icon={<AlertTriangle className="size-4" />}

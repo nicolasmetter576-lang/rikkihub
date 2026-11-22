@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
+import androidx.compose.material3.MaterialTheme
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -67,6 +69,7 @@ import me.rerere.rikkihub.ui.pages.setting.components.typeName
 import me.rerere.rikkihub.ui.theme.CustomColors
 import org.koin.androidx.compose.koinViewModel
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.theme.AppSpacing
 
 private enum class MediaProviderDetailTab(
     override val icon: ImageVector,
@@ -135,6 +138,7 @@ fun SettingMediaProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                         Text(text = name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 },
+                expandedHeight = AppTopBarHeight,
             )
         },
     ) { innerPadding ->
@@ -150,7 +154,7 @@ fun SettingMediaProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                     pagerState = pager,
                     tabs = MediaProviderDetailTab.entries,
                     modifier = Modifier.padding(vertical = 4.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    contentPadding = PaddingValues(horizontal = AppSpacing.sm),
                 )
 
                 HorizontalPager(
@@ -197,7 +201,7 @@ fun SettingMediaProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                         }
                     },
                 ) {
-                    Button(onClick = onSave) {
+                    Button(onClick = onSave, shape = MaterialTheme.shapes.medium) {
                         Row(
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically

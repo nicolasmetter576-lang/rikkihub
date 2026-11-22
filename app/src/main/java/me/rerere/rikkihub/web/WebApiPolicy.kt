@@ -96,6 +96,9 @@ const val WEB_ERROR_BAD_REQUEST = "WEB_BAD_REQUEST"
 /** Unhandled server failure; body is a fixed generic message, never a leak. */
 const val WEB_ERROR_INTERNAL = "WEB_INTERNAL_ERROR"
 
+/** CLI remote control requires web access password or localhost-only mode. */
+const val WEB_ERROR_CLI_CONTROL_FORBIDDEN = "WEB_CLI_CONTROL_FORBIDDEN"
+
 class WebTlsRequiredException : ApiException("HTTPS required", HttpStatusCode.Forbidden, WEB_ERROR_TLS_REQUIRED)
 
 class WebAuthDisabledException : ApiException(
@@ -134,6 +137,14 @@ class WebBadRequestApiException(message: String) : ApiException(
     errorCode = WEB_ERROR_BAD_REQUEST,
 )
 
+class WebCliControlForbiddenException(
+    message: String = "CLI remote control requires web access password or localhost-only mode",
+) : ApiException(
+    message = message,
+    status = HttpStatusCode.Forbidden,
+    errorCode = WEB_ERROR_CLI_CONTROL_FORBIDDEN,
+)
+
 // ---- Installable boundary ----
 
 /** Snapshot of the web-auth settings checked per request. */
@@ -142,7 +153,14 @@ data class WebAuthConfig(
     val accessPassword: String,
     /** Production listener is TLS-only. False exists for explicit loopback test/dev fixtures. */
     val requireHttps: Boolean = false,
+    val localhostOnly: Boolean = false,
 )
+
+fun requireCliControlAllowed(config: WebAuthConfig) {
+    if (!config.localhostOnly && webAuthState(config.jwtEnabled, config.accessPassword) != WebAuthState.ACTIVE) {
+        throw WebCliControlForbiddenException()
+    }
+}
 
 /**
  * Error serialization for the web API: stable JSON `{error, code, errorCode}`

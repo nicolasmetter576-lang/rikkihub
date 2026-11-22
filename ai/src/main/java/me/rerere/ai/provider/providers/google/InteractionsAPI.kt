@@ -20,21 +20,22 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
-import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.core.UsageUpdate
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.TextGenerationResult
+import me.rerere.ai.provider.rotationStrategyOrDefault
 import me.rerere.ai.provider.providers.PartGroup
 import me.rerere.ai.provider.providers.groupPartsByToolBoundary
+import me.rerere.ai.provider.providers.splitSystemPrompt
 import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.GoogleInteractionsMetadata
@@ -47,7 +48,11 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.metadataAs
 import me.rerere.ai.ui.toMetadata
-import me.rerere.ai.util.KeyRoulette
+import me.rerere.ai.util.CredentialLogTag
+import me.rerere.ai.util.CredentialPool
+import me.rerere.ai.util.HttpException
+import me.rerere.ai.util.PooledCredential
+import me.rerere.ai.util.apiKeyCandidates
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.configureSessionHeaders
 import me.rerere.ai.util.encodeBase64
@@ -55,6 +60,7 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.ai.util.parseErrorDetail
+import me.rerere.ai.util.parseRetryAfterMillis
 import me.rerere.ai.util.stringSafe
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonArrayOrNull
@@ -79,7 +85,7 @@ private const val TAG = "InteractionsAPI"
  */
 internal class InteractionsAPI(
     private val client: OkHttpClient,
-    private val keyRoulette: KeyRoulette = KeyRoulette.default(),
+    private val credentialPool: CredentialPool = CredentialPool(),
 ) {
     suspend fun generateText(
         providerSetting: ProviderSetting.Google,
@@ -87,15 +93,28 @@ internal class InteractionsAPI(
         params: TextGenerationParams,
     ): TextGenerationResult = withContext(Dispatchers.IO) {
         val requestBody = buildRequestBody(messages, params, stream = false)
-        val request = buildRequest(providerSetting, params, requestBody)
+        val candidates = providerSetting.apiKeyCandidates()
 
-        // await() waits for the response headers; reading the body can still block.
-        client.newCall(request).await().use { response ->
-            if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+        credentialPool.executeWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = candidates,
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            val request = buildRequest(providerSetting, params, requestBody, cred)
+
+            // await() waits for the response headers; reading the body can still block.
+            client.newCall(request).await().use { response ->
+                if (!response.isSuccessful) {
+                    throw HttpException(
+                        "Failed to get response: ${response.code} ${response.body.string()}",
+                        statusCode = response.code,
+                        retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After")),
+                    )
+                }
+                val bodyJson = json.parseToJsonElement(response.body.string()).jsonObject
+                parseInteraction(bodyJson, fallbackModel = params.model.modelId, knownToolNames = interactionsClientToolNames(requestBody))
             }
-            val bodyJson = json.parseToJsonElement(response.body.string()).jsonObject
-            parseInteraction(bodyJson, fallbackModel = params.model.modelId, knownToolNames = interactionsClientToolNames(requestBody))
         }
     }
 
@@ -103,11 +122,27 @@ internal class InteractionsAPI(
         providerSetting: ProviderSetting.Google,
         messages: List<UIMessage>,
         params: TextGenerationParams,
-    ): Flow<StreamChunk> = callbackFlow {
+    ): Flow<StreamChunk> {
         val requestBody = buildRequestBody(messages, params, stream = true)
-        val request = buildRequest(providerSetting, params, requestBody)
-
         Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
+        val candidates = providerSetting.apiKeyCandidates()
+        return credentialPool.streamWithFailover(
+            providerId = providerSetting.id.toString(),
+            modelId = params.model.modelId,
+            candidates = candidates,
+            strategy = providerSetting.rotationStrategyOrDefault(),
+        ) { cred ->
+            streamSingleRequest(providerSetting, params, requestBody, cred)
+        }
+    }
+
+    private fun streamSingleRequest(
+        providerSetting: ProviderSetting.Google,
+        params: TextGenerationParams,
+        requestBody: JsonObject,
+        credential: PooledCredential<String>,
+    ): Flow<StreamChunk> = callbackFlow {
+        val request = buildRequest(providerSetting, params, requestBody, credential)
 
         val decoder = InteractionsStreamDecoder(fallbackModel = params.model.modelId, knownToolNames = interactionsClientToolNames(requestBody))
 
@@ -183,6 +218,7 @@ internal class InteractionsAPI(
         providerSetting: ProviderSetting.Google,
         params: TextGenerationParams,
         requestBody: JsonObject,
+        credential: PooledCredential<String>,
     ): Request {
         val url = "${providerSetting.baseUrl}/interactions"
         return Request.Builder()
@@ -190,7 +226,12 @@ internal class InteractionsAPI(
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .configureSessionHeaders(url, params.resolvedSessionId(providerSetting))
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("x-goog-api-key", keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString()))
+            .addHeader("x-goog-api-key", credential.value)
+            .apply {
+                if (credential.displayLabel.isNotBlank()) {
+                    tag(CredentialLogTag::class.java, CredentialLogTag(credential.displayLabel))
+                }
+            }
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
     }
@@ -206,11 +247,11 @@ internal class InteractionsAPI(
 
         val outputsImage = params.model.outputModalities.contains(Modality.IMAGE)
 
-        val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
-        if (systemMessage != null && !outputsImage) {
+        val systemMessages = messages.splitSystemPrompt().system
+        if (systemMessages.isNotEmpty() && !outputsImage) {
             put(
                 "system_instruction",
-                systemMessage.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+                systemMessages.flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }.joinToString("\n") { it.text }
             )
         }
 
@@ -287,11 +328,11 @@ internal class InteractionsAPI(
     }
 
     internal fun buildInput(messages: List<UIMessage>): JsonArray = buildJsonArray {
-        messages
-            .filter { it.role != MessageRole.SYSTEM && (it.isValidToUpload() ||
+        messages.splitSystemPrompt().conversation
+            .filter { it.isValidToUpload() ||
                 (it.role == MessageRole.ASSISTANT && it.parts.any { part ->
                     part is UIMessagePart.Reasoning && !part.metadataAs<GoogleInteractionsMetadata>()?.signature.isNullOrEmpty()
-                })) }
+                }) }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
                     val indexed = indexedModelSteps(message)
@@ -548,7 +589,8 @@ internal class InteractionsAPI(
             model = interaction.stringOrNull("model") ?: fallbackModel.orEmpty(),
             message = messages.last(),
             finishReason = interaction.stringOrNull("status"),
-            usage = parseInteractionsUsage(interaction["usage"]?.jsonObjectOrNull),
+            usage = handler.usage,
+            hasCompleteUsage = handler.hasCompleteUsage,
         )
     }
 
@@ -589,14 +631,5 @@ internal fun JsonElement?.toInteractionsAnnotations(): List<UIMessageAnnotation>
         UIMessageAnnotation.UrlCitation(title = annotation.stringOrNull("title") ?: url, url = url)
     }
 
-internal fun parseInteractionsUsage(usage: JsonObject?): TokenUsage? {
-    if (usage == null) return null
-    fun count(key: String) = usage[key]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-    return TokenUsage(
-        promptTokens = count("total_input_tokens"),
-        // total_output_tokens 不包含思考 token
-        completionTokens = count("total_output_tokens") + count("total_thought_tokens"),
-        totalTokens = count("total_tokens"),
-        cachedTokens = count("total_cached_tokens"),
-    )
-}
+internal fun parseInteractionsUsage(usage: JsonObject?): UsageUpdate? =
+    GoogleUsageNormalizer().updateInteractions(usage)

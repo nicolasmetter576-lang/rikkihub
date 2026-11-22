@@ -134,3 +134,38 @@ data class ConversationCommandOp(
 ) : StoreOperation {
     override val store: StoreKind get() = StoreKind.MAIN_ROOM
 }
+
+/**
+ * One typed character write, executed on the main Room database through the character repository
+ * (revision CAS). Creating a character allocates its id at plan time; there is no delete here: removing a character
+ * (its card, picture and files) is left to the user in the app.
+ */
+@Serializable
+sealed interface CharacterStoreOp : StoreOperation {
+    override val store: StoreKind get() = StoreKind.MAIN_ROOM
+
+    @Serializable
+    data class Create(
+        val characterId: String,
+        /** Card fields as accepted by `CardPatch` (`name` required). */
+        val fields: kotlinx.serialization.json.JsonObject,
+        /** World books tied to the new character (ids of existing lorebooks). */
+        val extraBookIds: List<String> = emptyList(),
+        override val objectRefs: List<ObjectRef>,
+        override val summaryKey: String = "character_create",
+    ) : CharacterStoreOp
+
+    @Serializable
+    data class Patch(
+        val characterId: String,
+        /** The planned revision; a different current revision is a conflict. */
+        val expectedRevision: Long,
+        val fields: kotlinx.serialization.json.JsonObject,
+        /** Replaces the world books tied to the character besides the one from the card; null leaves them. */
+        val extraBookIds: List<String>? = null,
+        /** Unties the world book that came with the card (the book itself stays). */
+        val detachCardBook: Boolean = false,
+        override val objectRefs: List<ObjectRef>,
+        override val summaryKey: String = "character_patch",
+    ) : CharacterStoreOp
+}

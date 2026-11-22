@@ -1,6 +1,7 @@
 package me.rerere.rikkihub.data.mutation
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 import kotlin.uuid.Uuid
 
 /**
@@ -31,6 +32,12 @@ sealed interface ConversationMutationCommand {
         val clearFolder: Boolean = false,
         val modeInjectionIds: Set<String>? = null,
         val lorebookIds: Set<String>? = null,
+        /** 会话里的酒馆状态（作者注释 `note_*`、聊天变量 `variables`、定时状态 `timedWorldInfo`……）：给到的键写入，值为 null 的键去掉。 */
+        val tavernMetadata: JsonObject? = null,
+        /** 改绑到这个角色（必须是已存在的角色）；已有的消息不动，只是之后的请求和显示用新角色。 */
+        val characterId: String? = null,
+        /** 解除角色绑定，回到普通助手会话。 */
+        val clearCharacter: Boolean = false,
     ) : ConversationMutationCommand
 
     /** 新建普通会话；只允许有效普通 assistantId 与普通初始消息。 */

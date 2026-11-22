@@ -1,0 +1,640 @@
+[
+  {
+    "name": "chatbox-import-with-usage-but-no-finishedAt",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      }
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-estimate",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02"
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": 2000,
+      "tps": 25,
+      "estimated": true,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-exact-preferred",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "generationTimeMs": 500
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": 500,
+      "tps": 100,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-exact-zero-no-fallback",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "generationTimeMs": 0
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-exact-negative-no-fallback",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "generationTimeMs": -1
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-equal-timestamps",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:00"
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-backwards-timestamps",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T09:59:59"
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-explicit-null-marker-and-last-fallback",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": null,
+      "lastUsage": null
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": 2000,
+      "tps": 25,
+      "estimated": true,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "complete-two-steps",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 300,
+        "completionTokens": 50,
+        "totalTokens": 400,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": true,
+      "lastUsage": {
+        "promptTokens": 200,
+        "completionTokens": 30,
+        "totalTokens": 280,
+        "cachedTokens": 30
+      },
+      "stepCount": 2,
+      "generationTimeMs": 500
+    },
+    "expected": {
+      "contextTokens": 230,
+      "outputTokens": 50,
+      "durationMs": 500,
+      "tps": 100,
+      "estimated": false,
+      "steps": 2,
+      "usageComplete": true
+    }
+  },
+  {
+    "name": "complete-no-exact-time-no-estimate",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": true,
+      "lastUsage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      }
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": true
+    }
+  },
+  {
+    "name": "complete-exact-zero",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": true,
+      "lastUsage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "generationTimeMs": 0
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": true
+    }
+  },
+  {
+    "name": "complete-exact-negative",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": true,
+      "lastUsage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "generationTimeMs": -1
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": true
+    }
+  },
+  {
+    "name": "in-progress-snapshot",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "usageComplete": false,
+      "lastUsage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "generationTimeMs": 500
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": false
+    }
+  },
+  {
+    "name": "missing-finished-even-with-complete-and-exact",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "usageComplete": true,
+      "lastUsage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "generationTimeMs": 500
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": true
+    }
+  },
+  {
+    "name": "partial-last-step-unreported-no-current-snapshot",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": false,
+      "lastUsage": null,
+      "stepCount": 2,
+      "generationTimeMs": 5000
+    },
+    "expected": {
+      "contextTokens": null,
+      "outputTokens": 50,
+      "durationMs": 5000,
+      "tps": null,
+      "estimated": false,
+      "steps": 2,
+      "usageComplete": false
+    }
+  },
+  {
+    "name": "partial-earlier-step-current-snapshot-present",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": false,
+      "lastUsage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "stepCount": 2,
+      "generationTimeMs": 5000
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": 5000,
+      "tps": null,
+      "estimated": false,
+      "steps": 2,
+      "usageComplete": false
+    }
+  },
+  {
+    "name": "partial-total-only-is-not-output-zero",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 180,
+        "cachedTokens": 0
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": false,
+      "lastUsage": null,
+      "generationTimeMs": 1000
+    },
+    "expected": {
+      "contextTokens": null,
+      "outputTokens": null,
+      "durationMs": 1000,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": false
+    }
+  },
+  {
+    "name": "partial-input-only-is-not-output-zero",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 0,
+        "totalTokens": 100,
+        "cachedTokens": 0
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": false,
+      "lastUsage": null,
+      "generationTimeMs": 1000
+    },
+    "expected": {
+      "contextTokens": null,
+      "outputTokens": null,
+      "durationMs": 1000,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": false
+    }
+  },
+  {
+    "name": "complete-explicit-zero-output",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "cachedTokens": 0
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": true,
+      "lastUsage": {
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "cachedTokens": 0
+      },
+      "generationTimeMs": 1000
+    },
+    "expected": {
+      "contextTokens": 0,
+      "outputTokens": 0,
+      "durationMs": 1000,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": true
+    }
+  },
+  {
+    "name": "new-null-current-never-falls-back-to-total",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "usageComplete": true,
+      "lastUsage": null,
+      "generationTimeMs": 500
+    },
+    "expected": {
+      "contextTokens": null,
+      "outputTokens": 50,
+      "durationMs": 500,
+      "tps": 100,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": true
+    }
+  },
+  {
+    "name": "legacy-last-snapshot-not-aggregate",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:02",
+      "lastUsage": {
+        "promptTokens": 200,
+        "completionTokens": 30,
+        "totalTokens": 280,
+        "cachedTokens": 30
+      }
+    },
+    "expected": {
+      "contextTokens": 230,
+      "outputTokens": 50,
+      "durationMs": 2000,
+      "tps": 25,
+      "estimated": true,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-sub-millisecond-interval-no-rate",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00.000900000",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:00.001100000"
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": null,
+      "tps": null,
+      "estimated": false,
+      "steps": 1,
+      "usageComplete": null
+    }
+  },
+  {
+    "name": "legacy-nanosecond-borrow-truncates-interval",
+    "message": {
+      "role": "assistant",
+      "parts": [],
+      "createdAt": "2026-11-02T10:00:00.000900000",
+      "usage": {
+        "promptTokens": 100,
+        "completionTokens": 50,
+        "totalTokens": 180,
+        "cachedTokens": 30
+      },
+      "finishedAt": "2026-11-02T10:00:00.002100000"
+    },
+    "expected": {
+      "contextTokens": 150,
+      "outputTokens": 50,
+      "durationMs": 1,
+      "tps": 50000,
+      "estimated": true,
+      "steps": 1,
+      "usageComplete": null
+    }
+  }
+]

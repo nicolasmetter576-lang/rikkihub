@@ -1,10 +1,19 @@
 import * as React from "react";
-import { ChevronDown, ChevronRight, Moon, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowRightLeft, ChevronDown, ChevronRight, History, Moon, Pencil, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { cn } from "~/lib/utils";
@@ -46,6 +55,13 @@ export interface MemoryDreamStatus {
   lastError?: string | null;
   lastChangedPaths?: string[];
   lastDeletedPaths?: string[];
+  canBackfill?: boolean;
+}
+
+export interface GlobalMemoryImportableAssistant {
+  id: string;
+  name: string;
+  fileCount: number;
 }
 
 export interface MemoryFilesResponse {
@@ -53,7 +69,38 @@ export interface MemoryFilesResponse {
   maxBytes: number;
   files: MemoryFileSummary[];
   dream?: MemoryDreamStatus | null;
+  privateFileCount?: number | null;
+  globalFileCount?: number | null;
+  globalAssistantCount?: number | null;
+  globalAssistantNames?: string[] | null;
+  importableAssistants?: GlobalMemoryImportableAssistant[] | null;
 }
+
+export interface MemoryMigrationConflict {
+  path: string;
+  title: string;
+  sourceBytes: number;
+  targetBytes: number;
+  mergedBytes: number;
+  mergeExceedsLimit: boolean;
+}
+
+export interface MemoryMigrationPreview {
+  sourceCount: number;
+  newPaths: string[];
+  identicalPaths: string[];
+  conflicts: MemoryMigrationConflict[];
+}
+
+export interface MemoryMigrationResult {
+  copied: number;
+  merged: number;
+  overwritten: number;
+  skipped: number;
+  failedOversized?: string[];
+}
+
+type ConflictStrategy = "merge" | "skip" | "overwrite";
 
 /** Client mirror of MemoryFile.normalizePath: absolute, ends in .md, no empty/hidden segments. Null when invalid. */
 export function normalizeMemoryPath(raw: string): string | null {
@@ -96,6 +143,39 @@ type Editing = { path: string; version: string; content: string } | null;
  * never silently overwrites what dreaming changed in the meantime.
  */
 export function AssistantMemoryPanel({ assistantId, savedUseGlobal, draftUseGlobal }: AssistantMemoryPanelProps) {
+  return (
+    <MemoryStorePanel
+      mode="assistant"
+      base={`assistants/${assistantId}/memories`}
+      reloadKey={`${assistantId}:${savedUseGlobal}`}
+      savedUseGlobal={savedUseGlobal}
+      draftUseGlobal={draftUseGlobal}
+    />
+  );
+}
+
+/** Standalone manager for the shared global memory store (`__global__`). */
+export function GlobalMemoryPanel() {
+  return (
+    <MemoryStorePanel
+      mode="global"
+      base="memories/global"
+      reloadKey="global"
+      savedUseGlobal={true}
+      draftUseGlobal={true}
+    />
+  );
+}
+
+interface MemoryStorePanelProps {
+  mode: "assistant" | "global";
+  base: string;
+  reloadKey: string;
+  savedUseGlobal: boolean;
+  draftUseGlobal: boolean;
+}
+
+function MemoryStorePanel({ mode, base, reloadKey, savedUseGlobal, draftUseGlobal }: MemoryStorePanelProps) {
   const { t } = useTranslation("settings");
   const [data, setData] = React.useState<MemoryFilesResponse | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -104,8 +184,22 @@ export function AssistantMemoryPanel({ assistantId, savedUseGlobal, draftUseGlob
   const [creating, setCreating] = React.useState<{ path: string; content: string } | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<MemoryFileSummary | null>(null);
+
+  // Migration dialog state (assistant -> global, or global importing from a picked assistant)
+  const [migrateSource, setMigrateSource] = React.useState<{ previewUrl: string; executeUrl: string; label: string } | null>(null);
+  const [migratePreview, setMigratePreview] = React.useState<MemoryMigrationPreview | null>(null);
+  const [migrateLoading, setMigrateLoading] = React.useState(false);
+  const [migrateStrategy, setMigrateStrategy] = React.useState<ConflictStrategy>("merge");
+  const [migrateSyncMarks, setMigrateSyncMarks] = React.useState(true);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+
+  // Backfill dialog state
+  const [backfillOpen, setBackfillOpen] = React.useState(false);
+  const [backfillDays, setBackfillDays] = React.useState<7 | 30>(30);
+  const [backfillCount, setBackfillCount] = React.useState<{ candidates: number; maxPerRun: number } | null>(null);
+  const [backfillCounting, setBackfillCounting] = React.useState(false);
+
   const requestIdRef = React.useRef(0);
-  const base = `assistants/${assistantId}/memories`;
   const maxBytes = data?.maxBytes ?? MEMORY_FILE_MAX_BYTES;
 
   const load = React.useCallback(() => {
@@ -134,7 +228,7 @@ export function AssistantMemoryPanel({ assistantId, savedUseGlobal, draftUseGlob
 
   React.useEffect(() => {
     load();
-  }, [load, savedUseGlobal]);
+  }, [load, reloadKey]);
 
   React.useEffect(() => {
     const onFocus = () => load();
@@ -148,6 +242,53 @@ export function AssistantMemoryPanel({ assistantId, savedUseGlobal, draftUseGlob
     const timer = window.setInterval(load, DREAM_POLL_MS);
     return () => window.clearInterval(timer);
   }, [dreaming, load]);
+
+  React.useEffect(() => {
+    if (!migrateSource) return;
+    let active = true;
+    setMigrateLoading(true);
+    setMigratePreview(null);
+    setMigrateStrategy("merge");
+    setMigrateSyncMarks(true);
+    api
+      .get<MemoryMigrationPreview>(migrateSource.previewUrl)
+      .then((preview) => {
+        if (active) setMigratePreview(preview);
+      })
+      .catch((error) => {
+        if (active) {
+          reportSettingsError(error, t("assistants.memory.migrate_failed"));
+          setMigrateSource(null);
+        }
+      })
+      .finally(() => {
+        if (active) setMigrateLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [migrateSource, t]);
+
+  React.useEffect(() => {
+    if (!backfillOpen) return;
+    let active = true;
+    setBackfillCounting(true);
+    setBackfillCount(null);
+    api
+      .get<{ candidates: number; maxPerRun: number }>(`${base}/backfill/count?days=${backfillDays}`)
+      .then((res) => {
+        if (active) setBackfillCount(res);
+      })
+      .catch((error) => {
+        if (active) reportSettingsError(error, t("assistants.memory.dream_failed_to_start"));
+      })
+      .finally(() => {
+        if (active) setBackfillCounting(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [backfillOpen, backfillDays, base, t]);
 
   const fileUrl = (path: string) => `${base}/file?path=${encodeURIComponent(path)}`;
 
@@ -269,25 +410,121 @@ export function AssistantMemoryPanel({ assistantId, savedUseGlobal, draftUseGlob
     }
   };
 
+  const stopDream = async () => {
+    setBusy(true);
+    try {
+      await api.delete(`${base}/dream`);
+      load();
+    } catch (error) {
+      reportSettingsError(error, t("assistants.memory.dream_failed_to_start"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runBackfill = async () => {
+    setBusy(true);
+    try {
+      await api.post(`${base}/backfill`, { days: backfillDays });
+      setBackfillOpen(false);
+      load();
+    } catch (error) {
+      reportSettingsError(error, t("assistants.memory.dream_failed_to_start"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runMigration = async () => {
+    if (!migrateSource) return;
+    setBusy(true);
+    try {
+      const result = await api.post<MemoryMigrationResult>(migrateSource.executeUrl, {
+        strategy: migrateStrategy,
+        syncMarks: migrateSyncMarks,
+      });
+      const summary = t("assistants.memory.migrate_result", {
+        copied: result.copied,
+        merged: result.merged,
+        overwritten: result.overwritten,
+        skipped: result.skipped,
+      });
+      if (result.failedOversized && result.failedOversized.length > 0) {
+        toast.warning(`${summary} (${t("assistants.memory.migrate_oversized_short", { paths: result.failedOversized.join(", ") })})`);
+      } else {
+        toast.success(summary);
+      }
+      setMigrateSource(null);
+      setMigratePreview(null);
+      load();
+    } catch (error) {
+      reportSettingsError(error, t("assistants.memory.migrate_failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const scope = data?.scope ?? (savedUseGlobal ? "global" : "assistant");
   const files = data?.files ?? [];
   const dream = data?.dream ?? null;
+  const privateFileCount = data?.privateFileCount ?? 0;
+  const importableAssistants = data?.importableAssistants ?? [];
+  const globalAssistantNames = data?.globalAssistantNames ?? [];
+
+  const openSelfMigrate = () =>
+    setMigrateSource({
+      previewUrl: `${base}/migrate-to-global/preview`,
+      executeUrl: `${base}/migrate-to-global`,
+      label: t("assistants.memory.scope_assistant"),
+    });
+
+  const oversizedOnMerge = migratePreview?.conflicts.filter((c) => c.mergeExceedsLimit).map((c) => c.path) ?? [];
+  const canSubmitMigration =
+    !!migratePreview &&
+    !migrateLoading &&
+    !busy &&
+    (migratePreview.newPaths.length > 0 ||
+      (migratePreview.conflicts.length > 0 && migrateStrategy !== "skip") ||
+      (migrateSyncMarks && migratePreview.sourceCount > 0));
 
   return (
-    <section className="space-y-3 rounded-xl border p-4">
+    <section className="space-y-3 rounded-xl border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="space-y-0.5">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold">{t("assistants.memory.title")}</h2>
+            <h2 className="text-sm font-semibold">
+              {mode === "global" ? t("assistants.memory.global_title") : t("assistants.memory.title")}
+            </h2>
             <Badge variant="secondary">
               {scope === "global" ? t("assistants.memory.scope_global") : t("assistants.memory.scope_assistant")}
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            {scope === "global" ? t("assistants.memory.scope_global_hint") : t("assistants.memory.scope_assistant_hint")}
+            {mode === "global"
+              ? globalAssistantNames.length > 0
+                ? t("assistants.memory.global_used_by", {
+                    count: globalAssistantNames.length,
+                    names: globalAssistantNames.slice(0, 4).join(", ") + (globalAssistantNames.length > 4 ? "…" : ""),
+                  })
+                : t("assistants.memory.global_no_assistants")
+              : scope === "global"
+                ? t("assistants.memory.scope_global_hint")
+                : t("assistants.memory.scope_assistant_hint")}
           </p>
         </div>
         <div className="flex items-center gap-1">
+          {mode === "assistant" && privateFileCount > 0 ? (
+            <Button type="button" variant="outline" size="sm" onClick={openSelfMigrate}>
+              <ArrowRightLeft className="size-3.5" />
+              {t("assistants.memory.migrate_action")}
+            </Button>
+          ) : null}
+          {mode === "global" && importableAssistants.length > 0 ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
+              <ArrowRightLeft className="size-3.5" />
+              {t("assistants.memory.import_from_assistant")}
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="ghost"
@@ -312,10 +549,19 @@ export function AssistantMemoryPanel({ assistantId, savedUseGlobal, draftUseGlob
         </div>
       </div>
 
-      {draftUseGlobal !== savedUseGlobal ? (
+      {mode === "assistant" && draftUseGlobal !== savedUseGlobal ? (
         <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
           {draftUseGlobal ? t("assistants.memory.switch_to_global_after_save") : t("assistants.memory.switch_to_assistant_after_save")}
         </p>
+      ) : null}
+
+      {mode === "assistant" && scope === "global" && privateFileCount > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          <span>{t("assistants.memory.private_preserved", { count: privateFileCount })}</span>
+          <Button type="button" size="sm" variant="secondary" onClick={openSelfMigrate}>
+            {t("assistants.memory.migrate_action")}
+          </Button>
+        </div>
       ) : null}
 
       {dream?.enabled ? (
@@ -327,13 +573,30 @@ export function AssistantMemoryPanel({ assistantId, savedUseGlobal, draftUseGlob
             </p>
             <p className="text-xs break-words text-muted-foreground">{dreamSummary(dream, t)}</p>
           </div>
-          <Button type="button" size="sm" variant="outline" disabled={busy || dream.running} onClick={() => void dreamNow()}>
-            {dream.running
-              ? t("assistants.memory.dreaming")
-              : dream.lastError
-                ? t("assistants.memory.dream_retry")
-                : t("assistants.memory.dream_now")}
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {!dream.running && dream.canBackfill !== false ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setBackfillOpen(true)}
+              >
+                <History className="size-3.5" />
+                {t("assistants.memory.backfill_action")}
+              </Button>
+            ) : null}
+            {dream.running ? (
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void stopDream()}>
+                <Square className="size-3.5" />
+                {t("assistants.memory.dream_stop")}
+              </Button>
+            ) : (
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void dreamNow()}>
+                {dream.lastError ? t("assistants.memory.dream_retry") : t("assistants.memory.dream_now")}
+              </Button>
+            )}
+          </div>
         </div>
       ) : null}
 
@@ -457,10 +720,195 @@ export function AssistantMemoryPanel({ assistantId, savedUseGlobal, draftUseGlob
           if (!open) setDeleteTarget(null);
         }}
         title={t("assistants.memory.delete_title")}
-        description={deleteTarget ? deleteTarget.path : ""}
+        description={
+          deleteTarget
+            ? scope === "global"
+              ? `${deleteTarget.path} — ${t("assistants.memory.global_delete_warning")}`
+              : deleteTarget.path
+            : ""
+        }
         onConfirm={remove}
         loading={busy}
       />
+
+      {/* Pick source assistant on Global Memory page */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("assistants.memory.import_pick_title")}</DialogTitle>
+            <DialogDescription>{t("assistants.memory.migrate_preserve_source")}</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-72 space-y-1 overflow-auto">
+            {importableAssistants.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm hover:bg-accent"
+                onClick={() => {
+                  setPickerOpen(false);
+                  setMigrateSource({
+                    previewUrl: `memories/global/import/${item.id}/preview`,
+                    executeUrl: `memories/global/import/${item.id}`,
+                    label: item.name || t("common.unnamed"),
+                  });
+                }}
+              >
+                <span className="truncate font-medium">{item.name || t("common.unnamed")}</span>
+                <Badge variant="secondary">{item.fileCount}</Badge>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Migration preview & conflict strategy dialog */}
+      <Dialog
+        open={migrateSource !== null}
+        onOpenChange={(open) => {
+          if (!open && !busy) {
+            setMigrateSource(null);
+            setMigratePreview(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("assistants.memory.migrate_dialog_title")}</DialogTitle>
+            <DialogDescription>
+              {migrateSource ? t("assistants.memory.migrate_dialog_source", { name: migrateSource.label }) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            {migrateLoading || !migratePreview ? (
+              <p className="text-muted-foreground">{t("common.loading")}</p>
+            ) : migratePreview.sourceCount === 0 ? (
+              <p className="text-muted-foreground">{t("assistants.memory.migrate_empty_source")}</p>
+            ) : (
+              <>
+                <p>
+                  {t("assistants.memory.migrate_summary", {
+                    total: migratePreview.sourceCount,
+                    added: migratePreview.newPaths.length,
+                    identical: migratePreview.identicalPaths.length,
+                    conflicts: migratePreview.conflicts.length,
+                  })}
+                </p>
+
+                {migratePreview.conflicts.length > 0 ? (
+                  <div className="space-y-2 rounded-md border p-3">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {t("assistants.memory.migrate_conflicts_label")}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {migratePreview.conflicts
+                        .slice(0, 6)
+                        .map((c) => c.path)
+                        .join(", ")}
+                      {migratePreview.conflicts.length > 6 ? ` +${migratePreview.conflicts.length - 6}` : ""}
+                    </p>
+                    <div className="space-y-1.5 pt-1">
+                      {(["merge", "skip", "overwrite"] as const).map((opt) => (
+                        <label key={opt} className="flex cursor-pointer items-start gap-2 text-xs">
+                          <input
+                            type="radio"
+                            name="memory-migrate-strategy"
+                            className="mt-0.5"
+                            checked={migrateStrategy === opt}
+                            onChange={() => setMigrateStrategy(opt)}
+                          />
+                          <span>
+                            <span className={cn("block font-medium", opt === "overwrite" && migrateStrategy === "overwrite" && "text-destructive")}>
+                              {t(`assistants.memory.migrate_strategy_${opt}`)}
+                            </span>
+                            <span className="block text-muted-foreground">
+                              {t(`assistants.memory.migrate_strategy_${opt}_desc`)}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {migrateStrategy === "merge" && oversizedOnMerge.length > 0 ? (
+                      <p className="text-xs text-destructive">
+                        {t("assistants.memory.migrate_oversized_warn", { paths: oversizedOnMerge.join(", ") })}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <label className="flex cursor-pointer items-start gap-2 text-xs">
+                  <Checkbox
+                    checked={migrateSyncMarks}
+                    onCheckedChange={(v) => setMigrateSyncMarks(v === true)}
+                  />
+                  <span>
+                    <span className="block font-medium">{t("assistants.memory.migrate_sync_marks")}</span>
+                    <span className="block text-muted-foreground">{t("assistants.memory.migrate_sync_marks_desc")}</span>
+                  </span>
+                </label>
+
+                <p className="text-xs text-muted-foreground">{t("assistants.memory.migrate_preserve_source")}</p>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => setMigrateSource(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" disabled={!canSubmitMigration} onClick={() => void runMigration()}>
+              {busy ? t("common.saving") : t("assistants.memory.migrate_confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Backfill dialog */}
+      <Dialog open={backfillOpen} onOpenChange={setBackfillOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("assistants.memory.backfill_title")}</DialogTitle>
+            <DialogDescription>
+              {t("assistants.memory.backfill_desc", { max: backfillCount?.maxPerRun ?? 20 })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="flex gap-2">
+              {([7, 30] as const).map((days) => (
+                <Button
+                  key={days}
+                  type="button"
+                  size="sm"
+                  variant={backfillDays === days ? "default" : "outline"}
+                  onClick={() => setBackfillDays(days)}
+                >
+                  {t("assistants.memory.backfill_days", { days })}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {backfillCounting || !backfillCount
+                ? t("common.loading")
+                : backfillCount.candidates === 0
+                  ? t("assistants.memory.backfill_none")
+                  : t("assistants.memory.backfill_found", {
+                      total: backfillCount.candidates,
+                      limit: Math.min(backfillCount.candidates, backfillCount.maxPerRun),
+                    })}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => setBackfillOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={busy || backfillCounting || (backfillCount?.candidates ?? 0) === 0}
+              onClick={() => void runBackfill()}
+            >
+              {t("assistants.memory.backfill_start")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

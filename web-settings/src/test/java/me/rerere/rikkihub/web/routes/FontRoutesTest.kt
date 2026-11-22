@@ -6,6 +6,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import me.rerere.rikkihub.data.datastore.DisplaySetting
+import me.rerere.rikkihub.data.datastore.EditorColorPair
 import me.rerere.rikkihub.data.datastore.EditorFontIds
 import me.rerere.rikkihub.data.datastore.EditorTypography
 import me.rerere.rikkihub.data.fonts.DOWNLOADED_FONTS_DIR
@@ -38,6 +39,9 @@ class FontRoutesTest {
             current.copy(letterSpacing = 0.05f, lineHeight = 2f),
             mergeEditorTypography(current, body("""{"letterSpacing":0.05,"lineHeight":2}""")),
         )
+        // App-only fields (brightness, colors) are not the web's to change and stay as they were
+        val app = EditorTypography.APP_DEFAULT.copy(textBrightness = 0.7f, textColor = EditorColorPair(dark = 0xFFE0D0B0L), quoteHighlight = true)
+        assertEquals(app.copy(fontSize = 16f), mergeEditorTypography(app, body("""{"fontSize":16}""")))
     }
 
     @Test

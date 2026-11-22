@@ -10,7 +10,7 @@ const chart: LocalToolType = "chart_display";
 const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 test("chart is the eighth opt-in local option with no implicit defaults", () => {
-  assert.deepEqual(LOCAL_TOOL_TYPES, ["javascript_engine", "time_info", "clipboard", "tts", "ask_user", "screen_time", "calendar", chart]);
+  assert.deepEqual(LOCAL_TOOL_TYPES, ["javascript_engine", "time_info", "clipboard", "tts", "ask_user", "screen_time", "calendar", chart, "pseudo_io"]);
   assert.equal(normalizeLocalTools(undefined), undefined);
   assert.deepEqual(normalizeLocalTools([]), []);
   assert.equal(hasLocalTool(undefined, chart), false);

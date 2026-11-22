@@ -172,10 +172,10 @@ internal fun WorkspaceZaizaoSheet(
                 }
                 if (!entry.started) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = onExpandSentence, modifier = Modifier.testTag("zaizao-expand-sentence")) {
+                        OutlinedButton(onClick = onExpandSentence, modifier = Modifier.testTag("zaizao-expand-sentence"), shape = MaterialTheme.shapes.medium) {
                             Text(stringResource(R.string.tuiqiao_expand_sentence))
                         }
-                        OutlinedButton(onClick = onExpandParagraph, modifier = Modifier.testTag("zaizao-expand-paragraph")) {
+                        OutlinedButton(onClick = onExpandParagraph, modifier = Modifier.testTag("zaizao-expand-paragraph"), shape = MaterialTheme.shapes.medium) {
                             Text(stringResource(R.string.tuiqiao_expand_paragraph))
                         }
                     }

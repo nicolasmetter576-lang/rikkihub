@@ -4,12 +4,11 @@ import android.media.ExifInterface
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.util.Base64
-import android.util.Base64OutputStream
 import androidx.core.net.toUri
 import me.rerere.ai.ui.UIMessagePart
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.Base64
 
 private val supportedTypes = setOf(
     "image/jpeg",
@@ -47,6 +46,13 @@ internal fun mapExifOrientationToTransform(orientation: Int): ExifTransformType 
     -> ExifTransformType.NONE
 
     else -> ExifTransformType.NONE
+}
+
+fun File.encodeLocalImageBase64(): Result<EncodedImage> = runCatching {
+    require(isFile) { "Image file does not exist: $absolutePath" }
+    val mimeType = guessMimeType().getOrThrow()
+    val (encoded, outputMimeType) = compressAndEncode(mimeType)
+    EncodedImage(base64 = encoded, mimeType = outputMimeType)
 }
 
 fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<EncodedImage> = runCatching {
@@ -114,17 +120,29 @@ fun UIMessagePart.Audio.encodeBase64(withPrefix: Boolean = true): Result<String>
     }
 }
 
-private fun File.compressAndEncode(
+internal fun File.compressAndEncode(
     mimeType: String,
     maxDimension: Int = 10_000,
     maxPixels: Long = 16_000_000L,
-    quality: Int = 85
+    quality: Int = 85,
+    compressJpeg: File.(Int, Long, Int) -> ByteArray = { d, p, q -> compressToJpeg(d, p, q) },
 ): Pair<String, String> {
     // GIF 保持原样（可能是动图）
     if (mimeType == "image/gif") {
         return Pair(encodeToBase64Streaming(), mimeType)
     }
 
+    val cacheKey = "$absolutePath|${lastModified()}|${length()}|$maxDimension|$maxPixels|$quality"
+    ImageEncodeCache.get(cacheKey)
+        ?.let { cached -> runCatching { cached.encodeToBase64Streaming() }.getOrNull() }
+        ?.let { encoded -> return Pair(encoded, "image/jpeg") }
+
+    val jpegBytes = compressJpeg(maxDimension, maxPixels, quality)
+    ImageEncodeCache.put(cacheKey, jpegBytes)
+    return Pair(Base64.getEncoder().encodeToString(jpegBytes), "image/jpeg")
+}
+
+private fun File.compressToJpeg(maxDimension: Int, maxPixels: Long, quality: Int): ByteArray {
     // 读取图片尺寸
     val options = BitmapFactory.Options().apply {
         inJustDecodeBounds = true
@@ -144,12 +162,12 @@ private fun File.compressAndEncode(
     val normalizedBitmap = normalizeByExif(bitmap)
 
     return try {
-        val byteArrayOutputStream = ByteArrayOutputStream()
+        val outputStream = ByteArrayOutputStream()
         // 强制使用 JPEG 格式，因为很多提供商不支持 webp
-        Base64OutputStream(byteArrayOutputStream, Base64.NO_WRAP).use { base64Stream ->
-            normalizedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, base64Stream)
+        check(normalizedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)) {
+            "Failed to compress image: $absolutePath"
         }
-        Pair(byteArrayOutputStream.toString(Charsets.ISO_8859_1.name()), "image/jpeg")
+        outputStream.toByteArray()
     } finally {
         if (normalizedBitmap !== bitmap) {
             normalizedBitmap.recycle()
@@ -197,7 +215,7 @@ private fun applyExifTransform(bitmap: Bitmap, transform: ExifTransformType): Bi
 
 private fun File.encodeToBase64Streaming(): String {
     val byteArrayOutputStream = ByteArrayOutputStream()
-    Base64OutputStream(byteArrayOutputStream, Base64.NO_WRAP).use { base64Stream ->
+    Base64.getEncoder().wrap(byteArrayOutputStream).use { base64Stream ->
         inputStream().use { input ->
             input.copyTo(base64Stream, bufferSize = 8 * 1024)
         }

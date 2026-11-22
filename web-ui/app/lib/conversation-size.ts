@@ -1,4 +1,5 @@
 import type { MessageDto, MessageNodeDto } from "~/types";
+import { contextTokensOf, lastRequestUsage } from "./message-usage";
 
 // Same thresholds as the app (ChatSizeChecker.kt); both must be exceeded to warn.
 export const MESSAGE_NODE_WARNING_THRESHOLD = 768;
@@ -40,8 +41,10 @@ function freshLastReply(nodes: MessageNodeDto[]): MessageDto | null {
 
 export function conversationSizeInfo(nodes: MessageNodeDto[]): ConversationSizeInfo {
   const reply = freshLastReply(nodes);
-  // Multi-step replies sum usage across steps; the context size is the last request's input.
-  const lastAssistantInputTokens = reply ? ((reply.lastUsage ?? reply.usage)?.promptTokens ?? 0) : 0;
+  // Never substitute accumulated/older usage for a missing current logical-step snapshot.
+  const usage = reply ? lastRequestUsage(reply) : null;
+  // Zero here only suppresses the warning; the context display returns null for unknown usage.
+  const lastAssistantInputTokens = contextTokensOf(usage) !== null ? usage!.promptTokens : 0;
   return {
     nodeCount: nodes.length,
     lastAssistantInputTokens,
@@ -52,11 +55,11 @@ export function conversationSizeInfo(nodes: MessageNodeDto[]): ConversationSizeI
 }
 
 /**
- * Context used by the latest reply (last request's prompt + completion), or null when there is no
- * reply or a compression checkpoint was inserted after it (same as the app's lastContextTokens).
+ * Latest logical-step reference (prompt + completion), not the next request's exact capacity.
+ * Null if the latest reply has no current snapshot or a checkpoint makes it stale. Never search
+ * backwards for an older reported reply (same as the app's lastContextTokens).
  */
 export function lastContextTokens(nodes: MessageNodeDto[]): number | null {
   const reply = freshLastReply(nodes);
-  const usage = reply ? (reply.lastUsage ?? reply.usage) : null;
-  return usage ? usage.promptTokens + usage.completionTokens : null;
+  return contextTokensOf(reply ? lastRequestUsage(reply) : null);
 }

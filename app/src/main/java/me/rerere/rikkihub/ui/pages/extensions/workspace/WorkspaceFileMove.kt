@@ -17,7 +17,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -52,6 +51,7 @@ import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceTransferMode
 import me.rerere.workspace.WorkspaceTransferProgress
 import me.rerere.workspace.WorkspaceTransferResult
+import me.rerere.rikkihub.ui.components.ui.CompactListItem
 
 /**
  * [sourcePath]（相对源 FILES 根）能否移动/复制进 [destinationDir]（相对目标 FILES 根，"" 为根）。
@@ -201,6 +201,7 @@ internal fun WorkspaceTransferSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("workspace_transfer_workspace"),
+                            shape = MaterialTheme.shapes.medium,
                     ) {
                         Text(
                             text = targetName,
@@ -276,7 +277,7 @@ internal fun WorkspaceTransferSheet(
                     .heightIn(max = 320.dp),
             ) {
                 items(dirs, key = { it.path }) { dir ->
-                    ListItem(
+                    CompactListItem(
                         headlineContent = {
                             Text(
                                 text = dir.name,
@@ -333,7 +334,7 @@ internal fun WorkspaceTransferSheet(
                 }
                 FilledTonalButton(
                     enabled = canConfirm,
-                    onClick = { onConfirm(targetWorkspaceId, browsePath) },
+                    onClick = { onConfirm(targetWorkspaceId, browsePath) }
                 ) {
                     Text(
                         stringResource(

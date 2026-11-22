@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.data.datastore
 
+import me.rerere.rikkihub.data.model.mainPromptText
+import me.rerere.rikkihub.data.model.AssistantPresets
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,12 +74,12 @@ class SettingsLatestEditTest {
     }
 
     @Test fun assistantEditorAppliesOnlyTheFieldsItChanged() = runBlocking<Unit> {
-        val base = Assistant(name = "A", systemPrompt = "old prompt", temperature = 0.5f)
+        val base = Assistant(name = "A", promptPreset = AssistantPresets.withSystemPrompt("old prompt"), temperature = 0.5f)
         // 别处刚改了温度，页面还拿着旧的助手
         val latest = base.copy(temperature = 0.9f)
-        val edited = base.copy(systemPrompt = "new prompt")
+        val edited = base.copy(promptPreset = AssistantPresets.withSystemPrompt("new prompt"))
         val merged = mergeObjectEdits(Assistant.serializer(), base, edited, latest)
-        assertEquals("new prompt", merged.systemPrompt)
+        assertEquals("new prompt", merged.mainPromptText)
         assertEquals(0.9f, merged.temperature)
         assertEquals("A", merged.name)
         assertSame(latest, mergeObjectEdits(Assistant.serializer(), base, base, latest))

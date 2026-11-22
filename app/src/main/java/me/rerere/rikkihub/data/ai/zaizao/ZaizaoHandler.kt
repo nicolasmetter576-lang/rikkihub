@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.data.ai.zaizao
 
+import me.rerere.rikkihub.data.ai.UsageRecorder
+import me.rerere.rikkihub.data.ai.UsageSource
+import me.rerere.rikkihub.data.ai.UsageTag
+import me.rerere.rikkihub.data.ai.wrapOrSelf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -33,12 +37,15 @@ data class ZaizaoProgress(
  * 调模型生成一稿。模型：再造设置里指定了且仍存在就用它，否则当前助手的对话模型（助手没指定就用全局对话模型）。
  * 不带助手系统提示词和任何工具；推理等级、温度、Top P、最大输出取再造设置。内容有变化就发一次 [ZaizaoProgress]。
  */
-class ZaizaoHandler(private val providerManager: ProviderManager) {
+class ZaizaoHandler(
+    private val providerManager: ProviderManager,
+    private val usageRecorder: UsageRecorder? = null,
+) {
     fun generate(settings: Settings, prepared: ZaizaoPrepared): Flow<ZaizaoProgress> = flow {
         val config = settings.zaizao
         val model = resolveModel(settings) ?: throw ZaizaoException(ZaizaoException.Reason.NO_MODEL)
         val provider = model.findProvider(settings.providers) ?: throw ZaizaoException(ZaizaoException.Reason.NO_MODEL)
-        val handler = providerManager.getProviderByType(provider)
+        val handler = usageRecorder.wrapOrSelf(providerManager.getProviderByType(provider), UsageTag(UsageSource.ZAIZAO))
         var messages = prepared.messages
         val chunks = StreamChunkHandler(model)
         var last: ZaizaoProgress? = null

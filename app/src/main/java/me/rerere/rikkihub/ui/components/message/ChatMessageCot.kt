@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.components.message
 
+import me.rerere.rikkihub.data.ai.tools.local.PseudoIo
 import androidx.compose.ui.util.fastForEachIndexed
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkihub.data.ai.tools.local.ChartSpec
@@ -53,6 +54,8 @@ fun List<UIMessagePart>.groupMessageParts(): List<MessagePartBlock> {
             }
 
             is UIMessagePart.Tool -> {
+                // 伪工具读写的 read 只是等待用户输入的协议步骤，不显示
+                if (PseudoIo.isRead(part)) return@fastForEachIndexed
                 val chart = ChartSpec.fromTool(part)
                 if (chart != null) {
                     flushThinkingSteps()

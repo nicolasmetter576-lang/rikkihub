@@ -438,7 +438,8 @@ class GenerationLoopSnapshotBindingTest {
         val part = chunks.transcript().first { it.getTools().isNotEmpty() }.getTools().first()
         assertEquals("outcome_unknown", statusOf(part))
         assertEquals("true", part.firstOutputJson()?.get("started")?.jsonPrimitive?.content)
-        assertEquals(meta, part.metadata)
+        // 进度 metadata 保留，步界标记（循环打的）不被进度覆盖
+        assertEquals(JsonObject(meta + (me.rerere.ai.ui.TOOL_STEP_START_KEY to JsonPrimitive(true))), part.metadata)
         assertEquals(GenerationChunk.GenerationEnd.Reason.COMPLETED, chunks.endReason())
     }
 
@@ -510,6 +511,41 @@ class GenerationLoopSnapshotBindingTest {
         assertTrue(text.contains("/tool_outputs/"))
         val outDir = File(h.filesDir, "tool_outputs")
         assertTrue(outDir.isDirectory && outDir.listFiles()!!.isNotEmpty())
+    }
+
+    @Test
+    fun `reused tool call id keeps each persisted full output`() = runBlocking {
+        // Chat Completions 合成的 id（response:tool-N）在下一次请求里会再次出现
+        val outputs = ArrayDeque(listOf("A".repeat(40 * 1024), "B".repeat(40 * 1024)))
+        val tool = wsTool("writer") { listOf(UIMessagePart.Text(outputs.removeFirst())) }
+        val caps = WorkspaceRequestCapabilities(
+            workspaceId = "ws-1",
+            workspaceName = "ws",
+            harnessMinimal = false,
+            availableToolNames = mapOf(
+                "workspace_shell" to "workspace_shell",
+                "workspace_write_file" to "writer",
+            ),
+            exposedTargets = setOf("/tool_outputs"),
+            policyEpoch = 0,
+        )
+        val h = harness(
+            listOf(
+                toolStepScript("response:tool-0", "writer", "{}"),
+                toolStepScript("response:tool-0", "writer", "{}"),
+                textStepScript("done"),
+            )
+        )
+        val chunks = h.loop.collectAll(h.settings, h.model, snapshotProvider = snapshotQueue(snapshotOf(tool, caps = caps)))
+        val notices = chunks.transcript().flatMap { it.getTools() }
+            .map { it.output.filterIsInstance<UIMessagePart.Text>().first().text }
+        assertEquals(2, notices.size)
+        val outDir = File(h.filesDir, "tool_outputs")
+        val saved = notices.map { notice ->
+            val name = Regex("""Full output saved to: /tool_outputs/(\S+)""").find(notice)!!.groupValues[1]
+            File(outDir, name).readText()
+        }
+        assertEquals(listOf("A".repeat(40 * 1024), "B".repeat(40 * 1024)), saved)
     }
 
     // ---------------------------------------------------------------

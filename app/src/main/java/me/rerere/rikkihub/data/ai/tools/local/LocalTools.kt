@@ -57,6 +57,9 @@ class LocalTools(
         if (options.contains(LocalToolOption.ChartDisplay)) {
             tools.add(chartDisplayTool)
         }
+        if (options.contains(LocalToolOption.PseudoIo)) {
+            tools.addAll(buildPseudoIoTools())
+        }
         return tools
     }
 }

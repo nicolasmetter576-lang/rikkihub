@@ -3,6 +3,9 @@ import { useTranslation } from "react-i18next";
 
 import type { ChartDto, ChartSpecDto, ReasoningPart, ToolPart, UIMessagePart } from "~/types";
 
+import { applyDisplay } from "@overlay/lib/tavern";
+import { stripTitleFromParts } from "~/lib/message-title";
+
 import { ChainOfThought } from "./chain-of-thought";
 import { AudioPart } from "./parts/audio-part";
 import { ChartPart } from "./parts/chart-part";
@@ -41,6 +44,11 @@ type MessagePartBlock =
       index: number;
     };
 
+function isPseudoRead(part: ToolPart): boolean {
+  const marker = part.metadata?.pseudo_io as { kind?: unknown } | undefined;
+  return marker?.kind === "read";
+}
+
 export function groupMessageParts(
   parts: UIMessagePart[],
   charts?: ChartDto[] | null,
@@ -62,6 +70,8 @@ export function groupMessageParts(
     }
 
     if (part.type === "tool") {
+      // Pseudo-tool read/write: the read call only marks where the user's next message goes.
+      if (isPseudoRead(part)) return;
       const spec = chartByIndex.get(index);
       if (spec) {
         flushThinkingSteps();
@@ -82,9 +92,15 @@ export function groupMessageParts(
 
 interface MessagePartsProps {
   parts: UIMessagePart[];
+  /** Text to show instead of the stored one, by part index (MessageDto.display). */
+  display?: Record<string, string> | null;
   /** Server-validated charts of this message (MessageDto.charts). */
   charts?: ChartDto[] | null;
   loading?: boolean;
+  /** Workspace CLI sessions skip display-only regex projection. */
+  isCliSession?: boolean;
+  /** Role of the message: assistant text hides its per-turn title tag. */
+  role?: string;
   onToolApproval?: (
     toolCallId: string,
     approved: boolean,
@@ -124,9 +140,22 @@ function renderContentPart(
 }
 
 export const MessageParts = React.memo(
-  ({ parts, charts, loading = false, onToolApproval, onClickCitation }: MessagePartsProps) => {
+  ({
+    parts,
+    display,
+    charts,
+    loading = false,
+    isCliSession = false,
+    role,
+    onToolApproval,
+    onClickCitation,
+  }: MessagePartsProps) => {
     const { t } = useTranslation("message");
-    const groupedParts = React.useMemo(() => groupMessageParts(parts, charts), [parts, charts]);
+    const shownParts = React.useMemo(
+      () => stripTitleFromParts(isCliSession ? parts : applyDisplay(parts, display), role ?? "", loading),
+      [isCliSession, parts, display, role, loading],
+    );
+    const groupedParts = React.useMemo(() => groupMessageParts(shownParts, charts), [shownParts, charts]);
 
     return (
       <>
@@ -139,11 +168,20 @@ export const MessageParts = React.memo(
               (step) => step.type === "reasoning" && step.reasoning.finishedAt == null,
             );
             const enableAdaptiveWidth = isReasoningOnlyBlock && !hasLoadingReasoning;
+            const firstPendingIndex = block.steps.findIndex(
+              (step) =>
+                step.type === "tool" &&
+                step.tool.output.length === 0 &&
+                step.tool.approvalState.type === "pending",
+            );
+            const collapsedVisibleCount =
+              firstPendingIndex === -1 ? 2 : Math.max(2, block.steps.length - firstPendingIndex);
 
             return (
               <ChainOfThought
                 key={`thinking-${blockIndex}`}
                 className="my-1"
+                collapsedVisibleCount={collapsedVisibleCount}
                 collapsedAdaptiveWidth={enableAdaptiveWidth}
                 collapseLabel={t("message_parts.collapse_thinking")}
                 showMoreLabel={(hiddenCount) =>

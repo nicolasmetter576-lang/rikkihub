@@ -38,8 +38,8 @@ import me.rerere.rikkihub.data.model.QuickMessage
 import me.rerere.rikkihub.utils.JsonInstant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import me.rerere.rikkihub.data.model.SystemPromptMode
-import me.rerere.rikkihub.data.model.composedSystemPrompt
+import me.rerere.rikkihub.data.model.mainPromptText
+import me.rerere.rikkihub.data.model.withMainPromptText
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -95,7 +95,10 @@ class CreatorToolsIntegrationTest {
 
     private suspend fun Tools.approveOnly(result: JsonObject) {
         assertTrue(result.toString(), result.rejected().isEmpty())
-        result.proposals().forEach { assertEquals(ProposalStatus.APPLIED, f.approve(it.str("proposalId")).status) }
+        result.proposals().forEach {
+            val outcome = f.approve(it.str("proposalId"))
+            assertEquals(outcome.toString(), ProposalStatus.APPLIED, outcome.status)
+        }
     }
 
     private suspend fun Tools.ordinaryAssistant() =
@@ -104,8 +107,8 @@ class CreatorToolsIntegrationTest {
     // ------------------------------------------------------------------ read = write shape
 
     @Test(timeout = 60_000) fun readContentPatchesBackUnchangedForSettingsKinds() = test {
-        val book = Lorebook(name = "World", entries = listOf(me.rerere.rikkihub.data.model.PromptInjection.RegexInjection(
-            name = "Capital", keywords = listOf("capital"), content = "Aurum")))
+        val book = Lorebook(name = "World", entries = listOf(me.rerere.tavern.worldinfo.WorldInfoEntry(
+            uid = 7, comment = "Capital", key = listOf("capital"), content = "Aurum")))
         val quick = QuickMessage(title = "Hi", content = "Hello")
         f.settings.update { it.copy(lorebooks = listOf(book), quickMessages = listOf(quick)) }
         val assistant = ordinaryAssistant()
@@ -131,19 +134,20 @@ class CreatorToolsIntegrationTest {
         val after = f.settings.settingsSnapshot()
         assertEquals("Renamed", after.assistants.first { it.id == assistant.id }.name)
         assertEquals("Setting", after.lorebooks.single().description)
-        assertEquals(book.entries.single().id, after.lorebooks.single().entries.single().id)
+        assertEquals(book.entries.single().uid, after.lorebooks.single().entries.single().uid)
         assertEquals("Hello there", after.quickMessages.single().content)
     }
 
     @Test(timeout = 60_000) fun oneCallCreatesBindsAndPatchesInOneProposal() = test {
         val assistant = ordinaryAssistant()
         val result = preview(
-            """{"kind":"LOREBOOK","command":"Create","params":{"fields":{"name":"Aurora","entries":[{"name":"Dragon","keywords":["dragon"],"content":"Extinct."}]}}}""",
+            """{"kind":"LOREBOOK","command":"Create","params":{"fields":{"name":"Aurora"}}}""",
             """{"kind":"LOREBOOK","command":"Bind","targetId":"${'$'}0","params":{"assistantId":"${assistant.id}"}}""",
             """{"kind":"ASSISTANT","command":"Patch","targetId":"${assistant.id}","params":{"fields":{"name":"Storyteller"}}}""",
-            """{"kind":"ASSISTANT","command":"Patch","targetId":"${assistant.id}","params":{"fields":{"systemPrompt":"Tell stories."}}}""",
+            """{"kind":"PRESET_ENTRY","command":"Patch","targetId":"${assistant.id}/main","params":{"fields":{"content":"Tell stories."}}}""",
             """{"kind":"ASSISTANT_TAG","command":"Create","params":{"fields":{"name":"Fiction"}}}""",
             """{"kind":"ASSISTANT","command":"Patch","targetId":"${assistant.id}","params":{"fields":{"tags":["${'$'}4"]}}}""",
+            """{"kind":"LOREBOOK_ENTRY","command":"Create","params":{"bookId":"${'$'}0","fields":{"comment":"Dragon","key":["dragon"],"content":"Extinct."}}}""",
         )
         val proposal = result.proposals().single()
         val created = proposal.getValue("createdIds").jsonObject
@@ -153,63 +157,62 @@ class CreatorToolsIntegrationTest {
         val after = f.settings.settingsSnapshot()
         val patched = after.assistants.first { it.id == assistant.id }
         assertEquals("Storyteller", patched.name)
-        assertEquals("Tell stories.", patched.systemPrompt)
+        assertEquals("Tell stories.", patched.mainPromptText)
         assertTrue(patched.lorebookIds.map { it.toString() }.contains(bookId))
         assertEquals(listOf(tagId), patched.tags.map { it.toString() })
         assertEquals("Aurora", after.lorebooks.single { it.id.toString() == bookId }.name)
+        val entry = after.lorebooks.single { it.id.toString() == bookId }.entries.single()
+        assertEquals(listOf("dragon"), entry.key)
+        assertEquals("Extinct.", entry.content)
     }
 
-    @Test(timeout = 60_000) fun promptSectionsAreWritableAndKeepTheirIds() = test {
+    @Test(timeout = 60_000) fun promptEntriesAreWritableReorderableAndKeepTheirIds() = test {
         val assistant = ordinaryAssistant()
-        val created = preview(
-            """{"kind":"ASSISTANT","command":"Patch","targetId":"${assistant.id}","params":{"fields":{"systemPromptMode":"SECTIONS","promptSections":[{"title":"Role","content":"You are A."},{"title":"Off","content":"x","enabled":false}]}}}""",
-        )
-        approveOnly(created)
+        val a = assistant.id.toString()
+        // the persona text is the main entry; a new entry is appended after the others
+        approveOnly(preview(
+            """{"kind":"PRESET_ENTRY","command":"Patch","targetId":"$a/main","params":{"fields":{"content":"You are A."}}}""",
+            """{"kind":"PRESET_ENTRY","command":"Create","params":{"assistantId":"$a","fields":{"name":"Style","content":"Be brief.","role":"system"}}}""",
+        ))
         val first = f.settings.settingsSnapshot().assistants.first { it.id == assistant.id }
-        assertEquals(SystemPromptMode.SECTIONS, first.systemPromptMode)
-        assertEquals(2, first.promptSections.map { it.id }.distinct().size)
-        assertEquals("You are A.", first.composedSystemPrompt())
+        assertEquals("You are A.", first.mainPromptText)
+        val listed = call(ToolIds.LIST_OBJECTS, """{"kind":"PRESET_ENTRY","filter":"$a"}""").jsonObject
+            .getValue("items").jsonArray.map { it.jsonObject.str("id") }
+        assertTrue(listed.toString(), "$a/main" in listed)
+        val styleId = listed.first { it != "$a/main" && first.promptPreset.prompts.any { p -> "$a/${p.identifier}" == it && p.name == "Style" } }
 
-        // read shows the fields in the shape Patch accepts, and points at promptSections
-        val read = read("ASSISTANT", assistant.id.toString())
-        assertTrue(read.toString(), read.str("hint").contains("promptSections"))
-        val sections = read.getValue("contentJson").jsonObject.getValue("promptSections").jsonArray
-        // echo existing ids (reordered, second enabled) plus one new section without id
-        val edited = buildJsonArray {
-            add(JsonObject(sections[1].jsonObject + ("enabled" to JsonPrimitive(true))))
-            add(sections[0])
-            add(buildJsonObject { put("title", "New"); put("content", "Be brief.") })
-        }
+        // read shows the fields in the shape Patch accepts
+        val read = read("PRESET_ENTRY", styleId)
+        assertEquals("Be brief.", read.getValue("contentJson").jsonObject.str("content"))
+        assertTrue(read.toString(), read.getValue("readOnly").jsonObject.containsKey("position"))
+
+        // reorder: the new entry goes first; everything else keeps its relative order
+        val ids = listed.toMutableList().apply { remove(styleId); add(0, styleId) }
         approveOnly(preview(buildJsonObject {
-            put("kind", "ASSISTANT"); put("command", "Patch"); put("targetId", assistant.id.toString())
-            put("params", buildJsonObject { put("fields", buildJsonObject { put("promptSections", edited) }) })
+            put("kind", "PRESET_ENTRY"); put("command", "Reorder")
+            put("params", buildJsonObject { put("assistantId", a); put("orderedIds", buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } }) })
         }.toString()))
         val second = f.settings.settingsSnapshot().assistants.first { it.id == assistant.id }
-        assertEquals(listOf(first.promptSections[1].id, first.promptSections[0].id), second.promptSections.take(2).map { it.id })
-        assertEquals("x\n\nYou are A.\n\nBe brief.", second.composedSystemPrompt())
+        assertEquals(ids.map { it.substringAfter('/') }, me.rerere.rikkihub.data.management.adapters.NativeViews.presetEntryViews(second.promptPreset)
+            .map { it.str("id") })
 
-        val unknownId = preview(
-            """{"kind":"ASSISTANT","command":"Patch","targetId":"${assistant.id}","params":{"fields":{"promptSections":[{"id":"${Uuid.random()}","content":"y"}]}}}""",
-        )
-        assertTrue(unknownId.toString(), unknownId.rejected().single().str("detail").contains("omit id"))
-        val tooLong = preview(buildJsonObject {
-            put("kind", "ASSISTANT"); put("command", "Patch"); put("targetId", assistant.id.toString())
-            put("params", buildJsonObject { put("fields", buildJsonObject { put("promptSections", buildJsonArray {
-                repeat(2) { add(buildJsonObject { put("content", "z".repeat(40_000)) }) }
-            }) }) })
-        }.toString())
-        assertTrue(tooLong.toString(), tooLong.rejected().single().str("detail").contains("65536 characters in total"))
+        // switching an entry off keeps it in the list; deleting removes it from the prompt and the order
+        approveOnly(preview("""{"kind":"PRESET_ENTRY","command":"Patch","targetId":"$styleId","params":{"fields":{"enabled":false}}}"""))
+        val off = f.settings.settingsSnapshot().assistants.first { it.id == assistant.id }
+        assertFalse(off.promptPreset.layout().entries.first { "$a/${it.identifier}" == styleId }.enabled)
+        approveOnly(preview("""{"kind":"PRESET_ENTRY","command":"Delete","targetId":"$styleId"}"""))
+        val gone = f.settings.settingsSnapshot().assistants.first { it.id == assistant.id }
+        assertTrue(gone.promptPreset.prompts.none { "$a/${it.identifier}" == styleId })
+        assertTrue(gone.promptPreset.layout().entries.none { "$a/${it.identifier}" == styleId })
 
-        // whole and sections are one prompt: systemPrompt is the join, and patching it edits the matching section
-        assertEquals(second.composedSystemPrompt(), second.systemPrompt)
-        approveOnly(preview(buildJsonObject {
-            put("kind", "ASSISTANT"); put("command", "Patch"); put("targetId", assistant.id.toString())
-            put("params", buildJsonObject { put("fields", buildJsonObject { put("systemPrompt", "x\n\nYou are B.\n\nBe brief.") }) })
-        }.toString()))
-        val third = f.settings.settingsSnapshot().assistants.first { it.id == assistant.id }
-        assertEquals(second.promptSections.map { it.id }, third.promptSections.map { it.id })
-        assertEquals(listOf("x", "You are B.", "Be brief."), third.promptSections.map { it.content })
-        assertEquals("x\n\nYou are B.\n\nBe brief.", third.systemPrompt)
+        // unknown fields and wrong types are rejected with the writable list
+        val bad = preview("""{"kind":"PRESET_ENTRY","command":"Patch","targetId":"$a/main","params":{"fields":{"colour":"red"}}}""")
+        assertTrue(bad.toString(), bad.proposals().isEmpty())
+        val wrong = preview("""{"kind":"PRESET_ENTRY","command":"Patch","targetId":"$a/main","params":{"fields":{"injection_position":"relative"}}}""")
+        assertTrue(wrong.toString(), wrong.rejected().single().str("detail").contains("injection_position"))
+        // systemPrompt is only a shortcut of Create
+        val whole = preview("""{"kind":"ASSISTANT","command":"Patch","targetId":"$a","params":{"fields":{"systemPrompt":"x"}}}""")
+        assertTrue(whole.toString(), whole.rejected().single().str("detail").contains("PRESET_ENTRY"))
     }
 
     @Test(timeout = 60_000) fun aCallIsAllOrNothingAndRejectionsCarryHints() = test {
@@ -229,17 +232,17 @@ class CreatorToolsIntegrationTest {
 
     @Test(timeout = 60_000) fun enumValuesAndCommandNamesAreCaseInsensitive() = test {
         val result = preview(
-            """{"kind":"mode_injection","command":"create","params":{"fields":{"name":"Brief","content":"Be brief.","position":"AFTER_SYSTEM_PROMPT","role":"USER"}}}""",
+            """{"kind":"mode_injection","command":"create","params":{"fields":{"name":"Brief","content":"Be brief.","role":"USER","libraryAnchor":"AFTER_SYSTEM"}}}""",
         )
         // The diff shows what will be stored, not the spelling the model used.
         val diff = result.proposals().single().getValue("diff").toString()
-        assertTrue(diff, diff.contains("after_system_prompt") && diff.contains("\\\"user\\\""))
-        assertFalse(diff, diff.contains("AFTER_SYSTEM_PROMPT"))
+        assertTrue(diff, diff.contains("after_system") && diff.contains("\\\"user\\\""))
+        assertFalse(diff, diff.contains("AFTER_SYSTEM"))
         approveOnly(result)
         // A fresh store already holds the built-in Learning Mode.
-        val mode = f.settings.settingsSnapshot().modeInjections.single { it.name == "Brief" }
+        val mode = f.settings.settingsSnapshot().promptLibrary.single { it.name == "Brief" }
         // Re-sending the same values in another spelling is not a change.
-        val same = preview("""{"kind":"MODE_INJECTION","command":"Patch","targetId":"${mode.id}","params":{"fields":{"role":"USER","position":"after_system_prompt"}}}""")
+        val same = preview("""{"kind":"MODE_INJECTION","command":"Patch","targetId":"${mode.identifier}","params":{"fields":{"role":"User","libraryAnchor":"after_system"}}}""")
         assertEquals("INVALID_VALUE", same.rejected().single().str("code"))
     }
 
@@ -336,6 +339,18 @@ class CreatorToolsIntegrationTest {
         assertEquals("Plan a trip", nodes.single().jsonObject.getValue("candidates").jsonArray.single().jsonObject.str("text"))
         approveOnly(preview("""{"kind":"CONVERSATION","command":"Patch","targetId":"$id","params":{"fields":{"title":"Japan trip"}}}"""))
         assertEquals("Japan trip", f.room.conversations.getValue(id).title)
+
+        // the chat's SillyTavern state is readable and writable: author's note, variables, unknown keys; null removes a key
+        approveOnly(preview("""{"kind":"CONVERSATION","command":"Patch","targetId":"$id","params":{"fields":{"tavernMetadata":{"note_prompt":"Keep it short.","note_depth":2,"variables":{"mood":"calm"},"futureKey":[1,2]}}}}"""))
+        val meta = f.room.conversations.getValue(id).tavernMetadata
+        assertEquals("Keep it short.", meta.getValue("note_prompt").jsonPrimitive.content)
+        assertEquals("calm", meta.getValue("variables").jsonObject.getValue("mood").jsonPrimitive.content)
+        val seen = read("CONVERSATION", id.toString()).getValue("contentJson").jsonObject.getValue("tavernMetadata").jsonObject
+        assertEquals(setOf("note_prompt", "note_depth", "variables", "futureKey"), seen.keys)
+        approveOnly(preview("""{"kind":"CONVERSATION","command":"Patch","targetId":"$id","params":{"fields":{"tavernMetadata":{"note_prompt":null}}}}"""))
+        assertEquals(setOf("note_depth", "variables", "futureKey"), f.room.conversations.getValue(id).tavernMetadata.keys)
+        val bad = preview("""{"kind":"CONVERSATION","command":"Patch","targetId":"$id","params":{"fields":{"tavernMetadata":{"note_role":7}}}}""")
+        assertTrue(bad.toString(), bad.rejected().isNotEmpty() || bad.proposals().isEmpty())
     }
 
     @Test(timeout = 60_000) fun libraryPresetsAreReadAndPatchedWithGenericCommands() = test {
@@ -399,11 +414,13 @@ class CreatorToolsIntegrationTest {
 
     @Test fun legacyDefaultPromptIsUpgradedButEditedOnesAreKept() {
         val legacy = CreatorAssistantDefinition.LEGACY_SYSTEM_PROMPTS
-        assertEquals(3, legacy.distinct().size)
+        assertEquals(4, legacy.distinct().size)
         assertFalse(CreatorAssistantDefinition.SYSTEM_PROMPT in legacy)
-        // 2.9.0 – 2.21.x still listed the COMPRESS slot; 2.22.0 – 2.27.0 had read-only providers.
+        // 2.9.0 – 2.21.x still listed the COMPRESS slot; 2.22.0 – 2.27.0 had read-only providers; 2.28.0 – 2.32.0 folded the SillyTavern objects.
         assertTrue(legacy[1].contains("OCR, COMPRESS)"))
         assertTrue(legacy[2].contains("Read-only references for looking up ids: providers [PROVIDER]"))
+        assertTrue(legacy[3].contains("Mode injections [MODE_INJECTION] (模式注入)"))
+        assertTrue(CreatorAssistantDefinition.SYSTEM_PROMPT.contains("PRESET_ENTRY") && CreatorAssistantDefinition.SYSTEM_PROMPT.contains("LOREBOOK_ENTRY"))
         legacy.forEach { assertEquals(CreatorAssistantDefinition.SYSTEM_PROMPT, CreatorAssistantDefinition.upgradedSystemPrompt(it)) }
         assertEquals("my own", CreatorAssistantDefinition.upgradedSystemPrompt("my own"))
     }
@@ -411,8 +428,8 @@ class CreatorToolsIntegrationTest {
     @Test(timeout = 60_000) fun settingsLoadUpgradesAnUneditedCreatorPrompt() = test {
         val legacy = CreatorAssistantDefinition.LEGACY_SYSTEM_PROMPTS.last()
         f.settings.update { s -> s.copy(assistants = s.assistants.map {
-            if (CreatorAssistantDefinition.isCreator(it.id)) it.copy(systemPrompt = legacy) else it }) }
+            if (CreatorAssistantDefinition.isCreator(it.id)) it.withMainPromptText(legacy) else it }) }
         val creator = f.settings.settingsSnapshot().assistants.single { CreatorAssistantDefinition.isCreator(it.id) }
-        assertEquals(CreatorAssistantDefinition.SYSTEM_PROMPT, creator.systemPrompt)
+        assertEquals(CreatorAssistantDefinition.SYSTEM_PROMPT, creator.mainPromptText)
     }
 }

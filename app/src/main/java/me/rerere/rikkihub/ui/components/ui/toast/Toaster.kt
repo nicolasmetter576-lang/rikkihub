@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.components.ui.toast
 
+import android.content.ClipData
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.expandVertically
@@ -44,11 +45,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
@@ -56,6 +63,7 @@ import me.rerere.hugeicons.stroke.Alert02
 import me.rerere.hugeicons.stroke.AlertCircle
 import me.rerere.hugeicons.stroke.CheckmarkCircle02
 import me.rerere.hugeicons.stroke.InformationCircle
+import me.rerere.rikkihub.R
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -70,6 +78,10 @@ fun Toaster(
     modifier: Modifier = Modifier,
 ) {
     val motionScheme = MaterialTheme.motionScheme
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val copiedMessage = stringResource(R.string.copied)
+    val copyFailedMessage = stringResource(R.string.error_title_operation)
     Column(
         modifier = modifier
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
@@ -95,6 +107,26 @@ fun Toaster(
                 ) {
                     ToastContent(
                         item = item,
+                        onClick = {
+                            if (item.type == ToastType.Error) {
+                                scope.launch {
+                                    try {
+                                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Error", item.message)))
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        currentCoroutineContext().ensureActive()
+                                        state.show(copyFailedMessage, type = ToastType.Warning)
+                                        return@launch
+                                    }
+                                    currentCoroutineContext().ensureActive()
+                                    state.dismiss(item)
+                                    state.show(copiedMessage, type = ToastType.Success)
+                                }
+                            } else {
+                                state.dismiss(item)
+                            }
+                        },
                         onDismiss = { state.dismiss(item) },
                         modifier = Modifier.padding(vertical = 4.dp),
                     )
@@ -107,6 +139,7 @@ fun Toaster(
 @Composable
 private fun ToastContent(
     item: ToastItem,
+    onClick: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -119,7 +152,7 @@ private fun ToastContent(
     }
 
     Surface(
-        onClick = onDismiss,
+        onClick = onClick,
         shape = RoundedCornerShape(24.dp),
         color = colors.container,
         contentColor = colors.content,

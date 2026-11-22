@@ -1,0 +1,37 @@
+{
+  "type": "rikkihub.qubagu.rules",
+  "version": 1,
+  "packs": [
+    {
+      "id": "quota",
+      "name": "水词限量",
+      "description": "每个水词一段里只留前几次：微微、缓缓、不自觉地……",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "quota",
+          "id": "adverb_quota",
+          "name": "水词限量",
+          "words": [
+            "微微",
+            "缓缓",
+            "轻轻",
+            "淡淡",
+            "悄悄",
+            "默默",
+            "静静",
+            "不自觉地",
+            "下意识地",
+            "不由自主地",
+            "几不可察地",
+            "不动声色地",
+            "若有所思地"
+          ],
+          "max": 2,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    }
+  ]
+}

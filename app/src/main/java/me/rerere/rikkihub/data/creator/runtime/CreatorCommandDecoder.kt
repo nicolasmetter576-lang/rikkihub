@@ -12,10 +12,14 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkihub.data.creator.session.CreatorObjectKind
 import me.rerere.rikkihub.data.creator.session.CreatorOperation
+import me.rerere.rikkihub.data.management.adapters.ObjectPatch
 import me.rerere.rikkihub.data.management.adapters.SettingsAction
 import me.rerere.rikkihub.data.management.adapters.LenientEnums
 import me.rerere.rikkihub.data.management.adapters.SettingsCollectionInterpreter
 import me.rerere.rikkihub.data.management.adapters.SettingsDomainCommand
+import me.rerere.rikkihub.data.management.adapters.character.CharacterAction
+import me.rerere.rikkihub.data.management.adapters.character.CharacterManagementCommand
+import me.rerere.rikkihub.data.management.adapters.character.CharacterNative
 import me.rerere.rikkihub.data.management.adapters.conversation.ConversationManagementCommand
 import me.rerere.rikkihub.data.management.adapters.skills.SkillCommand
 import me.rerere.rikkihub.data.management.adapters.subagent.SubagentPresetCommand
@@ -57,6 +61,7 @@ object CreatorCommandDecoder {
     private val strict = Json { ignoreUnknownKeys = false; encodeDefaults = true; isLenient = false }
 
     private val SETTINGS_COMMANDS = listOf("Create", "Patch", "Delete", "Clone", "Reorder", "Bind", "Unbind")
+    private val SUBOBJECT_COMMANDS = listOf("Create", "Patch", "Delete", "Reorder")
     private val TAG_COMMANDS = listOf("Create", "Patch", "Delete", "Reorder")
     private val PROVIDER_COMMANDS = listOf("Create", "Patch")
 
@@ -71,6 +76,18 @@ object CreatorCommandDecoder {
             CreatorObjectKind.MODE_INJECTION -> settings(kind, "settings.modeInjections", op, p, SETTINGS_COMMANDS)
             CreatorObjectKind.LOREBOOK -> settings(kind, "settings.lorebooks", op, p, SETTINGS_COMMANDS)
             CreatorObjectKind.ASSISTANT_TAG -> settings(kind, "settings.assistantTags", op, p, TAG_COMMANDS)
+            CreatorObjectKind.LOREBOOK_ENTRY -> subobject(kind, "bookId", "lorebooks", "entries", op, p)
+            CreatorObjectKind.PRESET_ENTRY -> subobject(kind, "assistantId", "assistants", "presetEntries", op, p)
+            CreatorObjectKind.REGEX_SCRIPT -> {
+                val scoped = (p["assistantId"] as? JsonPrimitive)?.contentOrNull
+                    ?: op.targetId?.substringBefore('/', "")?.takeIf { it.isNotEmpty() && it != "global" }
+                if (scoped == null) global(kind, "settings.tavern.regexScripts", op, p)
+                else subobject(kind, "assistantId", "assistants", "regexScripts", op, p)
+            }
+            CreatorObjectKind.TAVERN_SETTINGS -> {
+                if (canonical(op.command, listOf("Patch", "Set")) == null) reject("BAD_COMMAND", "TAVERN_SETTINGS supports Patch")
+                SettingsDomainCommand("settings.tavern", SettingsAction.Patch("tavern", fields(p, "tavern")))
+            }
             CreatorObjectKind.ASSISTANT -> when (canonical(op.command, listOf("CreateTag", "PatchTag", "DeleteTag"))) {
                 // Older form of ASSISTANT_TAG commands.
                 "CreateTag", "PatchTag", "DeleteTag" -> settings(CreatorObjectKind.ASSISTANT_TAG, "settings.assistantTags",
@@ -119,6 +136,7 @@ object CreatorCommandDecoder {
             CreatorObjectKind.SUBAGENT_PRESET -> subagent(op, p, ctx)
             CreatorObjectKind.SKILL -> skill(op, p)
             CreatorObjectKind.CONVERSATION -> conversation(op, p)
+            CreatorObjectKind.CHARACTER -> character(op, p)
             CreatorObjectKind.MCP_SERVER, CreatorObjectKind.WORKSPACE -> error("read-only")
         }
     }
@@ -131,7 +149,12 @@ object CreatorCommandDecoder {
         val command = canonical(op.command, supported)
             ?: reject("BAD_COMMAND", "${kind.name} supports: $supported")
         val action = when (command) {
-            "Create" -> SettingsAction.Create(fields(p, null))
+            "Create" -> p["items"]?.let { items ->
+                onlyKeys(p, "items")
+                val rows = items as? JsonArray ?: reject("BAD_INPUT", "params.items must be an array of field objects")
+                SettingsAction.CreateMany(rows.map { row -> (row as? JsonObject)?.let { fields(it, null) }
+                    ?: reject("BAD_INPUT", "params.items must be an array of field objects") })
+            } ?: SettingsAction.Create(fields(p, null))
             "Patch" -> { val id = target(op); SettingsAction.Patch(id, fields(p, id)) }
             "Delete" -> { onlyKeys(p); SettingsAction.Delete(target(op)) }
             "Clone" -> { onlyKeys(p, "name"); SettingsAction.Clone(target(op), string(p, "name")) }
@@ -150,7 +173,7 @@ object CreatorCommandDecoder {
     }
 
     /** `params.fields`, or the params themselves when the wrapper was left out. */
-    private fun fields(p: JsonObject, targetId: String?): Map<String, JsonElement> {
+    private fun fields(p: JsonObject, targetId: String?, allowEmpty: Boolean = false): Map<String, JsonElement> {
         val wrapped = p["fields"]
         val fields = when {
             wrapped is JsonObject -> { onlyKeys(p, "fields"); wrapped }
@@ -160,7 +183,7 @@ object CreatorCommandDecoder {
         val id = fields["id"]
         val cleaned = if (id != null && targetId != null && (id as? JsonPrimitive)?.contentOrNull == targetId) JsonObject(fields - "id") else fields
         if ("id" in cleaned) reject("FORBIDDEN_FIELD", "ids are assigned by the app; leave id out of fields")
-        if (cleaned.isEmpty()) reject("BAD_INPUT", "params.fields must contain at least one field")
+        if (cleaned.isEmpty() && !allowEmpty) reject("BAD_INPUT", "params.fields must contain at least one field")
         if (cleaned.size > 64) reject("BAD_INPUT", "at most 64 fields per operation")
         return cleaned
     }
@@ -191,6 +214,69 @@ object CreatorCommandDecoder {
     private fun onlyKeys(p: JsonObject, vararg keys: String) {
         val extra = p.keys - keys.toSet() - "providerId"
         if (extra.isNotEmpty()) reject("BAD_INPUT", "Unexpected params: ${extra.sorted()} (expected: ${keys.toList().ifEmpty { listOf("none") }})")
+    }
+
+    /**
+     * Objects that live inside a parent (a lorebook's entries, an assistant's prompt entries and regex scripts). Their ids
+     * are `<parentId>/<childId>`; Create names the parent in `params.<parentKey>`. Bulk forms: `items` (Create),
+     * `patches` (Patch), `ids` (Delete).
+     */
+    private fun subobject(
+        kind: CreatorObjectKind, parentKey: String, family: String, part: String, op: CreatorOperation, p: JsonObject,
+    ): SettingsDomainCommand {
+        val explicit = (p[parentKey] as? JsonPrimitive)?.contentOrNull
+        val fromTarget = op.targetId?.substringBefore('/', "")?.takeIf { it.isNotEmpty() }
+        val parent = explicit ?: fromTarget ?: reject("BAD_INPUT",
+            "params.$parentKey is required (or a targetId written <$parentKey>/<id>); list kind=${kind.name} for ids")
+        if (explicit != null && fromTarget != null && explicit != fromTarget) reject("BAD_INPUT",
+            "targetId belongs to $parentKey '$fromTarget' but params.$parentKey is '$explicit'")
+        return subcommand(kind, "settings.$family.$parent.$part", parent, op, JsonObject(p - parentKey))
+    }
+
+    private fun global(kind: CreatorObjectKind, collection: String, op: CreatorOperation, p: JsonObject): SettingsDomainCommand =
+        subcommand(kind, collection, "global", op, JsonObject(p - "assistantId"))
+
+    private fun subcommand(kind: CreatorObjectKind, collection: String, parent: String, op: CreatorOperation, p: JsonObject): SettingsDomainCommand {
+        fun child(id: String) = id.removePrefix("$parent/")
+        val command = canonical(op.command, SUBOBJECT_COMMANDS)
+            ?: reject("BAD_COMMAND", "${kind.name} supports: $SUBOBJECT_COMMANDS")
+        val action = when (command) {
+            "Create" -> {
+                val items = p["items"]
+                if (items != null) {
+                    onlyKeys(p, "items")
+                    val rows = items as? JsonArray ?: reject("BAD_INPUT", "params.items must be an array of field objects")
+                    SettingsAction.CreateMany(rows.map { row -> (row as? JsonObject)?.let { fields(it, null, allowEmpty = true) }
+                        ?: reject("BAD_INPUT", "params.items must be an array of field objects") })
+                } else SettingsAction.Create(fields(p, null, allowEmpty = true))
+            }
+            "Patch" -> {
+                val patches = p["patches"]
+                if (patches != null) {
+                    onlyKeys(p, "patches")
+                    val rows = patches as? JsonArray ?: reject("BAD_INPUT", "params.patches must be an array of {id, fields}")
+                    SettingsAction.PatchMany(rows.map { row ->
+                        val o = row as? JsonObject ?: reject("BAD_INPUT", "params.patches must be an array of {id, fields}")
+                        val id = (o["id"] as? JsonPrimitive)?.contentOrNull ?: reject("BAD_INPUT", "each patch needs an id")
+                        ObjectPatch(child(id), fields(JsonObject(o - "id"), child(id)))
+                    })
+                } else { val id = child(target(op)); SettingsAction.Patch(id, fields(p, id)) }
+            }
+            "Delete" -> {
+                val ids = p["ids"]
+                if (ids != null) {
+                    onlyKeys(p, "ids")
+                    val rows = ids as? JsonArray ?: reject("BAD_INPUT", "params.ids must be an array of ids")
+                    SettingsAction.DeleteMany(rows.map { child((it as? JsonPrimitive)?.contentOrNull ?: reject("BAD_INPUT", "ids must be strings")) })
+                } else { onlyKeys(p); SettingsAction.Delete(child(target(op))) }
+            }
+            else -> {
+                onlyKeys(p, "orderedIds")
+                val ids = p["orderedIds"] as? JsonArray ?: reject("BAD_INPUT", "params.orderedIds (array of ids) is required")
+                SettingsAction.Reorder(ids.map { child((it as? JsonPrimitive)?.contentOrNull ?: reject("BAD_INPUT", "orderedIds must be strings")) })
+            }
+        }
+        return SettingsDomainCommand(collection, action)
     }
 
     // ------------------------------------------------------------------ sealed domains
@@ -258,6 +344,32 @@ object CreatorCommandDecoder {
         return md.lineSequence().drop(1).takeWhile { it.trim() != "---" }
             .firstOrNull { it.trimStart().startsWith("name:") }
             ?.substringAfter("name:")?.trim()?.trim('"', '\'')?.takeIf { it.isNotEmpty() }
+    }
+
+    /** CHARACTER: Create and Patch only; removing a character (card, picture, files) is up to the user in the app. */
+    private fun character(op: CreatorOperation, raw: JsonObject): CharacterManagementCommand {
+        if (canonical(op.command, listOf("Delete", "Remove", "SoftDelete", "Clone", "Reorder")) != null) reject("NOT_ALLOWED",
+            "CHARACTER supports only ${CHARACTER_COMMANDS}: deleting, cloning or reordering characters is up to the user in Settings › Characters")
+        val name = canonical(op.command, CHARACTER_COMMANDS) ?: reject("BAD_COMMAND", "CHARACTER supports: $CHARACTER_COMMANDS")
+        val fields: JsonObject = when (val given = raw["fields"]) {
+            null -> raw
+            is JsonObject -> { onlyKeys(raw, "fields"); given }
+            else -> reject("BAD_INPUT", "params.fields must be an object")
+        }
+        val (card, books, detach) = try {
+            CharacterNative.split(fields)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            reject("BAD_INPUT", e.message ?: "Invalid character fields")
+        }
+        return if (name == "Create") {
+            if (op.targetId != null) reject("BAD_INPUT", "New character ids are assigned by the app; leave targetId out")
+            CharacterManagementCommand(CharacterAction.CREATE, null, card, books, detach)
+        } else {
+            if (op.targetId.isNullOrBlank()) reject("BAD_INPUT", "targetId (the character id) is required")
+            CharacterManagementCommand(CharacterAction.PATCH, op.targetId, card, books, detach)
+        }
     }
 
     private fun conversation(op: CreatorOperation, raw: JsonObject): ConversationManagementCommand {
@@ -375,6 +487,7 @@ object CreatorCommandDecoder {
         names(SkillCommand.serializer(), "CreateSkill", "CreateBuiltinOverride", "PatchTextFile", "CreateFile",
             "DeleteFile", "RenameFile", "CreateDirectory", "DeleteDirectory", "RenameDirectory", "RenameSkill", "DeleteSkill")
     }
+    val CHARACTER_COMMANDS = listOf("Create", "Patch")
     val CONVERSATION_COMMANDS by lazy {
         names(ConversationMutationCommand.serializer(), "PatchMetadata", "CreateOrdinaryConversation",
             "AppendPlainMessage", "EditPlainTextAsNewCandidate", "SelectCandidate", "DeleteCandidate", "PruneNode")
@@ -383,6 +496,8 @@ object CreatorCommandDecoder {
     /** Commands per writable kind (for describe and error messages). */
     fun commandsFor(kind: CreatorObjectKind): List<String> = when (kind) {
         CreatorObjectKind.QUICK_MESSAGE, CreatorObjectKind.MODE_INJECTION, CreatorObjectKind.LOREBOOK -> SETTINGS_COMMANDS
+        CreatorObjectKind.LOREBOOK_ENTRY, CreatorObjectKind.PRESET_ENTRY, CreatorObjectKind.REGEX_SCRIPT -> SUBOBJECT_COMMANDS
+        CreatorObjectKind.TAVERN_SETTINGS -> listOf("Patch")
         CreatorObjectKind.ASSISTANT -> listOf("Create", "Patch", "Delete", "Clone", "Reorder")
         CreatorObjectKind.ASSISTANT_TAG -> TAG_COMMANDS
         CreatorObjectKind.MODEL_DEFINITION -> listOf("Create", "Patch", "Delete", "Clone", "Reorder")
@@ -392,6 +507,7 @@ object CreatorCommandDecoder {
         CreatorObjectKind.SUBAGENT_PRESET -> SUBAGENT_COMMANDS.keys.toList()
         CreatorObjectKind.SKILL -> SKILL_COMMANDS.keys.toList()
         CreatorObjectKind.CONVERSATION -> CONVERSATION_COMMANDS.keys.toList() + listOf("SoftDelete", "Restore")
+        CreatorObjectKind.CHARACTER -> CHARACTER_COMMANDS
         CreatorObjectKind.MCP_SERVER, CreatorObjectKind.WORKSPACE -> emptyList()
     }
 

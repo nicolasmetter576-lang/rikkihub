@@ -1,0 +1,277 @@
+{
+  "type": "rikkihub.qubagu.rules",
+  "version": 1,
+  "packs": [
+    {
+      "id": "simile",
+      "name": "网文套话与廉价香精味",
+      "description": "三分凉薄七分漫不经心、雪松薄荷味、石子投湖、似笑非笑弧度、砂纸大提琴嗓音、寒潭旋涡眼神、羽毛搔心尖",
+      "enabled": true,
+      "rules": [
+        {
+          "kind": "replace",
+          "id": "sens_pie_chart",
+          "name": "扇形图眼神（三分…七分…）",
+          "sample": "带着三分凉薄、七分漫不经心",
+          "find": "带着(?:三分|几分)([^，。；！？\\n]{1,6})[，、]?\\s*(?:三分|几分|七分)([^，。；！？\\n]{1,8})(?:和|以及|与)?(?:三分|四分|几分)?([^，。；！？\\n]{0,8})",
+          "regex": true,
+          "replacements": [
+            "带着几分$1与$2",
+            "透着些许$1和$2",
+            "既有$1又有些$2",
+            "隐约透出$1与$2",
+            "神色间带着$1和$2"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_stone_lake",
+          "name": "石子投入湖心泛起涟漪",
+          "sample": "像一颗石子投入平静的湖心泛起涟漪",
+          "find": "(?:就像|好似|犹如|宛如|仿佛)?一颗石子(?:投入|砸入|落入)(?:了)?(?:平静的|死水般的)?(?:湖心|湖面|水面|心湖)[，,]?泛起(?:层层|圈圈|一圈圈)?涟漪",
+          "regex": true,
+          "replacements": [
+            "在心底留下一丝波澜",
+            "让心绪泛起微澜",
+            "在心里轻轻触动了一下",
+            "打破了原有的平静",
+            "让人心头微动",
+            "在心间留下浅浅的痕迹",
+            "让原本平静的心思乱了几分"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_air_solid",
+          "name": "空气粘稠得能拧出水/落针可闻",
+          "sample": "空气瞬间粘稠得能拧出水来",
+          "find": "空气(?:仿佛|在这一刻|瞬间)?(?:凝固|停滞|粘稠得能拧出水来|安静得落针可闻|死一般寂静)",
+          "regex": true,
+          "replacements": [
+            "四周一时安静下来",
+            "场间一时寂然",
+            "气氛一时有些沉闷",
+            "屋内静得出奇",
+            "谁都没有先开口",
+            "周围安静得只剩呼吸声",
+            "气氛莫名有些紧绷",
+            "一时间无人说话"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_scent_cliche",
+          "name": "工业男主香精（雪松/薄荷/苦橙/臭氧）",
+          "sample": "一股凛冽的雪松混合着烟草的气息",
+          "find": "一股(?:淡淡的|清冽的|凛冽的|好闻的)?(?:雪松|苦橙|薄荷|臭氧|铁锈|冷杉|乌木|琥珀|佛手柑)(?:混合着|夹杂着|与)?(?:烟草|硝烟|血腥|皂角|阳光)?的(?:气息|味道|冷香|香气|清香)",
+          "regex": true,
+          "replacements": [
+            "一股熟悉的气息",
+            "一缕淡淡的气息",
+            "他身上独有的气息",
+            "一阵清爽的气息",
+            "浅浅的温热气息",
+            "带着体温的气息",
+            "令人安心的气息",
+            "淡淡的衣料清香"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_lip_arc",
+          "name": "似笑非笑/玩味的弧度",
+          "sample": "唇角扬起一抹似笑非笑的弧度",
+          "find": "(?:嘴角|唇角)(?:微微|缓缓|不自觉地)?(?:勾起|扬起|扯出|挑起)(?:一抹|一个)?(?:似笑非笑|意味深长|嘲弄|玩味|若有似无|危险|凉薄|自嘲)的弧度",
+          "regex": true,
+          "replacements": [
+            "唇边露出一丝笑意",
+            "似笑非笑地弯了弯唇",
+            "轻笑了一声",
+            "唇角微扬",
+            "露出一抹意味不明的笑",
+            "嘴角轻轻撇了一下",
+            "不置可否地笑了笑",
+            "眼底带上一丝笑意"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_voice_husky",
+          "name": "砂纸打磨/大提琴嗓音",
+          "sample": "声音低沉得像被砂纸打磨过",
+          "find": "(?:声音|嗓音)(?:低沉|暗哑|沙哑)得?(?:像是|如同|仿佛|好似)?(?:被(?:粗)?砂纸打磨过|大提琴般低吟|带着磁性的颗粒感|陈年威士忌般醇厚|生锈的齿轮摩擦)",
+          "regex": true,
+          "replacements": [
+            "声音低沉",
+            "嗓音微哑",
+            "声音有些发干",
+            "语调低缓",
+            "声音压得很低",
+            "嗓音带着些许倦意",
+            "语气平静而低沉",
+            "声音略有些低哑"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_abyss_eyes",
+          "name": "不见底的寒潭/漩涡眼神",
+          "sample": "那双不见底的眸子像幽暗的寒潭",
+          "find": "(?:那双|一双)?(?:深不见底的|深邃的|幽深的|漆黑的)?(?:眸子|眼眸|黑眸|眼睛)(?:像|如同|宛如|好似)(?:古井无波的|幽暗的|要把人吸进去的)?(?:寒潭|深潭|旋涡|漩涡|黑洞|深渊)",
+          "regex": true,
+          "replacements": [
+            "目光沉静如水",
+            "眼神幽邃难测",
+            "静静地注视着前方",
+            "目光平静得看不出喜怒",
+            "视线沉沉地落过来",
+            "眼神幽静而专注",
+            "目光微沉"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_feather_scratch",
+          "name": "羽毛轻轻搔过心尖",
+          "sample": "像一根羽毛轻轻搔过心尖",
+          "find": "(?:就像|好似|犹如|宛如|仿佛)?(?:一根|一片)?(?:轻柔的)?羽毛(?:轻轻)?(?:搔过|拂过|撩过|挠着)(?:心尖|心房|心头|耳廓)",
+          "regex": true,
+          "replacements": [
+            "让人心里有些发痒",
+            "撩得人心头微痒",
+            "让人心神微漾",
+            "带着几分说不出的勾人",
+            "听得人耳根微热",
+            "让人有些心猿意马",
+            "轻轻触动了心弦"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_slender_knuckles",
+          "name": "修长分明的手指套话",
+          "sample": "那双修长分明的大手",
+          "find": "(?:那双|一双|那只)?(?:修长(?:且|而)?骨节分明|骨节分明(?:且|而)?修长)的(?:手指|手|大手|手掌)",
+          "regex": true,
+          "replacements": [
+            "修长的手指",
+            "干净利落的手指",
+            "温热的手掌",
+            "他的手指",
+            "指腹微凉的手",
+            "匀称的手",
+            "宽大的手掌"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_frightened_deer",
+          "name": "受惊的小鹿/做错事的孩子",
+          "sample": "像一只受惊的小鹿般四处乱撞",
+          "find": "(?:像|如同|宛如|好似)(?:一只|一个)?(?:受惊的|迷途的|无助的)?(?:小鹿|小兽|小兔子|做错了?事的孩子)",
+          "regex": true,
+          "replacements": [
+            "显得有些局促不安",
+            "神情有些慌乱",
+            "一副不知所措的模样",
+            "带着几分紧张和无助",
+            "拘谨地缩了缩肩膀",
+            "看起来有些心虚",
+            "眼神里透着几分慌张"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_undeniable_majesty",
+          "name": "不容置疑的霸道/上位者威压",
+          "sample": "带着一股不容置疑的上位者威压",
+          "find": "带着(?:一股|一种|几分)?(?:与生俱来的|久居高位的)?(?:不容置疑|不容拒绝|不容抗拒|令人窒息)的(?:上位者)?(?:威压|压迫感|霸道|气场|命令口吻)",
+          "regex": true,
+          "replacements": [
+            "语气笃定而强势",
+            "带着几分让人难以拒绝的气势",
+            "态度颇为强硬",
+            "口吻里没留什么商量的余地",
+            "神情严肃而笃定",
+            "气势沉稳迫人",
+            "话里透着一股执拗"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        },
+        {
+          "kind": "replace",
+          "id": "sens_en_whisper_sparkle",
+          "name": "英文气音与眼神闪光",
+          "sample": "barely above a whisper / eyes sparkling with mischief",
+          "find": "/\\bbarely above a whisper\\b|\\beyes (?:sparkling|gleaming|glinting) with (?:mischief|amusement)\\b/i",
+          "regex": true,
+          "replacements": [
+            "softly",
+            "quietly",
+            "in a low voice",
+            "with a faint smile"
+          ],
+          "dialogue": false,
+          "keepFirst": false,
+          "atEnd": false,
+          "enabled": true,
+          "refinePrompt": ""
+        }
+      ]
+    }
+  ]
+}

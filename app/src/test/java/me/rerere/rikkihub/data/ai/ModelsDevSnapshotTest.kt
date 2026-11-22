@@ -2,6 +2,7 @@ package me.rerere.rikkihub.data.ai
 
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.registry.ModelsDevCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -41,6 +42,30 @@ class ModelsDevSnapshotTest {
     fun `provider prefixes and channel suffixes resolve`() {
         assertNotNull(catalog.find("openai/gpt-4o"))
         assertNotNull(catalog.find("anthropic/claude-sonnet-4-5"))
+    }
+
+    @Test
+    fun `OAuth protocol aliases find prices in the actual shipped snapshot`() {
+        ModelRegistry.installCatalog { catalog }
+        try {
+            for ((alias, modelId) in listOf(
+                "MODEL_GPT_5_2" to "gpt-5.2",
+                "MODEL_CLAUDE_4_5_OPUS" to "claude-opus-4.5",
+                "MODEL_PRIVATE_11" to "claude-haiku-4.5",
+                "MODEL_PRIVATE_2" to "claude-sonnet-4.5",
+                "MODEL_PRIVATE_3" to "claude-sonnet-4.5",
+                "MODEL_CHAT_GPT_4_1_2025_04_14" to "gpt-4.1",
+                "MODEL_PRIVATE_12" to "gpt-5.1",
+                "MODEL_GOOGLE_GEMINI_3_0_FLASH" to "gemini-3-flash",
+                "claude-5-fable" to "claude-fable-5",
+                "gpt-5.4-high" to "gpt-5.4",
+            )) {
+                val expected = assertNotNull(catalog.find(modelId)?.referencePrice)
+                assertEquals(alias, expected, ModelRegistry.referencePrice(alias))
+            }
+        } finally {
+            ModelRegistry.installCatalog { null }
+        }
     }
 
     private fun <T : Any> assertNotNull(value: T?): T {

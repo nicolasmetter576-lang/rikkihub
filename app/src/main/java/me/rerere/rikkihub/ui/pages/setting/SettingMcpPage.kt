@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -7,8 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,7 +36,6 @@ import me.rerere.rikkihub.ui.components.ui.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -50,7 +49,6 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberBottomSheetState
@@ -66,9 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -116,6 +112,12 @@ import me.rerere.rikkihub.ui.theme.extendColors
 import me.rerere.rikkihub.utils.writeClipboardText
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
+import me.rerere.rikkihub.utils.plus
 
 @Composable
 fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
@@ -135,10 +137,9 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
         }
     }
     var showImportDialog by remember { mutableStateOf(false) }
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(stringResource(R.string.setting_mcp_page_title))
                 },
@@ -161,11 +162,10 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         Icon(HugeIcons.Add01, null)
                     }
                 },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors
+                colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor
     ) { innerPadding ->
         val mcpManager = koinInject<McpManager>()
@@ -173,7 +173,6 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
         val scope = rememberCoroutineScope()
         val state = rememberPullToRefreshState()
         val loading = status.values.any { it == McpStatus.Connecting || it is McpStatus.Reconnecting }
-        val layoutDirection = LocalLayoutDirection.current
         PullToRefreshBox(
             isRefreshing = loading,
             onRefresh = {
@@ -187,17 +186,13 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(
-                    start = innerPadding.calculateStartPadding(layoutDirection) + 16.dp,
-                    top = innerPadding.calculateTopPadding() + 16.dp,
-                    end = innerPadding.calculateEndPadding(layoutDirection) + 16.dp,
-                    bottom = innerPadding.calculateBottomPadding() + 16.dp,
-                )
+                contentPadding = innerPadding + PaddingValues(AppSpacing.sm),
             ) {
-                items(mcpConfigs, key = { it.id }) { mcpConfig ->
+                itemsIndexed(mcpConfigs, key = { _, mcpConfig -> mcpConfig.id }) { index, mcpConfig ->
                     McpServerItem(
                         item = mcpConfig,
+                        shape = cardGroupItemShape(index, mcpConfigs.size),
+                        divider = index > 0,
                         onEdit = {
                             editState.open(mcpConfig)
                         },
@@ -246,6 +241,8 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
 @Composable
 private fun McpServerItem(
     item: McpServerConfig,
+    shape: Shape,
+    divider: Boolean,
     modifier: Modifier = Modifier,
     onDelete: () -> Unit,
     onEdit: (McpServerConfig) -> Unit,
@@ -319,15 +316,17 @@ private fun McpServerItem(
         modifier = modifier
     ) {
         Card(
+            shape = shape,
             colors = CardDefaults.cardColors(
                 containerColor = CustomColors.listItemColors.containerColor
             )
         ) {
+            if (divider) CardGroupDivider()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(AppSpacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 when (status) {
@@ -398,27 +397,28 @@ private fun McpServerItem(
                     if (status == McpStatus.NeedsAuthorization) {
                         val context = LocalContext.current
                         Text(
-                            text = "需要 OAuth 授权",
+                            text = stringResource(R.string.setting_mcp_page_oauth_required),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                         )
                         Button(
                             onClick = { mcpManager.startAuthorization(item, context) },
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
-                            Text("OAuth 授权")
+                            Text(stringResource(R.string.setting_mcp_page_oauth_authorize))
                         }
                     }
                     if (status == McpStatus.Authorizing) {
                         Text(
-                            text = "正在授权，请在浏览器中完成…",
+                            text = stringResource(R.string.setting_mcp_page_oauth_authorizing),
                             style = MaterialTheme.typography.labelSmall,
                         )
                         TextButton(
                             onClick = { mcpManager.cancelAuthorization(item) },
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                         ) {
-                            Text("取消授权")
+                            Text(stringResource(R.string.setting_mcp_page_oauth_cancel))
                         }
                     }
                 }
@@ -450,7 +450,7 @@ private fun McpServerConfigModal(state: EditState<McpServerConfig>) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.9f)
-                    .padding(16.dp),
+                    .padding(AppSpacing.sm),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SecondaryTabRow(
@@ -529,7 +529,7 @@ private fun McpCommonOptionsConfigure(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(AppSpacing.sm)
             .verticalScroll(rememberScrollState())
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -829,7 +829,8 @@ private fun McpCommonOptionsConfigure(
                             }
                         )
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(
                         HugeIcons.Add01,
@@ -967,7 +968,7 @@ private fun McpToolCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "启用",
+                        text = stringResource(R.string.setting_mcp_page_enable),
                         style = MaterialTheme.typography.labelSmall,
                     )
                     Switch(
@@ -1095,7 +1096,7 @@ private fun McpImportModal(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.7f)
-                .padding(16.dp)
+                .padding(AppSpacing.sm)
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -1137,7 +1138,8 @@ private fun McpImportModal(
                         } catch (e: Exception) {
                             errorMessage = parseErrorMsg.format(e.message ?: "")
                         }
-                    }
+                    },
+                    shape = MaterialTheme.shapes.medium,
                 ) {
                     Text(stringResource(R.string.setting_mcp_page_import_confirm))
                 }

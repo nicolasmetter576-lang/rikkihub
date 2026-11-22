@@ -14,6 +14,14 @@
   <files-path
     name="images"
     path="images/" />
+  <!-- File manager: library files and the primary shared storage, opened in other apps.
+       Only URIs the file manager explicitly hands out are granted. -->
+  <files-path
+    name="library"
+    path="library/" />
+  <external-path
+    name="device"
+    path="." />
   <!-- cache-path root is required: camera captures (ChatAttachmentPicker,
        ShortcutHandlerActivity), chart exports and workspace/device file
        exports (exportToCacheFile → cacheDir) are shared through FileProvider

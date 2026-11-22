@@ -134,9 +134,19 @@ object SubagentToolUI : ToolUIRenderer {
 
     @Composable
     override fun Preview(context: ToolUIContext, onDismissRequest: () -> Unit) {
+        val metadata = rememberSubagentMetadata(context)
+        if (shouldFallbackSubagentPreview(context, metadata)) {
+            DefaultToolPreview(context = context)
+            return
+        }
         SubagentRunPreview(context)
     }
 }
+
+internal fun shouldFallbackSubagentPreview(
+    context: ToolUIContext,
+    metadata: SubagentMetadata? = subagentMetadata(context.tool, context.content?.jsonObjectOrNull),
+): Boolean = metadata == null && context.tool.isExecuted && context.content?.jsonObjectOrNull == null
 
 /** Show the saved role snapshot separately from the task title; never look up the current preset. */
 @Composable

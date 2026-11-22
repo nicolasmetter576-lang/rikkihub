@@ -12,8 +12,11 @@ import me.rerere.rikkihub.data.fonts.okHttpFontFetcher
 import java.io.File
 import me.rerere.rikkihub.claudelife.ClaudeLifeManager
 import me.rerere.rikkihub.data.ai.tools.WorkspacePersistentBashSessionManager
+import me.rerere.rikkihub.data.cli.AcpSessionManager
 import me.rerere.rikkihub.data.ai.tools.local.LocalTools
 import me.rerere.rikkihub.data.ai.tools.ChatToolFactory
+import me.rerere.rikkihub.data.ai.qubagu.Qubagu
+import me.rerere.rikkihub.data.ai.tavern.TavernRuntime
 import me.rerere.rikkihub.data.creator.definition.AssistantRegistry
 import me.rerere.rikkihub.data.creator.runtime.CreatorToolSurface
 import me.rerere.rikkihub.data.creator.storage.CreatorReadDomain
@@ -29,9 +32,12 @@ import me.rerere.rikkihub.data.workspace.WorkspaceDeviceDirectoryService
 import me.rerere.rikkihub.data.workspace.WorkspaceDeviceStorage
 import me.rerere.rikkihub.data.workspace.WorkspaceDeviceUsage
 import me.rerere.rikkihub.data.workspace.WorkspaceRuntimeGate
+import me.rerere.rikkihub.data.workspace.WorkspaceEnvSetupService
 import me.rerere.rikkihub.data.workspace.WorkspaceRootfsInstallService
+import me.rerere.rikkihub.service.ChatFloatingTracker
 import me.rerere.rikkihub.service.ChatNotificationManager
 import me.rerere.rikkihub.service.ChatService
+import me.rerere.rikkihub.ui.floating.ChatFloatingWindows
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
 import me.rerere.rikkihub.web.routes.WebWorkspaceTerminalManager
 import me.rerere.rikkihub.utils.EmojiData
@@ -104,6 +110,10 @@ val appModule = module {
     }
 
     single {
+        AcpSessionManager(get(), get())
+    }
+
+    single {
         WebWorkspaceTerminalManager(get(), get())
     }
 
@@ -112,6 +122,8 @@ val appModule = module {
         val appTerminals = get<WorkspaceTerminalSessionManager>()
         val persistentBash = get<WorkspacePersistentBashSessionManager>()
         val webTerminals = get<WebWorkspaceTerminalManager>()
+        val cliSessions = get<AcpSessionManager>()
+        val koin = this
         WorkspaceRootfsInstallService(
             repository = get(),
             scope = get<AppScope>(),
@@ -119,7 +131,19 @@ val appModule = module {
                 appTerminals.closeWorkspace(root)
                 persistentBash.closeWorkspace(workspaceId)
                 webTerminals.closeWorkspace(workspaceId)
+                cliSessions.closeWorkspace(workspaceId)
+                koin.get<WorkspaceEnvSetupService>().cancelRunning(workspaceId)
             },
+        )
+    }
+
+    // 工作区基础环境一键配置（服务级任务，离开页面不中断；可接在 Rootfs 安装之后）
+    single {
+        WorkspaceEnvSetupService(
+            repository = get(),
+            rootfsInstallService = get(),
+            scope = get<AppScope>(),
+            prefs = get<Context>().getSharedPreferences("workspace_env", Context.MODE_PRIVATE),
         )
     }
 
@@ -143,6 +167,26 @@ val appModule = module {
         )
     }
 
+    // ChatService 只在后台才用到，延迟创建
+    single {
+        ChatFloatingTracker(
+            appScope = get(),
+            lazyChatService = lazy { get() },
+            settingsStore = get(),
+        )
+    }
+
+    // 同上；进程启动即开始跟随 Tracker 显示悬浮窗
+    single(createdAtStart = true) {
+        ChatFloatingWindows(
+            context = get(),
+            appScope = get(),
+            tracker = get(),
+            settingsStore = get(),
+            lazyChatService = lazy { get() },
+        )
+    }
+
     single {
         ChatToolFactory(
             memoryRepository = get(),
@@ -155,6 +199,7 @@ val appModule = module {
             settingsStore = get(),
             generationLoop = get(),
             persistentBashSessionManager = get(),
+            qubagu = Qubagu(get<TavernRuntime>().regexFactory),
             creatorToolSurface = get(),
         )
     }
@@ -235,6 +280,7 @@ val appModule = module {
                 subagents = get(),
                 workspaces = get(),
                 mutationRuntime = mutationRuntime,
+                characters = get(),
             ),
             skillsBackend = me.rerere.rikkihub.data.management.runtime.AppSkillsBackend(
                 filesRoot = context.filesDir,
@@ -261,8 +307,12 @@ val appModule = module {
             appScope = get(),
             settingsStore = get(),
             providerManager = get(),
+            usageRecorder = get(),
         )
     }
+
+    // 酒馆引擎：宏、JS 正则（QuickJS）与分词，进程内共享一份
+    single { me.rerere.rikkihub.data.ai.tavern.TavernRuntime() }
 
     single {
         ChatService(
@@ -285,6 +335,12 @@ val appModule = module {
             persistentBashSessionManager = get(),
             claudeLifeManager = get(),
             workspaceDeviceUsage = get(),
+            tavernRuntime = get(),
+            characterRepository = get(),
+            usageRecorder = get(),
+            fileManager = get(),
+            acpSessionManager = get(),
+            skillManager = get(),
         )
     }
 
@@ -324,6 +380,20 @@ val appModule = module {
             fontDownloadService = get(),
             translationHistoryRepo = get(),
             memoryScheduler = get(),
+            tavernRuntime = get(),
+            managementRuntime = get(),
+            characterRepository = get(),
+            characterService = get(),
+            usageStats = me.rerere.rikkihub.web.routes.WebUsageStats(
+                recorder = get(),
+                service = get(),
+                quotaTracker = get(),
+                usageDao = get(),
+                conversationDao = get(),
+                messageNodeDao = get(),
+            ),
+            fileManager = get(),
+            acpSessionManager = get(),
         )
     }
 }

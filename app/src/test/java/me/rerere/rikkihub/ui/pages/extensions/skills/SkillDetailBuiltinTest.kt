@@ -35,11 +35,12 @@ class SkillDetailBuiltinTest {
         assertTrue(h.vm.readOnly.value)
         assertTrue(h.vm.skill.value!!.isBuiltin)
         assertEquals("builtin note", h.vm.readFile(file(h.vm, "note.txt")))
-        var error: String? = null
+        var error: SkillDetailVM.SaveError? = null
         h.vm.saveFile("note.txt", "edit") { error = it }
-        assertNotNull(error)
+        assertEquals(SkillDetailVM.SaveError.ReadOnly, error)
+        error = null
         h.vm.saveFile("new.txt", "new") { error = it }
-        assertNotNull(error)
+        assertEquals(SkillDetailVM.SaveError.ReadOnly, error)
         var deleted = true
         h.vm.deleteFile(file(h.vm, "note.txt")) { deleted = it }
         assertFalse(deleted)
@@ -49,7 +50,7 @@ class SkillDetailBuiltinTest {
     @Test fun `user detail preserves file edit add delete and name validation`() {
         val h = harness(user = true)
         assertFalse(h.vm.readOnly.value)
-        var error: String? = "pending"
+        var error: SkillDetailVM.SaveError? = SkillDetailVM.SaveError.Failed
         h.vm.saveFile("note.txt", "edited") { error = it }
         assertNull(error)
         assertEquals("edited", h.vm.readFile(file(h.vm, "note.txt")))
@@ -59,7 +60,7 @@ class SkillDetailBuiltinTest {
         h.vm.deleteFile(file(h.vm, "new.txt")) { deleted = it }
         assertTrue(deleted)
         h.vm.saveFile("SKILL.md", "---\nname: renamed\ndescription: x\n---\nbody") { error = it }
-        assertNotNull(error)
+        assertEquals(SkillDetailVM.SaveError.NameChanged, error)
         assertEquals("user", h.manager.readSkillBody("creator"))
     }
     @Test fun `stale user vm never switches to modifying revealed builtin`() {
@@ -67,9 +68,9 @@ class SkillDetailBuiltinTest {
         val oldFile = file(h.vm, "note.txt")
         h.vm.skill.value!!.skillDir.deleteRecursively()
         assertTrue(h.manager.findSkill("creator")!!.isBuiltin)
-        var error: String? = null
+        var error: SkillDetailVM.SaveError? = null
         h.vm.saveFile("note.txt", "edited") { error = it }
-        assertNotNull(error)
+        assertEquals(SkillDetailVM.SaveError.ReadOnly, error)
         assertTrue(h.vm.readOnly.value)
         var deleted = true
         h.vm.deleteFile(oldFile) { deleted = it }

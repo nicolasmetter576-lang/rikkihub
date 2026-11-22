@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.extensions
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,21 +11,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,7 +32,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,22 +49,26 @@ import me.rerere.rikkihub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
 
 @Composable
 fun QuickMessagesPage(vm: QuickMessagesVM = koinViewModel()) {
     val settings = vm.settings.collectAsStateWithLifecycle().value
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<QuickMessage?>(null) }
     var deleteTarget by remember { mutableStateOf<QuickMessage?>(null) }
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.assistant_page_quick_messages)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
         floatingActionButton = {
@@ -74,13 +76,11 @@ fun QuickMessagesPage(vm: QuickMessagesVM = koinViewModel()) {
                 Icon(HugeIcons.Add01, contentDescription = null)
             }
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding + PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = innerPadding + PaddingValues(AppSpacing.sm),
         ) {
             if (settings.quickMessages.isEmpty()) {
                 item {
@@ -111,9 +111,11 @@ fun QuickMessagesPage(vm: QuickMessagesVM = koinViewModel()) {
                 }
             }
 
-            items(settings.quickMessages, key = { it.id }) { quickMessage ->
+            itemsIndexed(settings.quickMessages, key = { _, quickMessage -> quickMessage.id }) { index, quickMessage ->
                 QuickMessageCard(
                     quickMessage = quickMessage,
+                    shape = cardGroupItemShape(index, settings.quickMessages.size),
+                    divider = index > 0,
                     onEdit = { editTarget = quickMessage },
                     onDelete = { deleteTarget = quickMessage },
                 )
@@ -168,6 +170,8 @@ fun QuickMessagesPage(vm: QuickMessagesVM = koinViewModel()) {
 @Composable
 private fun QuickMessageCard(
     quickMessage: QuickMessage,
+    shape: Shape,
+    divider: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -175,12 +179,14 @@ private fun QuickMessageCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = shape,
         colors = CustomColors.cardColorsOnSurfaceContainer,
     ) {
+        if (divider) CardGroupDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                .padding(start = AppSpacing.sm, top = 10.dp, bottom = 10.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(

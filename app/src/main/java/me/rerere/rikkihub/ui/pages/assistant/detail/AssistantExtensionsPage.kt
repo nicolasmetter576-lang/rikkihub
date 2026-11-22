@@ -1,24 +1,23 @@
 package me.rerere.rikkihub.ui.pages.assistant.detail
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkihub.R
@@ -26,7 +25,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkihub.Screen
 import me.rerere.rikkihub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkihub.ui.components.ai.LorebooksContent
-import me.rerere.rikkihub.ui.components.ai.ModeInjectionsContent
+import me.rerere.rikkihub.ui.components.ai.PromptLibraryContent
 import me.rerere.rikkihub.ui.components.ai.QuickMessagesContent
 import me.rerere.rikkihub.ui.components.ai.SkillsContent
 import me.rerere.rikkihub.ui.components.nav.BackButton
@@ -42,20 +41,18 @@ fun AssistantExtensionsPage(id: String) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val skills by vm.skills.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState { 4 }
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text(stringResource(R.string.assistant_extensions_page_title)) },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         Column(
@@ -126,7 +123,7 @@ fun AssistantExtensionsPage(id: String) {
                     }
 
                     1 -> {
-                        if (settings.modeInjections.isEmpty()) {
+                        if (settings.promptLibrary.isEmpty()) {
                             ExtensionEmptyState(
                                 message = stringResource(R.string.assistant_extensions_page_empty_mode_injections),
                                 buttonText = stringResource(R.string.assistant_extensions_page_goto_prompts),
@@ -134,14 +131,14 @@ fun AssistantExtensionsPage(id: String) {
                             )
                         } else {
                             Column {
-                                ModeInjectionsContent(
+                                PromptLibraryContent(
                                     modifier = Modifier.weight(1f),
-                                    modeInjections = settings.modeInjections,
-                                    selectedIds = assistant.modeInjectionIds,
+                                    entries = settings.promptLibrary,
+                                    selectedIds = assistant.libraryEntryIds,
                                     onToggle = { injId, checked ->
-                                        val newIds = if (checked) assistant.modeInjectionIds + injId
-                                        else assistant.modeInjectionIds - injId
-                                        vm.update(assistant.copy(modeInjectionIds = newIds))
+                                        val newIds = if (checked) assistant.libraryEntryIds + injId
+                                        else assistant.libraryEntryIds - injId
+                                        vm.update(assistant.copy(libraryEntryIds = newIds))
                                     },
                                 )
                                 TextButton(

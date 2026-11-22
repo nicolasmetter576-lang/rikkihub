@@ -152,5 +152,65 @@
     "restore_failed": "撤销失败",
     "truncated": "只显示最近 {{count}} 条收藏",
     "refresh": "刷新"
-  }
+  },
+  "creator_proposals": {
+    "title": "提案",
+    "open": "查看提案",
+    "empty": "创造助手在这个会话里还没有提出修改。",
+    "pending_count": "{{count}} 个待你确认",
+    "load_failed": "加载提案失败",
+    "refresh": "刷新",
+    "approve": "批准并应用",
+    "approve_all": "全部批准（{{count}}）",
+    "reject": "拒绝",
+    "cancel": "撤回",
+    "approving": "正在应用…",
+    "approved_one": "修改已应用",
+    "approved_many": "已应用 {{applied}} 个，{{failed}} 个未应用",
+    "approve_failed": "无法应用这项修改",
+    "reject_failed": "无法拒绝这个提案",
+    "changed": "这个提案在显示之后又变了，已重新加载，请再看一遍。",
+    "write_gate": "应用正在启动，暂时不能写入，请稍后再试。",
+    "risk": {
+      "low": "低风险",
+      "medium": "中风险",
+      "high": "高风险"
+    },
+    "enhanced_confirm": "这一项请仔细核对",
+    "status": {
+      "pending_approval": "待确认",
+      "approved": "已批准",
+      "applying": "应用中",
+      "applied": "已应用",
+      "rejected": "已拒绝",
+      "expired": "已过期",
+      "cancelled": "已撤回",
+      "conflict": "未应用：数据已变化",
+      "failed": "失败",
+      "needs_recovery": "需要恢复",
+      "other": "其他"
+    },
+    "secret_hidden": "已隐藏（机密）",
+    "omitted": "还有 {{count}} 处修改未显示",
+    "created_ids": "新建对象的 id",
+    "empty_value": "（空）",
+    "expires": "有效期至 {{time}}",
+    "show_diff": "查看修改",
+    "hide_diff": "收起修改",
+    "domain": {
+      "QUICK_MESSAGE": "快捷消息",
+      "MODE_INJECTION": "提示词库",
+      "WORLD_BOOK": "世界书",
+      "ASSISTANT": "助手",
+      "MODEL_AND_PROMPT_DEFAULTS": "模型与默认设置",
+      "SUBAGENT_PRESET": "子代理预设",
+      "USER_SKILL": "技能",
+      "CONVERSATION": "会话",
+      "CHARACTER": "角色"
+    }
+  },
+  "character_picker": {
+    "cli_http_notice": "角色对话将使用普通 HTTP 模式（不启用工作区 CLI）。"
+  },
+  "cli_control_forbidden": "远程 CLI 控制需要配置访问密码，或仅限本机访问模式使用。"
 }

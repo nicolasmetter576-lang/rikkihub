@@ -3,12 +3,15 @@ package me.rerere.ai.registry
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelPricing
+import kotlinx.serialization.json.doubleOrNull
 import java.io.InputStream
 
 class ModelInfo(
@@ -16,6 +19,8 @@ class ModelInfo(
     val outputModalities: Set<Modality>,
     val abilities: Set<ModelAbility>,
     val contextLength: Int?,
+    /** models.dev 上的参考价（美元 / 百万 token），只在用户点「填入参考价」时用 */
+    val referencePrice: ModelPricing? = null,
 )
 
 /**
@@ -76,7 +81,17 @@ class ModelsDevCatalog private constructor(
                     if (flags and REASONING != 0) add(ModelAbility.REASONING)
                 },
                 contextLength = context.takeIf { it > 0 },
+                referencePrice = decodePrice(entry),
             )
+        }
+
+        private fun decodePrice(entry: JsonArray): ModelPricing? {
+            if (entry.size < 4) return null
+            fun at(index: Int): Double? = (entry.getOrNull(index) as? JsonPrimitive)
+                ?.takeUnless { it.isString }?.doubleOrNull?.takeIf { it.isFinite() && it in 0.0..1_000_000.0 }
+            val input = at(2) ?: return null
+            val output = at(3) ?: return null
+            return ModelPricing(input = input, output = output, cachedInput = at(4))
         }
 
         private fun modalities(imageSupported: Boolean): Set<Modality> =

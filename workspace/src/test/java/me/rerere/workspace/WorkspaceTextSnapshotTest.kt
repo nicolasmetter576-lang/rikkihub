@@ -167,7 +167,7 @@ class WorkspaceTextSnapshotTest {
         if (acl != null) assertEquals(acl, Files.getFileAttributeView(file.toPath(), java.nio.file.attribute.AclFileAttributeView::class.java).acl)
         assertEquals(mode, Files.getPosixFilePermissions(file.toPath()))
         assertEquals("new", file.readText())
-        assertTrue(root.listFiles()!!.none { it.name.startsWith(".l2s.edit.") })
+        assertTrue(root.listFiles()!!.none { it.name.startsWith(".rikkihub-tmp-") })
     }
 
     private fun sha(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }

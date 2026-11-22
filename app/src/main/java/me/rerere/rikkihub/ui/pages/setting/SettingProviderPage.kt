@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.setting
 
+import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import android.net.Uri
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Camera01
@@ -26,18 +27,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -46,7 +48,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -61,7 +62,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -90,12 +90,20 @@ import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
+import me.rerere.rikkihub.ui.theme.AppSpacing
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.Shape
+import me.rerere.rikkihub.ui.components.ui.CardGroupDivider
+import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import me.rerere.rikkihub.ui.components.ui.CardGroupCorner
 
 @Composable
 fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var searchQuery by remember { mutableStateOf("") }
     val lazyListState = rememberLazyListState()
     val currentSearchQuery by rememberUpdatedState(searchQuery)
@@ -140,7 +148,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = {
                     Text(text = stringResource(R.string.setting_provider_page_title))
                 },
@@ -158,11 +166,10 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                         addProvider(it)
                     }
                 },
-                scrollBehavior = scrollBehavior,
-                colors = CustomColors.topBarColors
+                colors = CustomColors.topBarColors,
+                expandedHeight = AppTopBarHeight,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         Column(
@@ -198,12 +205,11 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     .fillMaxWidth()
                     .weight(1f)
                     .imePadding(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp) +
+                contentPadding = PaddingValues(horizontal = AppSpacing.sm, vertical = 8.dp) +
                     PaddingValues(bottom = innerPadding.calculateBottomPadding()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
                 state = lazyListState,
             ) {
-                items(filteredProviders, key = { it.id }) { provider ->
+                itemsIndexed(filteredProviders, key = { _, provider -> provider.id }) { index, provider ->
                     ReorderableItem(
                         state = reorderableState,
                         key = provider.id
@@ -213,6 +219,8 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                                 .scale(if (isDragging) 0.95f else 1f)
                                 .fillMaxWidth(),
                             provider = provider,
+                            shape = cardGroupItemShape(index, filteredProviders.size),
+                            divider = index > 0,
                             dragHandle = {
                                 val haptic = LocalHapticFeedback.current
                                 IconButton(
@@ -280,17 +288,24 @@ private fun RecommendProviderButton(
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
-                RECOMMENDED_PROVIDERS.forEach { provider ->
-                    RecommendProviderItem(
-                        provider = provider,
-                        onAdd = {
-                            onAdd(provider)
-                            toaster.show(
-                                importSuccessMessage,
-                                type = ToastType.Success
-                            )
-                        }
-                    )
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(CardGroupCorner))
+                        .background(CustomColors.listItemColors.containerColor)
+                ) {
+                    RECOMMENDED_PROVIDERS.forEachIndexed { index, provider ->
+                        if (index > 0) CardGroupDivider()
+                        RecommendProviderItem(
+                            provider = provider,
+                            onAdd = {
+                                onAdd(provider)
+                                toaster.show(
+                                    importSuccessMessage,
+                                    type = ToastType.Success
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -302,41 +317,35 @@ private fun RecommendProviderItem(
     provider: ProviderSetting,
     onAdd: () -> Unit
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = CustomColors.listItemColors.containerColor
-        )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(AppSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        AutoAIIcon(
+            name = provider.name,
+            modifier = Modifier.size(40.dp)
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            AutoAIIcon(
-                name = provider.name,
-                modifier = Modifier.size(40.dp)
+            Text(
+                text = provider.name,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = provider.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                ProvideTextStyle(MaterialTheme.typography.labelSmall) {
-                    CompositionLocalProvider(LocalContentColor provides LocalContentColor.current.copy(alpha = 0.7f)) {
-                        provider.description()
-                    }
+            ProvideTextStyle(MaterialTheme.typography.labelSmall) {
+                CompositionLocalProvider(LocalContentColor provides LocalContentColor.current.copy(alpha = 0.7f)) {
+                    provider.description()
                 }
             }
-            IconButton(onClick = onAdd) {
-                Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.setting_provider_page_add))
-            }
+        }
+        IconButton(onClick = onAdd) {
+            Icon(HugeIcons.Add01, contentDescription = stringResource(R.string.setting_provider_page_add))
         }
     }
 }
@@ -568,7 +577,10 @@ private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
             },
             text = {
                 dialogState.currentState?.let {
-                    ProviderConfigure(it) { newState ->
+                    ProviderConfigure(
+                        provider = it,
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                    ) { newState ->
                         dialogState.currentState = newState
                     }
                 }
@@ -598,12 +610,15 @@ private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
 @Composable
 private fun ProviderItem(
     provider: ProviderSetting,
+    shape: Shape,
+    divider: Boolean,
     modifier: Modifier = Modifier,
     dragHandle: @Composable () -> Unit,
     onClick: () -> Unit
 ) {
     Card(
         modifier = modifier,
+        shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = if (provider.enabled) {
                 CustomColors.listItemColors.containerColor
@@ -613,8 +628,9 @@ private fun ProviderItem(
             onClick()
         }
     ) {
+        if (divider) CardGroupDivider()
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(AppSpacing.sm),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -62,6 +62,7 @@ sqlite-android = "-SNAPSHOT"
 termux = "0.118.0"
 diffutils = "4.17"
 snakeyaml = "2.7"
+jtokkit = "1.1.0"
 
 [libraries]
 android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
@@ -146,12 +147,14 @@ modelcontextprotocol-kotlin-sdk = { module = "com.github.rikkahub.mcp-kotlin-sdk
 pebble = { module = "io.pebbletemplates:pebble", version.ref = "pebble" }
 diffutils = { module = "io.github.java-diff-utils:java-diff-utils", version.ref = "diffutils" }
 snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
+jtokkit = { module = "com.knuddels:jtokkit", version.ref = "jtokkit" }
 androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 floatingx-app = { group = "io.github.petterpx", name = "floatingx-app", version.ref = "floatingx" }
 floatingx-compose = { group = "io.github.petterpx", name = "floatingx-compose", version.ref = "floatingx" }
+floatingx-system = { group = "io.github.petterpx", name = "floatingx-system", version.ref = "floatingx" }
 haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 haze-blur = { module = "dev.chrisbanes.haze:haze-blur", version.ref = "haze" }
 haze-blur-material3 = { module = "dev.chrisbanes.haze:haze-blur-material3", version.ref = "haze" }

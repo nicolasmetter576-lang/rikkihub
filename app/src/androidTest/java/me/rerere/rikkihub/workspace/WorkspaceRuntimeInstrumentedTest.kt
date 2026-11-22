@@ -3,7 +3,9 @@ package me.rerere.rikkihub.workspace
 import android.os.Process
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import me.rerere.rikkihub.data.files.FileFolders
 import me.rerere.rikkihub.data.workspace.defaultRootfsUrl
@@ -12,6 +14,7 @@ import me.rerere.workspace.WorkspaceMountSelection
 import me.rerere.workspace.WorkspacePtySession
 import me.rerere.workspace.WorkspaceShellRequest
 import me.rerere.workspace.WorkspaceStorageArea
+import me.rerere.workspace.WorkspaceSubprocessRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -133,5 +136,43 @@ class WorkspaceRuntimeInstrumentedTest {
         assertTrue(runCatching {
             backend.writeRootfsText(root, "/device/gone/tool.txt", "x", overwrite = true, mounts = mounts)
         }.isFailure)
+    }
+
+    @Test(timeout = 5 * 60_000)
+    fun d_subprocessStdoutStaysCleanAndStdinEofEndsIt() = runBlocking {
+        assumeTrue(args.getString("rootfs") != "false")
+        val root = "itest-shell" // rootfs installed by b_
+        assumeTrue(backend.hasRootfs(root))
+        // A chatty login profile and a stand-in ACP agent on ~/.local/bin (not on the base PATH).
+        val agent = "#!/bin/sh\necho stderr-noise >&2\n" +
+            "while IFS= read -r line; do printf '{\"echo\":\"%s\",\"pwd\":\"%s\"}\\n' \"\$line\" \"\$PWD\"; done\n"
+        backend.executeCommand(root, "mkdir -p /root/.local/bin", timeoutMillis = 30_000)
+        backend.writeRootfsText(root, "/root/.local/bin/itest-agent", agent, overwrite = true, mounts = WorkspaceMountSelection())
+        val setup = backend.executeCommand(root,
+            "cp /root/.profile /root/.profile.itest 2>/dev/null; echo 'echo profile-noise' >> /root/.profile; " +
+                "chmod +x /root/.local/bin/itest-agent",
+            timeoutMillis = 30_000)
+        assertEquals(setup.stderr, 0, setup.exitCode)
+        try {
+            val process = backend.openSubprocess(root, WorkspaceSubprocessRequest(command = listOf("itest-agent")))
+            try {
+                val stdout = process.stdout.bufferedReader()
+                process.stdin.write("hello world\n".toByteArray())
+                process.stdin.flush()
+                val line = withContext(Dispatchers.IO) { withTimeout(60_000) { stdout.readLine() } }
+                assertEquals("""{"echo":"hello world","pwd":"/workspace"}""", line)
+                process.close()
+                assertEquals(0, withTimeout(30_000) { process.awaitExit() })
+                assertEquals(null, stdout.readLine())
+                val stderr = process.stderr.bufferedReader().readText()
+                assertTrue(stderr, stderr.contains("profile-noise") && stderr.contains("stderr-noise"))
+            } finally {
+                process.close()
+            }
+        } finally {
+            backend.executeCommand(root,
+                "if [ -f /root/.profile.itest ]; then mv /root/.profile.itest /root/.profile; else rm -f /root/.profile; fi; " +
+                    "rm -f /root/.local/bin/itest-agent", timeoutMillis = 30_000)
+        }
     }
 }
