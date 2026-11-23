@@ -2,6 +2,11 @@ export type { WorkspaceSubagentPreset, SubagentPresetDraft, SubagentPresetsRespo
 
 export type WorkspaceShellStatus = "DISABLED" | "INSTALLING" | "READY" | "BROKEN";
 
+/** 三种工作区模式 */
+export type WorkspaceMode = "normal" | "book" | "minimal";
+
+export type BookPromptLanguage = "zh" | "en";
+
 export type WorkspaceStorageArea = "FILES" | "LINUX";
 
 export interface Workspace {
@@ -14,6 +19,9 @@ export interface Workspace {
   lastAccessAt?: number | null;
   toolApprovals?: Record<string, boolean>;
   harnessMinimal?: boolean;
+  /** 作品模式：标准工具面 + 作品工具，写作向提示词；不装 Rootfs 也能用 */
+  bookMode?: boolean;
+  bookPromptLanguage?: BookPromptLanguage;
   exposeUpload?: boolean;
   exposeSkills?: boolean;
   exposeToolOutputs?: boolean;

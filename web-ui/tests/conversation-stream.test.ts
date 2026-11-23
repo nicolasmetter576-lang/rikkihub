@@ -466,3 +466,35 @@ test("real SSE HTTP 401 becomes terminal rather than an endless loading/retry lo
   t.mock.timers.tick(60000);
   assert.equal(calls, 1);
 });
+
+test("stateful errors event replays offline errors across reconnect, clears on empty list, and isolates conversations", (t) => {
+  const h = harness(t);
+  const offlineError = {
+    id: "err-1",
+    message: "upstream 502 bad gateway",
+    title: "Generate failed",
+    solution: "compress_and_retry",
+    timestamp: 1234,
+    affectsReply: true,
+  };
+  h.emit({ type: "errors", conversationId: "B", errors: [offlineError] });
+  assert.deepEqual(h.stream.getSnapshot().generationErrors, []);
+
+  h.emit({ type: "errors", conversationId: "A", errors: [offlineError] });
+  assert.deepEqual(h.stream.getSnapshot().generationErrors, [offlineError]);
+
+  h.emit(snapshot());
+  // Transient disconnect & reconnect must not clear existing errors before the server replays its state.
+  h.connections[0].callbacks.onClose?.();
+  t.mock.timers.tick(1000);
+  assert.deepEqual(h.stream.getSnapshot().generationErrors, [offlineError]);
+
+  // Server sends empty list once errors are dismissed or cleared on next turn.
+  h.emit({ type: "errors", conversationId: "A", errors: [] });
+  assert.deepEqual(h.stream.getSnapshot().generationErrors, []);
+
+  // Re-populate and verify terminal 404 clears generationErrors along with detail.
+  h.emit({ type: "errors", conversationId: "A", errors: [offlineError] });
+  h.connections[1].callbacks.onError?.(Object.assign(new Error("gone"), { code: 404 }));
+  assert.deepEqual(h.stream.getSnapshot().generationErrors, []);
+});

@@ -89,6 +89,40 @@ SCRIPTS = {
         {"tool": "workspace_shell", "args": {"command": "for f in /tool_outputs/call_reused*; do echo \"$f $(grep -o -m1 -E 'AAAA|BBBB' \"$f\" | head -1) $(wc -c < \"$f\")\"; done"}},
         {"text": "listed"},
     ],
+    # a book workspace: list, write a new chapter, put it in the contents, read and search (no rootfs needed)
+    "book_tools": [
+        {"tool": "book_contents", "args": {}},
+        {"tool": "workspace_write_file", "args": {"path": "/workspace/第3章 归途.md", "text": "# 归途\n\n阿青推开门，雨停了。\n"}},
+        {"tool": "book_update", "args": {"operations": [
+            {"op": "add", "path": "/workspace/第3章 归途.md", "synopsis": "阿青回到旧屋"},
+            {"op": "set", "chapter": 1, "status": "final"}]}},
+        {"tool": "book_read", "args": {"chapter": 2, "to": 3}},
+        {"tool": "book_search", "args": {"query": "阿青"}},
+        {"tool": "workspace_edit_file", "args": {"path": "/workspace/第3章 归途.md", "old_text": "雨停了", "new_text": "雪停了"}},
+        {"tool": "workspace_read_file", "args": {"path": "/workspace/第3章 归途.md"}},
+        {"text": "book done"},
+    ],
+    # plot points of a chapter: one quote from the text, one the text does not have; then a comparison with a plan
+    "book_outline": [
+        {"text": '{"synopsis":"She waits."}\n{"text":"She waits for the boat","quote":"She waited at the pier"}\n{"text":"A letter comes","quote":"no such words here"}\n'},
+    ],
+    "book_compare": [
+        {"text": '{"beat":1,"state":"written","points":[1]}\n{"beat":2,"state":"changed","points":[2],"note":"A letter, not a boat"}\n{"beat":9,"state":"written","points":[1]}\n'},
+    ],
+    # beat writing: a chapter split into beats (in its synopsis), one finished beat, one slow enough to stop
+    "book_beats": [
+        {"text": '{"text":"She waits","words":300}\n{"text":"The letter","words":500}\n{"text":"North","words":200}\n'},
+    ],
+    "book_beat": [
+        {"text": "She stood at the pier.\n\nNobody came. (beat)"},
+    ],
+    "book_beat_slow": [
+        {"text": "Slowly the train went north. " * 20, "chunk_size": 12, "chunk_delay": 0.3},
+    ],
+    # nicknames of a renamed character (one occurs in the book, one does not)
+    "book_aliases": [
+        {"text": "{\"alias\":\"Little Lin\",\"to\":\"Little Su\"}\n{\"alias\":\"Nobody\",\"to\":\"X\"}\n"},
+    ],
     # a shell call that runs ~20 s (unbind the assistant's workspace while it runs)
     "slow_shell": [
         {"tool": "workspace_shell", "args": {"timeout": 60, "command": "sleep 20; echo SLOW_DONE"}},

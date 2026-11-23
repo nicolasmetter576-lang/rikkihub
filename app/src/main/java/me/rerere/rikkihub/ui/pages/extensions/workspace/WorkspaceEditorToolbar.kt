@@ -48,6 +48,7 @@ internal enum class WorkspaceEditorToolbarItem(val id: String, @StringRes val la
     TUIQIAO("tuiqiao", R.string.tuiqiao_title),
     ZAIZAO("zaizao", R.string.zaizao_title),
     QUBAGU("qubagu", R.string.qubagu_toolbar),
+    BEATS("beats", R.string.book_beats_title),
     FIND("find", R.string.workspace_editor_find),
     FORMAT("format", R.string.workspace_editor_format),
     HEADING("heading", R.string.workspace_editor_heading, WorkspaceMarkdownCommand.HEADING),
@@ -74,8 +75,8 @@ internal fun workspaceEditorToolbarOrder(stored: List<String>): List<WorkspaceEd
     return ordered + WorkspaceEditorToolbarItem.entries.filterNot { it in ordered }
 }
 
-/** Buttons per row in multi-row mode; 16 puts every button of a Markdown file on one row. */
-internal val WORKSPACE_TOOLBAR_PER_ROW = 3..16
+/** Buttons per row in multi-row mode; 17 puts every button of a Markdown chapter on one row. */
+internal val WORKSPACE_TOOLBAR_PER_ROW = 3..17
 
 /**
  * Multi-row mode cuts the buttons in order into rows of [perRow] (clamped to [WORKSPACE_TOOLBAR_PER_ROW]),
@@ -91,7 +92,7 @@ internal fun workspaceEditorToolbarRows(
 /**
  * What the open file offers. Markdown buttons need [markdown]; 排版 needs a [formatKind] (Markdown and
  * plain text only); 推敲/再造 show when their callback is set (same rule as the selection menu); 八股 when
- * [qubagu] is set; Find, Undo and Redo are always there. While 八股 marks are shown the text is read-only and
+ * [qubagu] is set; 节拍 when [onBeats] is set (chapters of a book); Find, Undo and Redo are always there. While 八股 marks are shown the text is read-only and
  * every button that would change it is greyed out (Find and 八股 itself stay).
  */
 internal class WorkspaceEditorToolbarActions(
@@ -101,6 +102,7 @@ internal class WorkspaceEditorToolbarActions(
     val onZaizao: ((start: Int, end: Int) -> Unit)? = null,
     val onFind: () -> Unit = {},
     val qubagu: WorkspaceEditorQubagu? = null,
+    val onBeats: (() -> Unit)? = null,
 ) {
     val locked: Boolean get() = qubagu?.active == true
 }
@@ -109,6 +111,7 @@ internal fun WorkspaceEditorToolbarItem.availableFor(actions: WorkspaceEditorToo
     WorkspaceEditorToolbarItem.TUIQIAO -> actions.onTuiqiao != null
     WorkspaceEditorToolbarItem.ZAIZAO -> actions.onZaizao != null
     WorkspaceEditorToolbarItem.QUBAGU -> actions.qubagu != null
+    WorkspaceEditorToolbarItem.BEATS -> actions.onBeats != null
     WorkspaceEditorToolbarItem.FORMAT -> actions.formatKind != null
     WorkspaceEditorToolbarItem.FIND, WorkspaceEditorToolbarItem.UNDO, WorkspaceEditorToolbarItem.REDO -> true
     else -> actions.markdown
@@ -176,6 +179,8 @@ private fun WorkspaceEditorToolbarButton(
                 ToolbarLabel(if (qubagu.scanning) stringResource(R.string.qubagu_toolbar_scanning) else label, fill)
             }
         }
+
+        WorkspaceEditorToolbarItem.BEATS -> WorkspaceEditorToolbarTextButton(onClick = { actions.onBeats?.invoke() }, size, enabled = unlocked, fill = fill) { ToolbarLabel(label, fill) }
 
         WorkspaceEditorToolbarItem.TUIQIAO, WorkspaceEditorToolbarItem.ZAIZAO -> {
             // Selection only (user decision): the button is grey until text is selected.

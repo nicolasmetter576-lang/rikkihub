@@ -34,6 +34,7 @@ import me.rerere.rikkihub.R
 import me.rerere.rikkihub.Screen
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolCatalog
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolCategory
+import me.rerere.rikkihub.data.ai.tools.BuiltinToolSpec
 import me.rerere.rikkihub.data.ai.tools.MAX_PARALLEL_TOOL_CALLS
 import me.rerere.rikkihub.data.ai.tools.ToolConcurrencyDefaults
 import me.rerere.rikkihub.data.ai.tools.ToolExecutionConfig
@@ -126,8 +127,7 @@ fun SettingToolsPage(vm: SettingVM = koinViewModel()) {
                                 onClick = { navController.navigate(Screen.SettingToolDetail(spec.id)) },
                                 headlineContent = {
                                     Text(
-                                        if (spec.isTool) spec.resolvedName(settings.toolOverrides)
-                                        else stringResource(R.string.setting_page_tools_workspace_reminder)
+                                        toolTitle(spec, settings.toolOverrides)
                                     )
                                 },
                                 supportingContent = {
@@ -157,8 +157,7 @@ fun SettingToolDetailPage(id: String, vm: SettingVM = koinViewModel()) {
                 title = {
                     Text(
                         spec?.let {
-                            if (it.isTool) it.resolvedName(settings.toolOverrides)
-                            else stringResource(R.string.setting_page_tools_workspace_reminder)
+                            toolTitle(it, settings.toolOverrides)
                         } ?: id
                     )
                 },
@@ -335,10 +334,19 @@ private fun ToolParallelSwitch(
     }
 }
 
+/** 作品模式的说明变体显示它所属工具的名字；系统提示没有名字。 */
+@Composable
+private fun toolTitle(spec: BuiltinToolSpec, overrides: Map<String, ToolOverride>): String {
+    val tool = if (spec.isTool) spec else spec.variantOf?.let { BuiltinToolCatalog[it] }?.takeIf { it.isTool }
+    return tool?.resolvedName(overrides) ?: stringResource(R.string.setting_page_tools_workspace_reminder)
+}
+
 @Composable
 private fun categoryTitle(category: BuiltinToolCategory): String = when (category) {
     BuiltinToolCategory.LOCAL -> stringResource(R.string.setting_page_tools_category_local)
     BuiltinToolCategory.WORKSPACE -> stringResource(R.string.setting_page_tools_category_workspace)
+    BuiltinToolCategory.BOOK_ZH -> stringResource(R.string.setting_page_tools_category_book_zh)
+    BuiltinToolCategory.BOOK_EN -> stringResource(R.string.setting_page_tools_category_book_en)
     BuiltinToolCategory.SEARCH -> stringResource(R.string.setting_page_tools_category_search)
     BuiltinToolCategory.MEMORY -> stringResource(R.string.setting_page_tools_category_memory)
     BuiltinToolCategory.CONVERSATION -> stringResource(R.string.setting_page_tools_category_conversation)

@@ -48,7 +48,7 @@ import me.rerere.rikkihub.data.db.migrations.Migration_22_23
 import me.rerere.rikkihub.data.db.migrations.Migration_8_9
 import me.rerere.rikkihub.utils.JsonInstant
 
-internal const val APP_DATABASE_VERSION = 47
+internal const val APP_DATABASE_VERSION = 48
 
 @Database(
     entities = [
@@ -114,6 +114,7 @@ internal const val APP_DATABASE_VERSION = 47
         // 44→45 是手写的 Migration_44_45（message_node 复合索引，AppDatabaseFactory 注册）
         AutoMigration(from = 45, to = 46),
         // 46→47 是手写的 Migration_46_47（memory_consolidation 复合主键，AppDatabaseFactory 注册）
+        AutoMigration(from = 47, to = 48),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)

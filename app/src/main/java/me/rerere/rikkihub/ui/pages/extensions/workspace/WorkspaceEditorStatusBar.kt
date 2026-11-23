@@ -35,6 +35,8 @@ import kotlinx.coroutines.withContext
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import me.rerere.rikkihub.ui.context.LocalToaster
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookChapterNav
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookChapterNavButtons
 import java.text.NumberFormat
 
 private data class WorkspaceStatsSnapshot(val total: WorkspaceTextStats, val selection: WorkspaceTextStats?)
@@ -54,6 +56,8 @@ internal fun WorkspaceEditorStatusBar(
     state: TextFieldState?,
     modifier: Modifier = Modifier,
     withSelection: Boolean = true,
+    chapterNav: BookChapterNav? = null,
+    onChapter: (String) -> Unit = {},
 ) {
     // While typing, only the toolbar sits above the keyboard.
     if (WindowInsets.isImeVisible) return
@@ -65,6 +69,7 @@ internal fun WorkspaceEditorStatusBar(
         Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             if (state != null) WorkspaceEditorStats(state, withSelection, style, color)
             Spacer(Modifier.weight(1f))
+            if (chapterNav != null) BookChapterNavButtons(chapterNav, onChapter)
             Text(
                 fileName,
                 style = style,

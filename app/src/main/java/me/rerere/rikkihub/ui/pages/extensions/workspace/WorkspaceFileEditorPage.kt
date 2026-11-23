@@ -5,6 +5,9 @@ import me.rerere.hugeicons.stroke.ArrowLeft01
 import me.rerere.hugeicons.stroke.FolderOpen
 import me.rerere.hugeicons.stroke.Layout2Column
 import me.rerere.hugeicons.HugeIcons
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import android.content.ClipData
@@ -49,6 +52,12 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookChapterRef
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BeatBoardSheet
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BeatBoardEditor
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookChapterNav
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.bookChapterNav
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.rememberWorkspaceBook
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import android.net.Uri
 import android.webkit.MimeTypeMap
@@ -83,6 +92,7 @@ import me.rerere.workspace.WorkspaceTextSnapshot
 import me.rerere.workspace.WorkspaceTextWriteResult
 import org.koin.compose.koinInject
 import me.rerere.rikkihub.data.ai.UsageRecorder
+import me.rerere.rikkihub.data.book.QuoteLocator
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkihub.data.ai.tavern.TavernRuntime
 import me.rerere.rikkihub.data.ai.qubagu.QubaguRefiner
@@ -94,7 +104,7 @@ import me.rerere.rikkihub.data.ai.qubagu.Qubagu
  * the workspace file list at the main file's folder; a text file picked there opens on that side.
  */
 @Composable
-fun WorkspaceFileEditorPage(id: String, area: WorkspaceStorageArea, path: String) {
+fun WorkspaceFileEditorPage(id: String, area: WorkspaceStorageArea, path: String, reveal: String = "") {
     val nav = LocalNavController.current
     val toaster = LocalToaster.current
     val sameFileMessage = stringResource(R.string.workspace_reference_same_file)
@@ -102,6 +112,7 @@ fun WorkspaceFileEditorPage(id: String, area: WorkspaceStorageArea, path: String
     var referenceTarget by rememberSaveable(id, area, path) { mutableStateOf<String?>(null) }
     var showReference by rememberSaveable(id, area, path) { mutableStateOf(false) }
     val referenceHandle = remember(id, area, path) { WorkspaceEditorPaneHandle() }
+    val book = rememberWorkspaceBook(id, area)
     val reference = referenceTarget?.let { target ->
         val (targetArea, targetPath) = target.split('\u0000', limit = 2)
         WorkspaceStorageArea.valueOf(targetArea) to targetPath
@@ -114,6 +125,12 @@ fun WorkspaceFileEditorPage(id: String, area: WorkspaceStorageArea, path: String
                 rememberWorkspaceEditorDocument(id, area, path), WorkspaceEditorPaneRole.MAIN, active,
                 onExit = { nav.popBackStack() },
                 onSwitch = { showReference = true },
+                reveal = reveal,
+                chapter = book?.entryByPath(path)?.let { BookChapterRef(id, it.id) },
+                chapterNav = bookChapterNav(book, path) { target ->
+                    nav.popBackStack()
+                    nav.navigate(Screen.WorkspaceFileEditor(id, area.name, target))
+                },
                 // Unsaved reference edits keep the page open: that side asks first.
                 beforeLeave = {
                     if (!referenceHandle.blocksLeave()) true else {
@@ -227,6 +244,12 @@ internal fun WorkspaceFileEditorPane(
     onSwitch: (() -> Unit)?,
     beforeLeave: () -> Boolean = { true },
     handle: WorkspaceEditorPaneHandle? = null,
+    /** Set when the file is a chapter of a book workspace: the status bar offers the neighbouring chapters. */
+    chapterNav: BookChapterNav? = null,
+    /** Set when the file is a chapter of a book workspace: the toolbar offers 节拍. */
+    chapter: BookChapterRef? = null,
+    /** Text to select and scroll to once, when the file first opens; empty = none. */
+    reveal: String = "",
 ) {
     val tuiqiaoCache = koinInject<WorkspaceTuiqiaoCache>()
     val zaizaoCache = koinInject<WorkspaceZaizaoCache>()
@@ -241,6 +264,12 @@ internal fun WorkspaceFileEditorPane(
     val draftStore = remember {
         WorkspaceEditorDraftStore(File(context.noBackupFilesDir, "workspace_editor_drafts"),
             onError = { Log.w(DRAFT_LOG_TAG, "workspace editor draft io failure", it) })
+    }
+    // The chapter to open instead of closing the page, once this file can be left.
+    var leaveTarget by remember(document.key) { mutableStateOf<String?>(null) }
+    fun exit() {
+        val target = leaveTarget
+        if (target != null && chapterNav != null) chapterNav.open(target) else onExit()
     }
     val editable = document.editable
     val fileName = document.fileName
@@ -294,6 +323,8 @@ internal fun WorkspaceFileEditorPane(
     val failedMessage = stringResource(R.string.workspace_editor_save_failed)
     val conflictMessage = stringResource(R.string.workspace_editor_conflict)
     val revertedMessage = stringResource(R.string.workspace_editor_reverted)
+    val beatsInsertedMessage = stringResource(R.string.book_beats_inserted_done)
+    val revealMissingMessage = stringResource(R.string.workspace_editor_reveal_missing)
     val tuiqiaoReplacedMessage = stringResource(R.string.tuiqiao_replaced)
     val tuiqiaoChangedMessage = stringResource(R.string.tuiqiao_source_changed)
     val tuiqiaoCopiedMessage = stringResource(R.string.tuiqiao_copied)
@@ -426,14 +457,64 @@ internal fun WorkspaceFileEditorPane(
         toaster.show(tuiqiaoReplacedMessage, type = ToastType.Success)
     }
 
-    fun requestLeave() {
+    fun requestLeave(target: String? = null) {
         if (!beforeLeave()) return
+        leaveTarget = target
         when {
-            !saving && !(editable && draftVm.loadedFileKey == fileKey && isDirty()) -> onExit()
+            !saving && !(editable && draftVm.loadedFileKey == fileKey && isDirty()) -> exit()
             canAutoSave() -> closeWhenSaved = true // flush autosave, then close without asking
             else -> leaveConfirm = true
         }
     }
+    var revealed by rememberSaveable(fileKey) { mutableStateOf(reveal.isEmpty()) }
+    var revealRange by remember(fileKey) { mutableStateOf<TextRange?>(null) }
+    LaunchedEffect(loading, loadError) {
+        if (loading || loadError || revealed) return@LaunchedEffect
+        revealed = true
+        val found = QuoteLocator.locate(textState.text.toString(), reveal)
+        if (found == null) toaster.show(revealMissingMessage, type = ToastType.Info)
+        else {
+            showPreview = false
+            revealRange = TextRange(found.first, found.last + 1)
+        }
+    }
+    var beatsOpen by rememberSaveable(fileKey) { mutableStateOf(false) }
+    // Writing drafts into the text needs what autosave needs, like 推敲.
+    val canEditText = editable && !loading && !loadError && validBaseline && draftVm.autoSavePause == null && !qubaguVm.active
+    val onBeats: (() -> Unit)? = if (chapter == null || !editable || loading || loadError) null else ({ beatsOpen = true })
+    if (beatsOpen && chapter != null) BeatBoardSheet(
+        workspaceId = chapter.workspaceId,
+        chapterId = chapter.chapterId,
+        editor = BeatBoardEditor(
+            path = document.displayPath,
+            text = textState.text.toString(),
+            cursor = textState.selection.max,
+            editable = canEditText,
+            insert = { insertions ->
+                textState.edit {
+                    insertions.forEach { replace(it.offset, it.offset, it.text) }
+                    val last = insertions.last()
+                    selection = TextRange(last.offset + last.text.trimEnd('\n').length)
+                }
+                toaster.show(beatsInsertedMessage, type = ToastType.Success)
+            },
+            replace = { range, text ->
+                textState.edit {
+                    replace(range.first, range.last + 1, text)
+                    selection = TextRange(range.first + text.length)
+                }
+                toaster.show(tuiqiaoReplacedMessage, type = ToastType.Success)
+            },
+            copy = { text ->
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("beat", text)))
+                    toaster.show(tuiqiaoCopiedMessage, type = ToastType.Success)
+                }
+            },
+        ),
+        onOpenSettings = { nav.navigate(Screen.SettingBook) },
+        onDismiss = { beatsOpen = false },
+    )
     /** [auto]: background save — silent on success, skipped when clean or paused; failure pauses it. */
     fun save(closeAfter: Boolean = false, auto: Boolean = false) {
         if (saving || loading || loadError || !editable || !hasValidBaseline()) return
@@ -454,7 +535,7 @@ internal fun WorkspaceFileEditorPane(
                 }
                 if (closeAfter && textState.text.toString() == frozenText) {
                     draftVm.discardBoundDraft()
-                    onExit()
+                    exit()
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -479,7 +560,7 @@ internal fun WorkspaceFileEditorPane(
         when {
             !isDirty() -> {
                 draftVm.discardBoundDraft()
-                onExit()
+                exit()
             }
             canAutoSave() -> save(closeAfter = true, auto = true)
             else -> leaveConfirm = true
@@ -489,10 +570,19 @@ internal fun WorkspaceFileEditorPane(
     BackHandler(enabled = active) { if (role == WorkspaceEditorPaneRole.MAIN) requestLeave() else onSwitch?.invoke() }
     // The side that slides away writes its text at once instead of after the usual pause.
     LaunchedEffect(active) { if (!active) latestSave(false, true) }
+    // Back in front with nothing unsaved: show what is on disk now, or the next key would end in a conflict.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, document.key) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (loading || loadError || saving || draftVm.loadedFileKey != fileKey || !hasValidBaseline() || isDirty()) return@repeatOnLifecycle
+            val disk = runCatching { document.read() }.getOrNull() ?: return@repeatOnLifecycle
+            if (!saving && !isDirty() && disk.revision != draftVm.baselineRevision) draftVm.adoptDiskText(disk.content, disk.revision)
+        }
+    }
     if (handle != null) {
         SideEffect {
             handle.blocksLeave = { saving || editable && draftVm.loadedFileKey == fileKey && isDirty() }
-            handle.requestLeave = ::requestLeave
+            handle.requestLeave = { requestLeave() }
         }
         DisposableEffect(handle) {
             onDispose {
@@ -535,9 +625,13 @@ internal fun WorkspaceFileEditorPane(
                 reloadConfirm = false
                 draftVm.loadedFileKey = null
                 loadRetry++
-            } else onExit()
+            } else exit()
         },
-        onContinue = { leaveConfirm = false; reloadConfirm = false },
+        onContinue = {
+            leaveConfirm = false
+            reloadConfirm = false
+            leaveTarget = null
+        },
     )
     val tuiqiaoSession = tuiqiaoVm.session
     if (tuiqiaoSession != null) {
@@ -613,7 +707,7 @@ internal fun WorkspaceFileEditorPane(
         topBar = {
             WorkspaceEditorTopBar(
                 navigation = {
-                    if (role == WorkspaceEditorPaneRole.MAIN) TextButton(onClick = ::requestLeave) { Text(stringResource(R.string.back)) }
+                    if (role == WorkspaceEditorPaneRole.MAIN) TextButton(onClick = { requestLeave() }) { Text(stringResource(R.string.back)) }
                     else IconButton(onClick = { onSwitch?.invoke() }) {
                         Icon(HugeIcons.ArrowLeft01, contentDescription = stringResource(R.string.workspace_reference_back))
                     }
@@ -623,7 +717,7 @@ internal fun WorkspaceFileEditorPane(
                         if (onSwitch != null) IconButton(onClick = onSwitch) {
                             Icon(HugeIcons.Layout2Column, contentDescription = stringResource(R.string.workspace_reference_open))
                         }
-                    } else IconButton(onClick = ::requestLeave) {
+                    } else IconButton(onClick = { requestLeave() }) {
                         Icon(HugeIcons.FolderOpen, contentDescription = stringResource(R.string.workspace_reference_files))
                     }
                     if (!loading && !loadError) {
@@ -711,7 +805,8 @@ internal fun WorkspaceFileEditorPane(
                     } else {
                         WorkspaceMarkdownEditor(textState, previewKind == WorkspaceFilePreviewKind.MARKDOWN,
                             Modifier.weight(1f), readOnly = !editable || !validBaseline, formatKind = workspaceFormatKind(fileName),
-                            onTuiqiao = onTuiqiao, onZaizao = onZaizao, active = active, qubagu = qubagu)
+                            onTuiqiao = onTuiqiao, onZaizao = onZaizao, active = active, qubagu = qubagu, onBeats = onBeats,
+                            reveal = revealRange, onRevealed = { revealRange = null })
                     }
                 }
             }
@@ -720,6 +815,8 @@ internal fun WorkspaceFileEditorPane(
                 path = document.displayPath,
                 state = textState.takeIf { !loading && !loadError && !webPreview },
                 withSelection = !showPreview,
+                chapterNav = chapterNav,
+                onChapter = { requestLeave(it) },
             )
         }
     }
@@ -751,6 +848,16 @@ internal class WorkspaceEditorDraftViewModel : ViewModel() {
         persistedDraftFingerprint = fingerprint
         persistedSelection = selection
         persistedBaselineRevision = baselineRevision
+    }
+    /** The clean file changed on disk: shows that version, keeping the cursor inside it. */
+    fun adoptDiskText(text: String, revision: String) {
+        val selection = textState.selection
+        textState.setTextAndPlaceCursorAtEnd(text)
+        textState.edit { this.selection = TextRange(selection.start.coerceAtMost(text.length), selection.end.coerceAtMost(text.length)) }
+        textState.undoState.clearHistory()
+        originalText = text
+        baselineRevision = revision
+        openedText = text
     }
     fun adoptRestoredDraft(text: String, selStart: Int, selEnd: Int, token: String, fileKey: String,
         originalText: String? = null, revision: String? = null, openedText: String? = null) {

@@ -35,6 +35,9 @@ object ToolConcurrencyDefaults {
         BuiltinToolIds.WORKSPACE_READ_FILE,
         BuiltinToolIds.STR_REPLACE_EDITOR, // 仅 view，见 argumentFilter
         BuiltinToolIds.SUBAGENT,
+        BuiltinToolIds.BOOK_CONTENTS,
+        BuiltinToolIds.BOOK_READ,
+        BuiltinToolIds.BOOK_SEARCH,
         BuiltinToolIds.SEARCH_WEB,
         BuiltinToolIds.SCRAPE_WEB,
         BuiltinToolIds.MEMORY_READ,

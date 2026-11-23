@@ -1424,7 +1424,7 @@ class GenerationLoop(
                 var responseBaseMessages = if (stepBase != null) {
                     messages.dropLast(1) + stepBase.copy(
                         usage = null, generationTimeMs = null, lastUsage = null,
-                        finishedAt = null, usageComplete = false,
+                        finishedAt = null, usageComplete = false, stopReason = null,
                     )
                 } else {
                     messages + UIMessage(
@@ -1612,7 +1612,7 @@ class GenerationLoop(
                 val stepStart = if (stepBase != null) {
                     messages.dropLast(1) + stepBase.copy(
                         usage = null, generationTimeMs = null, lastUsage = null,
-                        finishedAt = null, usageComplete = false,
+                        finishedAt = null, usageComplete = false, stopReason = null,
                     )
                 } else {
                     messages

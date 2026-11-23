@@ -1,6 +1,7 @@
 package me.rerere.rikkihub.data.ai.tools
 
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -23,7 +24,7 @@ class WorkspaceToolEnablementTest {
     )
 
     @Test
-    fun stableIdsAreExactlySevenAcrossBothModes() {
+    fun stableIdsAreFixedPerMode() {
         assertEquals(
             setOf(
                 "workspace_read_file", "workspace_write_file", "workspace_edit_file",
@@ -35,9 +36,17 @@ class WorkspaceToolEnablementTest {
             setOf("bash", "str_replace_editor", "subagent"),
             WorkspaceToolEnablement.minimalIds.toSet(),
         )
-        assertEquals(7, WorkspaceToolEnablement.configurableIds.size)
-        assertEquals(WorkspaceToolEnablement.normalIds, WorkspaceToolEnablement.idsFor(false))
-        assertEquals(WorkspaceToolEnablement.minimalIds, WorkspaceToolEnablement.idsFor(true))
+        assertEquals(
+            setOf("book_contents", "book_read", "book_search", "book_update"),
+            WorkspaceToolEnablement.bookToolIds.toSet(),
+        )
+        assertEquals(11, WorkspaceToolEnablement.configurableIds.size)
+        assertEquals(WorkspaceToolEnablement.normalIds, WorkspaceToolEnablement.idsFor(WorkspaceMode.NORMAL))
+        assertEquals(WorkspaceToolEnablement.minimalIds, WorkspaceToolEnablement.idsFor(WorkspaceMode.HARNESS_MINIMAL))
+        assertEquals(
+            WorkspaceToolEnablement.bookToolIds + WorkspaceToolEnablement.normalIds,
+            WorkspaceToolEnablement.idsFor(WorkspaceMode.BOOK),
+        )
     }
 
     @Test

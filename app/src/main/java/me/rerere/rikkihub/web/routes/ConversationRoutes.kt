@@ -12,6 +12,7 @@ import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 import io.ktor.server.sse.heartbeat
 import io.ktor.server.sse.sse
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
@@ -33,6 +34,7 @@ import me.rerere.rikkihub.data.model.NodeFavoriteTarget
 import me.rerere.rikkihub.data.repository.ConversationRepository
 import me.rerere.rikkihub.data.repository.FavoriteRepository
 import me.rerere.rikkihub.data.repository.FolderRepository
+import me.rerere.rikkihub.service.ChatError
 import me.rerere.rikkihub.service.ChatErrorSolution
 import me.rerere.rikkihub.service.ChatService
 import me.rerere.rikkihub.service.MessageQueueState
@@ -41,6 +43,8 @@ import me.rerere.rikkihub.web.NotFoundException
 import me.rerere.rikkihub.web.WebAuthConfig
 import me.rerere.rikkihub.web.requireCliControlAllowed
 import me.rerere.rikkihub.web.toAssistantUuid
+import me.rerere.rikkihub.web.dto.ConversationErrorDto
+import me.rerere.rikkihub.web.dto.ConversationErrorsEvent
 import me.rerere.rikkihub.web.dto.ConversationMetadataPatch
 import me.rerere.rikkihub.web.dto.ConversationNodeUpdateEvent
 import me.rerere.rikkihub.web.dto.ConversationQueueEvent
@@ -89,6 +93,8 @@ fun Route.conversationRoutes(
     }
 
     route("/conversations") {
+        conversationErrorDismissRoute(chatService::dismissConversationError)
+
         // GET /api/conversations - List conversations of current assistant
         get {
             val settings = settingsStore.settingsFlow.first()
@@ -774,6 +780,11 @@ fun Route.conversationRoutes(
                         ConversationStreamPayload.BatchErrors(events)
                     }
 
+                    // 有状态错误快照：建连和重连立即补发当前未关闭的会话错误，关闭/新回合开始时推空列表清掉
+                    val errorsStateEvents = chatService.errors
+                        .conversationErrorsFlow(uuid)
+                        .map { ConversationStreamPayload.ErrorsState(it) }
+
                     val queueEvents = chatService.getMessageQueueFlow(uuid).map { queueState ->
                         ConversationStreamPayload.Queue(queueState)
                     }
@@ -793,7 +804,15 @@ fun Route.conversationRoutes(
                         ConversationStreamPayload.Suggestion(suggestion)
                     }
 
-                    merge(conversationEvents, errorEvents, queueEvents, cacheWarmEvents, compressEvents, suggestionEvents).collect { payload ->
+                    merge(
+                        conversationEvents,
+                        errorEvents,
+                        errorsStateEvents,
+                        queueEvents,
+                        cacheWarmEvents,
+                        compressEvents,
+                        suggestionEvents,
+                    ).collect { payload ->
                         when (payload) {
                             is ConversationStreamPayload.Conversation -> {
                                 val conversation = payload.conversation
@@ -888,6 +907,10 @@ fun Route.conversationRoutes(
                                 }
                             }
 
+                            is ConversationStreamPayload.ErrorsState -> {
+                                send(data = JsonInstant.encodeToString(payload.event), event = "errors")
+                            }
+
                             is ConversationStreamPayload.CacheWarm -> {
                                 val json = JsonInstant.encodeToString(
                                     payload.status.toEvent(
@@ -927,6 +950,39 @@ fun Route.conversationRoutes(
 
 private const val MAX_NODE_UPDATES_PER_EVENT = 8
 
+internal fun ChatError.toConversationErrorDto(): ConversationErrorDto = ConversationErrorDto(
+    id = id.toString(),
+    message = error.message?.takeIf { it.isNotBlank() } ?: error.toString(),
+    title = title?.takeIf { it.isNotBlank() },
+    solution = solution?.takeIf { it == ChatErrorSolution.CompressAndRetry }?.let { "compress_and_retry" },
+    timestamp = timestamp,
+    affectsReply = affectsReply,
+)
+
+internal fun Flow<List<ChatError>>.conversationErrorsFlow(conversationId: Uuid): Flow<ConversationErrorsEvent> =
+    map { errors ->
+        ConversationErrorsEvent(
+            conversationId = conversationId.toString(),
+            errors = errors.asSequence()
+                .filter { it.conversationId == conversationId }
+                .map { it.toConversationErrorDto() }
+                .toList(),
+        )
+    }.distinctUntilChanged()
+
+internal fun Route.conversationErrorDismissRoute(
+    dismiss: (conversationId: Uuid, errorId: Uuid) -> Unit,
+) {
+    delete("/{id}/errors/{errorId}") {
+        val conversationId = (call.parameters["id"] ?: throw BadRequestException("Missing conversation id"))
+            .toUuid("conversation id")
+        val errorId = (call.parameters["errorId"] ?: throw BadRequestException("Missing error id"))
+            .toUuid("error id")
+        dismiss(conversationId, errorId)
+        call.respond(HttpStatusCode.NoContent)
+    }
+}
+
 private sealed interface ConversationStreamPayload {
     data class Conversation(
         val conversation: me.rerere.rikkihub.data.model.Conversation,
@@ -934,6 +990,8 @@ private sealed interface ConversationStreamPayload {
     ) : ConversationStreamPayload
 
     data class BatchErrors(val events: List<ErrorEvent>) : ConversationStreamPayload
+
+    data class ErrorsState(val event: ConversationErrorsEvent) : ConversationStreamPayload
 
     data class Queue(val queueState: MessageQueueState) : ConversationStreamPayload
 

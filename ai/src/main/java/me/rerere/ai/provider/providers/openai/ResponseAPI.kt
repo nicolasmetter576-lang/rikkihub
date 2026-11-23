@@ -715,7 +715,11 @@ class ResponseAPI(
                 role = MessageRole.ASSISTANT,
                 parts = parts,
             ),
-            finishReason = jsonObject["status"]?.jsonPrimitive?.contentOrNull,
+            finishReason = jsonObject["status"]?.jsonPrimitive?.contentOrNull?.let { status ->
+                val incompleteReason = (jsonObject["incomplete_details"] as? JsonObject)
+                    ?.get("reason")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                if (status == "incomplete" && incompleteReason != null) "$status:$incompleteReason" else status
+            },
             usage = usage.snapshot,
             hasCompleteUsage = usage.hasCompleteUsage,
         )

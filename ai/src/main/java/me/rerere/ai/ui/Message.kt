@@ -17,6 +17,61 @@ import kotlin.uuid.Uuid
 
 // 公共消息抽象, 具体的Provider实现会转换为API接口需要的DTO
 @Serializable
+enum class MessageStopReason {
+    @SerialName("max_tokens")
+    MAX_TOKENS,
+
+    @SerialName("content_filter")
+    CONTENT_FILTER,
+
+    @SerialName("step_limit")
+    STEP_LIMIT,
+
+    @SerialName("incomplete")
+    INCOMPLETE,
+}
+
+/**
+ * 将上游 provider 上报的 finishReason 原文归类为需要提示用户的异常结束原因。
+ * 仅认严格白名单；正常结束（stop / end_turn / completed / tool_calls 等）及未知代理值返回 null。
+ */
+fun classifyProviderFinishReason(finishReason: String?): MessageStopReason? {
+    val normalized = finishReason?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+    return when {
+        normalized in MAX_TOKENS_FINISH_REASONS -> MessageStopReason.MAX_TOKENS
+        normalized in CONTENT_FILTER_FINISH_REASONS -> MessageStopReason.CONTENT_FILTER
+        normalized == "max_turn_requests" -> MessageStopReason.STEP_LIMIT
+        normalized == "incomplete" ||
+            normalized == "pause_turn" ||
+            normalized.startsWith("incomplete:") -> MessageStopReason.INCOMPLETE
+        else -> null
+    }
+}
+
+private val MAX_TOKENS_FINISH_REASONS = setOf(
+    "length",
+    "max_tokens",
+    "max_output_tokens",
+    "incomplete:max_output_tokens",
+    "model_context_window_exceeded",
+)
+
+private val CONTENT_FILTER_FINISH_REASONS = setOf(
+    "content_filter",
+    "incomplete:content_filter",
+    "refusal",
+    "safety",
+    "recitation",
+    "blocklist",
+    "prohibited_content",
+    "spii",
+    "image_safety",
+    "image_prohibited_content",
+    "image_recitation",
+    "model_armor",
+)
+
+@Serializable
 data class UIMessage(
     val id: Uuid = Uuid.random(),
     val role: MessageRole,
@@ -47,6 +102,8 @@ data class UIMessage(
     val checkpointMeta: ContextCheckpointMetadata? = null,
     // null = 旧消息完整性未知；false = 生成中或已知缺报；true = 各步骤成功且用量完整
     val usageComplete: Boolean? = null,
+    // 异常结束原因（达到最大输出/内容拦截/工具步数上限/提前结束）；正常结束或旧消息为 null
+    val stopReason: MessageStopReason? = null,
     // 请求期间生成的内部消息；该标记仅在内存中使用
     @Transient
     val isSynthetic: Boolean = false,

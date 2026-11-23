@@ -2,6 +2,12 @@ import type { MessageRole, TokenUsage } from "./core";
 import type { UIMessageAnnotation } from "./annotations";
 import type { UIMessagePart } from "./parts";
 
+export type MessageStopReason =
+  | "max_tokens"
+  | "content_filter"
+  | "step_limit"
+  | "incomplete";
+
 /**
  * UI Message
  * @see ai/src/main/java/me/rerere/ai/ui/Message.kt - UIMessage
@@ -19,6 +25,7 @@ export interface UIMessage {
   usage?: TokenUsage | null;
   /** true = complete successful usage; false = partial/in progress; null/absent = legacy unknown */
   usageComplete?: boolean | null;
+  stopReason?: MessageStopReason | null;
   generationTimeMs?: number | null;
   lastUsage?: TokenUsage | null;
   stepCount?: number | null;

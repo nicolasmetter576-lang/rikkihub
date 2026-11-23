@@ -244,6 +244,26 @@ test("actual hook distinguishes first-connect failure and terminal auth/not-foun
   assert.equal(h.connections.length, 2);
 });
 
+test("useConversationDetail exposes stateful generationErrors and clears them across A -> B -> A", (t) => {
+  const h = hookHarness(t);
+  h.render("A");
+  const err = {
+    id: "err-offline",
+    message: "provider timeout",
+    title: "Reply failed",
+    solution: null,
+    timestamp: 500,
+    affectsReply: true,
+  };
+  h.emit({ type: "errors", conversationId: "A", errors: [err] });
+  assert.deepEqual(h.render("A").generationErrors, [err]);
+  const b = h.render("B", false);
+  assert.deepEqual(b.generationErrors, []);
+  h.commit();
+  const aAgain = h.render("A", false);
+  assert.deepEqual(aAgain.generationErrors, []);
+});
+
 for (const [path, name, args, response] of [
   [settingsMenu, "updateConversation", [{ customSystemPrompt: "new" }], conversation("A", 10)],
   [

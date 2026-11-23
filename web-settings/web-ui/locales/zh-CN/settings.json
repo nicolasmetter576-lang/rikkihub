@@ -21,7 +21,8 @@
     "writing": "写作",
     "tavern": "酒馆",
     "global_memory": "全局记忆",
-    "compression": "上下文压缩"
+    "compression": "上下文压缩",
+    "book": "作品"
   },
   "common": {
     "save": "保存",
@@ -822,7 +823,8 @@
       "ZAIZAO": "再造",
       "SUBAGENT": "子代理",
       "KEEPALIVE": "缓存保活",
-      "QUBAGU": "去八股"
+      "QUBAGU": "去八股",
+      "BOOK": "作品"
     },
     "quota_daily": "每日额度",
     "quota_weekly": "每周额度",
@@ -905,5 +907,9 @@
     "chunk_timeout": "分段单次超时",
     "chunk_timeout_follow": "跟随网络设置",
     "chunk_timeout_seconds": "{{seconds}} 秒"
+  },
+  "book": {
+    "title": "作品",
+    "description": "作品功能（找别称、反向大纲、节拍）用的模型。不带助手提示词和工具。"
   }
 }

@@ -63,7 +63,11 @@
     "usage_current_unknown": "最近模型步骤未报告完整用量；上下文与缓存未知。",
     "usage_reported_total": "已报告总 token：{{tokens}}",
     "usage_context_note": "上下文仅为最近逻辑模型步骤的用量参考，不是下一次请求的精确容量。",
-    "usage_timing_note": "应用侧观测耗时：流式从首个数据块开始，非流式包含请求等待；不含工具执行与审批等待。输出可含思考和中间步骤，速度不是纯正文或模型硬件吞吐。"
+    "usage_timing_note": "应用侧观测耗时：流式从首个数据块开始，非流式包含请求等待；不含工具执行与审批等待。输出可含思考和中间步骤，速度不是纯正文或模型硬件吞吐。",
+    "stop_reason_max_tokens": "已达最大输出长度，回复可能未完成",
+    "stop_reason_content_filter": "输出被内容安全策略中断",
+    "stop_reason_step_limit": "已达最大工具调用步数，任务可能未完成",
+    "stop_reason_incomplete": "回复提前结束，可能未完成"
   },
   "translation": {
     "translate": "翻译",

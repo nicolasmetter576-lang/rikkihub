@@ -23,6 +23,7 @@ export default [
     route("settings/tuiqiao", "routes/settings.tuiqiao.tsx"),
     route("settings/zaizao", "routes/settings.zaizao.tsx"),
     route("settings/qubagu", "routes/settings.qubagu.tsx"),
+    route("settings/book", "routes/settings.book.tsx"),
     route("settings/prompt-polish", "routes/settings.prompt-polish.tsx"),
     route("settings/global-memory", "routes/settings.global-memory.tsx"),
     route("settings/compression", "routes/settings.compression.tsx"),

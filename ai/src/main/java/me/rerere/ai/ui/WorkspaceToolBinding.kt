@@ -25,7 +25,7 @@ data class WorkspaceToolIdentity(
      */
     val implementationId: String = stableId,
     /**
-     * 装配模式：`"normal"` 或 `"harness_minimal"`（见 [WorkspaceToolMode]）。
+     * 装配模式：`"normal"`、`"harness_minimal"` 或 `"book"`（见 [WorkspaceToolMode]）。
      */
     val mode: String = WorkspaceToolMode.NORMAL,
     /**
@@ -56,4 +56,5 @@ data class WorkspaceToolIdentity(
 object WorkspaceToolMode {
     const val NORMAL = "normal"
     const val HARNESS_MINIMAL = "harness_minimal"
+    const val BOOK = "book"
 }

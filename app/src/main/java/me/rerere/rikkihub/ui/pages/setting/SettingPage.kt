@@ -8,6 +8,7 @@ import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.ui.components.ui.SettingSearchTarget
 import me.rerere.rikkihub.ui.components.ui.switchItem
 import me.rerere.rikkihub.ui.components.ui.CardGroup
+import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Package01
 import me.rerere.hugeicons.stroke.Search01
@@ -270,6 +271,7 @@ internal val settingBlocks = listOf(
             SettingEntry(R.string.tuiqiao_title, HugeIcons.QuillWrite01, Screen.SettingTuiqiao),
             SettingEntry(R.string.zaizao_title, HugeIcons.AiEditing, Screen.SettingZaizao),
             SettingEntry(R.string.qubagu_title, HugeIcons.Clean, Screen.SettingQubagu),
+            SettingEntry(R.string.book_settings_title, HugeIcons.BookOpen01, Screen.SettingBook),
         )
     ),
     SettingBlock(

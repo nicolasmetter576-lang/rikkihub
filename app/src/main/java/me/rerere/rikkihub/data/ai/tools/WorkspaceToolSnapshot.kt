@@ -12,7 +12,9 @@ import me.rerere.ai.provider.WorkspaceToolWirePolicy
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.WorkspaceToolIdentity
 import me.rerere.ai.ui.WorkspaceToolMode
+import me.rerere.rikkihub.data.book.BookStore
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.data.workspace.WorkspaceEpochs
 import me.rerere.rikkihub.data.workspace.WorkspacePolicyCancellationException
@@ -212,7 +214,7 @@ fun interface WorkspaceToolRunner {
  * （policy 漂移不炸旧 part）；以后可由视图层替换/叠加 merged view 指纹。
  */
 internal fun workspaceToolViewFingerprint(workspace: WorkspaceEntity, viewEpoch: Long = 0L): String {
-    val mode = if (workspace.harnessMinimal) WorkspaceToolMode.HARNESS_MINIMAL else WorkspaceToolMode.NORMAL
+    val mode = workspace.mode.wireName()
     val base = "root:${workspace.root}:mode:$mode"
     // Each published device structure/activation transition owns a different view instance.
     // The separately signed process nonce prevents reuse of this counter after restart.
@@ -234,7 +236,7 @@ internal fun workspaceToolIdentity(
         WorkspaceSubagentPresets.implementationId(workspace.subagentPresets,
             workspace.subagentModelId, workspace.subagentAllowContext)
     } else stableId,
-    mode = if (workspace.harnessMinimal) WorkspaceToolMode.HARNESS_MINIMAL else WorkspaceToolMode.NORMAL,
+    mode = workspace.mode.wireName(),
     viewFingerprint = workspaceToolViewFingerprint(workspace, toolRunner?.currentEpochs(workspace.id)?.viewEpoch ?: 0L),
     activationEpoch = toolRunner?.currentToolEpoch(workspace.id, stableId) ?: 0L,
     activationSession = toolRunner?.activationSession,
@@ -246,9 +248,23 @@ internal fun workspaceToolIdentity(
  */
 internal fun enabledWorkspaceToolIds(workspace: WorkspaceEntity): Set<String> {
     val parsed = WorkspaceToolEnablement.tryParse(workspace.toolEnablement) ?: return emptySet()
-    return WorkspaceToolEnablement.idsFor(workspace.harnessMinimal)
+    return WorkspaceToolEnablement.idsFor(workspace.mode)
         .filterTo(LinkedHashSet()) { parsed.toolEnabled(it) }
 }
+
+internal fun WorkspaceMode.wireName(): String = when (this) {
+    WorkspaceMode.NORMAL -> WorkspaceToolMode.NORMAL
+    WorkspaceMode.HARNESS_MINIMAL -> WorkspaceToolMode.HARNESS_MINIMAL
+    WorkspaceMode.BOOK -> WorkspaceToolMode.BOOK
+}
+
+/** 工具的运行条件：都要 Rootfs READY；作品模式里只有命令行要。 */
+internal fun WorkspaceEntity.hasToolBackend(stableId: String): Boolean =
+    shellStatus == WorkspaceShellStatus.READY.name || (bookMode && stableId != BuiltinToolIds.WORKSPACE_SHELL)
+
+/** 当前真正声明给模型的稳定 ID：启用且具备运行条件。 */
+internal fun declaredWorkspaceToolIds(workspace: WorkspaceEntity): Set<String> =
+    enabledWorkspaceToolIds(workspace).filterTo(LinkedHashSet()) { workspace.hasToolBackend(it) }
 
 /**
  * 禁用/非本模式 workspace 稳定 ID 的当前解析 wire 名（wireName → stableId）。
@@ -259,18 +275,23 @@ internal fun forbiddenWorkspaceToolNames(
     overrides: Map<String, ToolOverride>,
 ): Map<String, String> {
     // 非 READY / 缺失工作区不声明任何工具：全部可配置 ID 进禁用面
-    val enabled = if (workspace?.shellStatus == WorkspaceShellStatus.READY.name) {
-        enabledWorkspaceToolIds(workspace)
+    val enabled = workspace?.let(::declaredWorkspaceToolIds).orEmpty()
+    // 作品工具名只在作品模式里保护，其余模式的别名表保持原样
+    val guarded = if (workspace?.bookMode == true) {
+        WorkspaceToolEnablement.configurableIds
     } else {
-        emptySet()
+        WorkspaceToolEnablement.configurableIds - WorkspaceToolEnablement.bookToolIds.toSet()
     }
-    return forbiddenWireNameMap(overrides) { it !in enabled }
+    return forbiddenWireNameMap(overrides, guarded) { it !in enabled }
 }
 
 /** 全部可配置稳定 ID 的禁用别名表（工作区缺失/不可用的 all-forbidden 口径）。 */
 internal fun forbiddenAllWorkspaceToolNames(
     overrides: Map<String, ToolOverride>,
-): Map<String, String> = forbiddenWireNameMap(overrides) { true }
+): Map<String, String> = forbiddenWireNameMap(
+    overrides,
+    WorkspaceToolEnablement.configurableIds - WorkspaceToolEnablement.bookToolIds.toSet(),
+) { true }
 
 /**
  * 禁用面的 wire 名映射：每个进禁用面的 stableId 同时保护**稳定原名与 Override
@@ -280,6 +301,7 @@ internal fun forbiddenAllWorkspaceToolNames(
  */
 private fun forbiddenWireNameMap(
     overrides: Map<String, ToolOverride>,
+    guarded: Set<String>,
     include: (String) -> Boolean,
 ): Map<String, String> {
     val map = LinkedHashMap<String, String>()
@@ -290,7 +312,7 @@ private fun forbiddenWireNameMap(
         }
         map[wireName] = stableId
     }
-    for (id in WorkspaceToolEnablement.configurableIds) {
+    for (id in guarded) {
         if (!include(id)) continue
         claim(id, id)
         claim(BuiltinToolCatalog.require(id).resolvedName(overrides), id)
@@ -343,17 +365,16 @@ internal fun requireWorkspaceToolAdmissible(
             "Workspace id mismatch: ${entity.id} != ${identity.workspaceId}",
         )
     }
-    if (entity.shellStatus != WorkspaceShellStatus.READY.name) {
+    if (!entity.hasToolBackend(identity.stableId)) {
         throw WorkspaceToolUnavailableException(
             identity,
             WorkspaceToolUnavailableException.Reason.NOT_READY,
             "Workspace ${identity.workspaceId} shell status is ${entity.shellStatus}, not READY",
         )
     }
-    val currentMode =
-        if (entity.harnessMinimal) WorkspaceToolMode.HARNESS_MINIMAL else WorkspaceToolMode.NORMAL
+    val currentMode = entity.mode.wireName()
     if (identity.mode != currentMode ||
-        identity.stableId !in WorkspaceToolEnablement.idsFor(entity.harnessMinimal)
+        identity.stableId !in WorkspaceToolEnablement.idsFor(entity.mode)
     ) {
         throw WorkspaceToolUnavailableException(
             identity,
@@ -559,6 +580,7 @@ internal fun createWorkspaceToolSnapshot(
     exposedTargets: Set<String> = workspace.exposedMountTargets(),
     /** Working-directory confinement of this request; null = whole workspace. */
     filesScope: String? = null,
+    bookStore: BookStore? = null,
 ): WorkspaceToolSnapshot {
     // 切片工具在此统一过 Override（有且仅有一次）：wire 名、bindings、
     // capabilities.availableToolNames、禁用别名全部以最终发出名同源。
@@ -575,7 +597,9 @@ internal fun createWorkspaceToolSnapshot(
         loadWorkspace = loadWorkspace,
         subagentCatalog = catalog,
         filesScope = filesScope,
+        bookStore = bookStore.takeIf { workspace.bookMode },
     )
+    val promptLanguage = workspace.promptLanguage()
     if (catalog?.available?.isNotEmpty() == true && subagentHost != null &&
         candidates.any { it.workspaceIdentity?.stableId == BuiltinToolIds.SUBAGENT } &&
         (subagentHost.parentAssistant.customBodies + subagentHost.parentModel.customBodies).any {
@@ -587,7 +611,7 @@ internal fun createWorkspaceToolSnapshot(
     }
     // Overrides intentionally replace the static description. Finalize the mandatory directory
     // from the very same captured catalogue used by parameters/dispatch, once and only once.
-    val tools = candidates.applyBuiltinOverrides(overrides, placeholders).map { tool ->
+    val tools = candidates.applyBuiltinOverrides(overrides, placeholders, promptLanguage).map { tool ->
         if (tool.workspaceIdentity?.stableId == BuiltinToolIds.SUBAGENT && catalog?.available?.isNotEmpty() == true) {
             tool.copy(description = tool.description + "\n\n" + subagentPresetDirectory(catalog.available))
         } else tool
@@ -601,9 +625,10 @@ internal fun createWorkspaceToolSnapshot(
         workspaceId = workspace.id,
         workspaceName = workspace.name,
         harnessMinimal = workspace.harnessMinimal,
+        promptLanguage = promptLanguage,
         availableToolNames = tools.associate { it.workspaceIdentity!!.stableId to it.name },
         instructionsCwd = cwd,
-        instructionsEligible = workspace.shellStatus == me.rerere.workspace.WorkspaceShellStatus.READY.name,
+        instructionsEligible = workspace.toolsReady,
         exposedTargets = exposedTargets,
         policyEpoch = policyEpoch,
         viewFingerprint = viewFingerprint,

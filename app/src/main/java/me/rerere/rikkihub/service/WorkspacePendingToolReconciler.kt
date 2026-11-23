@@ -6,12 +6,11 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolCatalog
 import me.rerere.rikkihub.data.ai.tools.ToolOverride
 import me.rerere.rikkihub.data.ai.tools.WorkspaceToolEnablement
-import me.rerere.rikkihub.data.ai.tools.enabledWorkspaceToolIds
+import me.rerere.rikkihub.data.ai.tools.declaredWorkspaceToolIds
 import me.rerere.rikkihub.data.ai.tools.forbiddenWorkspaceToolNames
 import me.rerere.rikkihub.data.ai.tools.resolvedName
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkihub.data.model.Conversation
-import me.rerere.workspace.WorkspaceShellStatus
 
 /**
  * pending 清理纯逻辑：会话树里「未开始/未执行」的工作区工具调用
@@ -198,10 +197,8 @@ internal fun buildWorkspacePendingToolJudge(
     toolOverrides: Map<String, ToolOverride>,
 ): WorkspacePendingToolJudge {
     val resolvedNames: Map<String, String> =
-        if (sessionWorkspace != null &&
-            sessionWorkspace.shellStatus == WorkspaceShellStatus.READY.name
-        ) {
-            enabledWorkspaceToolIds(sessionWorkspace).associate { stableId ->
+        if (sessionWorkspace != null) {
+            declaredWorkspaceToolIds(sessionWorkspace).associate { stableId ->
                 stableId to BuiltinToolCatalog.require(stableId).resolvedName(toolOverrides)
             }
         } else {

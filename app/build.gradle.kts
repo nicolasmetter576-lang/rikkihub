@@ -86,8 +86,8 @@ android {
         applicationId = if (coexist) "me.rerere.rikkihub.subagent" else "me.rerere.rikkihub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 253
-        versionName = "2.50.6"
+        versionCode = 259
+        versionName = "2.55.0"
 
         // 各变体应用名：共存包 RikkiTomo / 发布包 RikkiRana / debug RikkiUmi
         manifestPlaceholders["appName"] = "Rikkihub"

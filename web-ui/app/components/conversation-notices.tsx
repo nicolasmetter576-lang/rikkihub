@@ -1,19 +1,21 @@
 import * as React from "react";
 
-import { AlertTriangle, Gauge, Loader2, ScrollText, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, Gauge, Loader2, ScrollText, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { compressErrorKey } from "~/components/compress-dialog";
 import { Button } from "~/components/ui/button";
 import type { ConversationSizeInfo } from "~/lib/conversation-size";
 import { cn } from "~/lib/utils";
-import type { CompressStateDto } from "~/types";
+import type { CompressStateDto, ConversationErrorDto } from "~/types";
 
 interface ConversationNoticesProps {
   /** Latest compression state from the conversation SSE. */
   compressState: CompressStateDto | null;
   /** A failure that happened while this page was open; cleared by the user. */
   compressFailure: CompressStateDto | null;
+  /** Stateful generation errors replayed over SSE until dismissed or superseded. */
+  generationErrors?: ConversationErrorDto[];
   sizeInfo: ConversationSizeInfo;
   sizeWarningDismissed: boolean;
   isCliSession?: boolean;
@@ -21,6 +23,8 @@ interface ConversationNoticesProps {
   onCancelCompression: () => void;
   onOpenCompress: () => void;
   onDismissFailure: () => void;
+  onDismissGenerationError?: (errorId: string) => void;
+  onCompressAndRetry?: () => void;
   onDismissSizeWarning: () => void;
   onNewConversation: () => void;
   /** "Notify only" hint from the server; null when there is nothing to suggest. */
@@ -35,7 +39,7 @@ function Notice({
   children,
   actions,
 }: {
-  tone: "info" | "warning";
+  tone: "info" | "warning" | "error";
   icon: React.ReactNode;
   children: React.ReactNode;
   actions?: React.ReactNode;
@@ -43,15 +47,19 @@ function Notice({
   return (
     <div className="mx-auto mb-2 w-full max-w-3xl px-4">
       <div
-        role="status"
+        role={tone === "error" ? "alert" : "status"}
         className={cn(
           "flex w-full flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-          tone === "warning"
-            ? "border-amber-500/40 bg-amber-500/10 text-foreground"
-            : "bg-muted text-foreground",
+          tone === "error"
+            ? "border-destructive/40 bg-destructive/10 text-foreground"
+            : tone === "warning"
+              ? "border-amber-500/40 bg-amber-500/10 text-foreground"
+              : "bg-muted text-foreground",
         )}
       >
-        <span className="shrink-0 text-muted-foreground">{icon}</span>
+        <span className={cn("shrink-0", tone === "error" ? "text-destructive" : "text-muted-foreground")}>
+          {icon}
+        </span>
         <div className="min-w-0 flex-1">{children}</div>
         {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
       </div>
@@ -62,6 +70,7 @@ function Notice({
 export function ConversationNotices({
   compressState,
   compressFailure,
+  generationErrors = [],
   sizeInfo,
   sizeWarningDismissed,
   isCliSession = false,
@@ -69,6 +78,8 @@ export function ConversationNotices({
   onCancelCompression,
   onOpenCompress,
   onDismissFailure,
+  onDismissGenerationError,
+  onCompressAndRetry,
   onDismissSizeWarning,
   onNewConversation,
   compressSuggestion = null,
@@ -81,6 +92,41 @@ export function ConversationNotices({
 
   return (
     <>
+      {generationErrors.map((err) => {
+        const isWarning = err.affectsReply === false;
+        return (
+          <Notice
+            key={err.id}
+            tone={isWarning ? "warning" : "error"}
+            icon={isWarning ? <AlertTriangle className="size-4" /> : <AlertCircle className="size-4" />}
+            actions={
+              <>
+                {err.solution === "compress_and_retry" && !running && onCompressAndRetry ? (
+                  <Button type="button" size="sm" variant="ghost" onClick={onCompressAndRetry}>
+                    {t("conversations.compress.compress_and_retry")}
+                  </Button>
+                ) : null}
+                {onDismissGenerationError ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={t("conversations.compress.dismiss")}
+                    onClick={() => onDismissGenerationError(err.id)}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                ) : null}
+              </>
+            }
+          >
+            {err.title ? <div className="font-medium">{err.title}</div> : null}
+            <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-xs text-muted-foreground">
+              {err.message}
+            </div>
+          </Notice>
+        );
+      })}
       {running ? (
         <Notice
           tone="info"

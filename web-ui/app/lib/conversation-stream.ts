@@ -3,7 +3,9 @@ import type { SSECallbacks } from "../services/api";
 import type {
   CompressStateDto,
   CompressSuggestionEventDto,
+  ConversationErrorDto,
   ConversationErrorEventDto,
+  ConversationErrorsEventDto,
   ConversationDto,
   ConversationNodeUpdateEventDto,
   ConversationQueueEventDto,
@@ -31,6 +33,8 @@ export interface ConversationStreamState {
   compressState: CompressStateDto | null;
   /** "Notify only" hint: usage percent of the input budget, or null. */
   compressSuggestion: { percent: number; exact: boolean } | null;
+  /** Stateful conversation-scoped errors replayed on connect/reconnect until dismissed or cleared. */
+  generationErrors: ConversationErrorDto[];
   status: ConversationSyncStatus;
   error: string | null;
 }
@@ -76,6 +80,7 @@ export function createConversationStream(id: string | null, deps: StreamDependen
     cacheWarm: null,
     compressState: null,
     compressSuggestion: null,
+    generationErrors: [] as ConversationErrorDto[],
     error: null,
   };
   let state: ConversationStreamState = { ...empty, status: id ? "connecting" : "idle" };
@@ -237,6 +242,11 @@ export function createConversationStream(id: string | null, deps: StreamDependen
                 serverTime: payload.serverTime ?? Date.now(),
               },
             });
+          } else if (event === "errors") {
+            const payload = data as ConversationErrorsEventDto;
+            if (payload.type === event && payload.conversationId === id && Array.isArray(payload.errors)) {
+              publish({ generationErrors: payload.errors });
+            }
           } else if (event === "error") {
             const payload = data as ConversationErrorEventDto;
             if (payload.type === event) deps.onGenerationError(payload.message, payload.solution ?? null);

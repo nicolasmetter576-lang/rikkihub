@@ -8,6 +8,8 @@ import me.rerere.rikkihub.utils.JsonInstant
 import me.rerere.workspace.Workspace
 import me.rerere.workspace.WorkspaceShellStatus
 
+enum class WorkspaceMode { NORMAL, HARNESS_MINIMAL, BOOK }
+
 @Entity(
     tableName = "workspaces",
     indices = [
@@ -61,7 +63,25 @@ data class WorkspaceEntity(
     // 文件列表展开的层数（1 = 只列工作目录本身，相当于 ls），范围见 WORKSPACE_FILE_SNAPSHOT_MAX_DEPTH
     @ColumnInfo("first_message_file_snapshot_depth", defaultValue = "1")
     val firstMessageFileSnapshotDepth: Int = 1,
+    // 作品模式：标准模式的工具 + 作品工具 + 写作向提示词；与 harnessMinimal 互斥，可与标准模式互转
+    @ColumnInfo("book_mode", defaultValue = "0")
+    val bookMode: Boolean = false,
+    // 作品模式的工具提示词语言，见 data.ai.tools.BookPromptLanguage
+    @ColumnInfo("book_prompt_language", defaultValue = "zh")
+    val bookPromptLanguage: String = "zh",
 ) {
+    val mode: WorkspaceMode
+        get() = when {
+            harnessMinimal -> WorkspaceMode.HARNESS_MINIMAL
+            bookMode -> WorkspaceMode.BOOK
+            else -> WorkspaceMode.NORMAL
+        }
+
+    /** 作品模式的文件类工具直接读写文件，不需要 Rootfs；其余模式的工具都要 READY。 */
+    val toolsReady: Boolean
+        get() = bookMode || shellStatus == WorkspaceShellStatus.READY.name
+
+
     fun toolApprovalOverrides(): Map<String, Boolean> = runCatching {
         JsonInstant.decodeFromString<Map<String, Boolean>>(toolApprovals)
     }.getOrDefault(emptyMap())

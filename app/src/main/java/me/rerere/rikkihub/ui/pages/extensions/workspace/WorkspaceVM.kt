@@ -6,12 +6,15 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkihub.data.ai.tools.WorkspacePersistentBashSessionManager
+import me.rerere.rikkihub.data.ai.tools.BookPromptLanguage
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.data.workspace.WorkspaceEnvItem
 import me.rerere.rikkihub.data.workspace.WorkspaceEnvMirror
 import me.rerere.rikkihub.data.workspace.WorkspaceEnvSetupService
 import me.rerere.rikkihub.data.workspace.defaultRootfsUrl
+import java.util.Locale
 
 class WorkspaceVM(
     private val repository: WorkspaceRepository,
@@ -25,9 +28,10 @@ class WorkspaceVM(
     val lastEnvMirror: WorkspaceEnvMirror get() = envSetupService.lastMirror
 
     /** [envMirror] non-null: install the rootfs right away and run the default environment setup on it. */
-    fun create(name: String, harnessMinimal: Boolean = false, envMirror: WorkspaceEnvMirror? = null) {
+    fun create(name: String, mode: WorkspaceMode, envMirror: WorkspaceEnvMirror? = null) {
         viewModelScope.launch {
-            val workspace = runCatching { repository.create(name, harnessMinimal) }.getOrNull() ?: return@launch
+            val language = if (Locale.getDefault().language == "zh") BookPromptLanguage.ZH else BookPromptLanguage.EN
+            val workspace = runCatching { repository.create(name, mode, language) }.getOrNull() ?: return@launch
             if (envMirror != null) {
                 runCatching {
                     envSetupService.installRootfsThenSetup(workspace.id, defaultRootfsUrl(), WorkspaceEnvItem.DEFAULT, envMirror)

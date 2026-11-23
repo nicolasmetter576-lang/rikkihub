@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.ContextCheckpointMetadata
+import me.rerere.ai.ui.MessageStopReason
 import me.rerere.ai.ui.ModelSnapshot
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessage
@@ -279,6 +280,8 @@ data class MessageDto(
     val usage: TokenUsage? = null,
     /** true = 完整成功累计；false = 生成中或已知不完整；null = 旧数据未知 */
     val usageComplete: Boolean? = null,
+    /** 异常结束原因（达到最大输出/内容拦截/工具步数上限/提前结束）；正常结束为 null */
+    val stopReason: MessageStopReason? = null,
     /** 应用侧观测耗时（毫秒）：流式从首 chunk 起，非流式含请求等待；不含工具/审批 */
     val generationTimeMs: Long? = null,
     /** 最近逻辑模型步骤的 usage 参考，不是下一次请求的精确上下文容量 */
@@ -379,6 +382,24 @@ data class ErrorEvent(
     val message: String,
     /** compress_and_retry：回复超出上下文窗口，可「压缩后重试」 */
     val solution: String? = null,
+)
+
+@Serializable
+data class ConversationErrorDto(
+    val id: String,
+    val message: String,
+    val title: String? = null,
+    /** compress_and_retry：回复超出上下文窗口，可「压缩后重试」 */
+    val solution: String? = null,
+    val timestamp: Long,
+    val affectsReply: Boolean = true,
+)
+
+@Serializable
+data class ConversationErrorsEvent(
+    val type: String = "errors",
+    val conversationId: String,
+    val errors: List<ConversationErrorDto>,
 )
 
 @Serializable
@@ -484,6 +505,7 @@ fun UIMessage.toDto() = MessageDto(
     contextLength = contextLength,
     usage = usage,
     usageComplete = usageComplete,
+    stopReason = stopReason,
     generationTimeMs = generationTimeMs,
     lastUsage = lastUsage,
     stepCount = stepCount,

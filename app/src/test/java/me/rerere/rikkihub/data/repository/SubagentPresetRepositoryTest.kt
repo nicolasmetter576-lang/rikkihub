@@ -123,6 +123,10 @@ class SubagentPresetRepositoryTest {
             patch(id, updatedAt) { it.copy(firstMessageFileSnapshot = enabled) }
         override suspend fun setFirstMessageFileSnapshotDepth(id: String, depth: Int, updatedAt: Long) =
             patch(id, updatedAt) { it.copy(firstMessageFileSnapshotDepth = depth) }
+        override suspend fun setBookMode(id: String, enabled: Boolean, updatedAt: Long) =
+            patch(id, updatedAt) { it.copy(bookMode = enabled) }
+        override suspend fun setBookPromptLanguage(id: String, language: String, updatedAt: Long) =
+            patch(id, updatedAt) { it.copy(bookPromptLanguage = language) }
         override suspend fun updateInTransaction(id: String, transform: suspend (WorkspaceEntity) -> WorkspaceEntity): WorkspaceEntity? =
             transaction.withLock { yield(); super.updateInTransaction(id, transform) }
         override suspend fun mergeToolApprovals(id: String, patch: Map<String, Boolean>, updatedAt: Long) =

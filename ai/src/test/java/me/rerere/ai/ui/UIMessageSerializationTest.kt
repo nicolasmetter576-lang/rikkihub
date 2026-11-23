@@ -139,4 +139,40 @@ class UIMessageSerializationTest {
         assertNull(decodedLegacy.checkpointMeta)
         assertFalse(decodedLegacy.isClearContextCheckpoint)
     }
+
+    @Test
+    fun `stopReason round trips with stable wire names and defaults to null on legacy messages`() {
+        val expectedWire = mapOf(
+            MessageStopReason.MAX_TOKENS to "max_tokens",
+            MessageStopReason.CONTENT_FILTER to "content_filter",
+            MessageStopReason.STEP_LIMIT to "step_limit",
+            MessageStopReason.INCOMPLETE to "incomplete",
+        )
+        for ((reason, wire) in expectedWire) {
+            val msg = UIMessage.assistant("cut off").copy(stopReason = reason)
+            val encoded = json.encodeToString(msg)
+            assertTrue("expected wire name $wire in $encoded", encoded.contains("\"stopReason\":\"$wire\""))
+            assertEquals(reason, json.decodeFromString<UIMessage>(encoded).stopReason)
+        }
+
+        val legacy = """{"id":"${Uuid.random()}","role":"assistant","parts":[{"type":"text","text":"old"}],"createdAt":"2026-10-01T10:00:00"}"""
+        assertNull(json.decodeFromString<UIMessage>(legacy).stopReason)
+    }
+
+    @Test
+    fun `classifyProviderFinishReason enforces strict whitelist across providers`() {
+        for (raw in listOf("length", "LENGTH", " max_tokens ", "max_output_tokens", "incomplete:max_output_tokens", "model_context_window_exceeded")) {
+            assertEquals(raw, MessageStopReason.MAX_TOKENS, classifyProviderFinishReason(raw))
+        }
+        for (raw in listOf("content_filter", "incomplete:content_filter", "refusal", "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY", "IMAGE_PROHIBITED_CONTENT", "IMAGE_RECITATION", "MODEL_ARMOR")) {
+            assertEquals(raw, MessageStopReason.CONTENT_FILTER, classifyProviderFinishReason(raw))
+        }
+        assertEquals(MessageStopReason.STEP_LIMIT, classifyProviderFinishReason("max_turn_requests"))
+        for (raw in listOf("incomplete", "pause_turn", "incomplete:other_reason")) {
+            assertEquals(raw, MessageStopReason.INCOMPLETE, classifyProviderFinishReason(raw))
+        }
+        for (raw in listOf(null, "", "   ", "stop", "STOP", "end_turn", "completed", "tool_calls", "tool_use", "cancelled", "function_call", "custom_gateway_ok")) {
+            assertNull("normal/unknown reason should stay null: $raw", classifyProviderFinishReason(raw))
+        }
+    }
 }

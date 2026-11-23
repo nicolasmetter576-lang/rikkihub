@@ -12,6 +12,7 @@ import me.rerere.rikkihub.data.ai.CompressionConfig
 import me.rerere.rikkihub.data.ai.polish.PromptPolishConfig
 import me.rerere.rikkihub.data.ai.tuiqiao.TuiqiaoConfig
 import me.rerere.rikkihub.data.ai.qubagu.QubaguConfig
+import me.rerere.rikkihub.data.ai.book.BookConfig
 import me.rerere.rikkihub.data.ai.zaizao.ZaizaoConfig
 import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.datastore.DisplaySetting
@@ -52,6 +53,12 @@ class SettingVM(
     fun updateZaizao(transform: (ZaizaoConfig) -> ZaizaoConfig) {
         appScope.launch {
             settingsStore.update { latest -> latest.copy(zaizao = transform(latest.zaizao)) }
+        }
+    }
+
+    fun updateBook(transform: (BookConfig) -> BookConfig) {
+        appScope.launch {
+            settingsStore.update { latest -> latest.copy(book = transform(latest.book)) }
         }
     }
 

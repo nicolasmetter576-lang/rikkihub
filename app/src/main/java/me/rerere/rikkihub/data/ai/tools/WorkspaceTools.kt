@@ -18,8 +18,9 @@ import me.rerere.ai.ui.DiffMetadata
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.WorkspaceToolIdentity
 import me.rerere.ai.ui.toMetadata
+import me.rerere.rikkihub.data.book.BookStore
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
-import me.rerere.workspace.WorkspaceShellStatus
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.rikkihub.data.files.FilesManager
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.data.workspace.WorkspaceUnavailableException
@@ -44,26 +45,17 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     BuiltinToolIds.BASH to false,
     BuiltinToolIds.STR_REPLACE_EDITOR to false,
     BuiltinToolIds.SUBAGENT to false,
+    BuiltinToolIds.BOOK_CONTENTS to false,
+    BuiltinToolIds.BOOK_READ to false,
+    BuiltinToolIds.BOOK_SEARCH to false,
+    BuiltinToolIds.BOOK_UPDATE to false,
 )
 
 fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =
     overrides[name] ?: WorkspaceToolDefaultApprovals[name] ?: false
 
-fun workspaceToolApprovalItemsFor(harnessMinimal: Boolean): List<String> =
-    workspaceToolNamesFor(harnessMinimal)
-
-fun workspaceToolNamesFor(harnessMinimal: Boolean): List<String> =
-    if (harnessMinimal) {
-        listOf(BuiltinToolIds.BASH, BuiltinToolIds.STR_REPLACE_EDITOR, BuiltinToolIds.SUBAGENT)
-    } else {
-        listOf(
-            BuiltinToolIds.WORKSPACE_READ_FILE,
-            BuiltinToolIds.WORKSPACE_WRITE_FILE,
-            BuiltinToolIds.WORKSPACE_EDIT_FILE,
-            BuiltinToolIds.WORKSPACE_SHELL,
-            BuiltinToolIds.SUBAGENT,
-        )
-    }
+fun workspaceToolApprovalItemsFor(mode: WorkspaceMode): List<String> =
+    WorkspaceToolEnablement.idsFor(mode)
 
 suspend fun createWorkspaceTools(
     workspaceId: String?,
@@ -118,13 +110,15 @@ internal fun buildWorkspaceTools(
     subagentCatalog: SubagentCatalogSnapshot? = null,
     /** Working-directory confinement ([me.rerere.workspace.WorkspaceFilesScope]); null = whole workspace. */
     filesScope: String? = null,
+    /** Book tools of a book workspace; null = none. */
+    bookStore: BookStore? = null,
 ): List<Tool> {
-    // schema 过滤口径与守卫一致：非 READY 一个工具都不声明
-    if (workspace.shellStatus != WorkspaceShellStatus.READY.name) return emptyList()
+    // schema 过滤口径与守卫一致：非 READY 一个工具都不声明（作品模式的文件类工具除外）
+    if (!workspace.toolsReady) return emptyList()
     val approvalOverrides = workspace.toolApprovalOverrides()
     fun needsApproval(name: String) = resolveWorkspaceToolApproval(name, approvalOverrides)
 
-    val enabledIds = enabledWorkspaceToolIds(workspace)
+    val enabledIds = declaredWorkspaceToolIds(workspace)
     // 候选身份统一取装配时刻的 per-tool epoch（runner.currentToolEpoch）；
     // activationEpoch 与守卫 admission.expectedToolEpoch 同源，防关→开旧实例复活。
     fun identityOf(stableId: String) = workspaceToolIdentity(workspace, stableId, toolRunner)
@@ -137,6 +131,12 @@ internal fun buildWorkspaceTools(
     }
 
     return buildList {
+        // 作品结构只有一份，限定到子目录的会话看不到全书，不给作品工具
+        if (filesScope == null && bookStore != null) {
+            createBookTools(workspace, ::needsApproval, bookStore)
+                .filter { it.name in enabledIds }
+                .forEach { add(it.let(guard(identityOf(it.name)))) }
+        }
         if (workspace.harnessMinimal) {
             if (BuiltinToolIds.BASH in enabledIds) {
                 val bashManager = persistentBashSessionManager
@@ -174,6 +174,7 @@ internal fun buildWorkspaceTools(
                     toolRunner = toolRunner,
                     catalog = subagentCatalog ?: captureSubagentCatalog(workspace, subagentHost),
                     filesScope = filesScope,
+                    bookStore = bookStore,
                 ).let(guard(identityOf(BuiltinToolIds.SUBAGENT))),
             )
         }
@@ -264,7 +265,7 @@ private fun createWriteFileTool(
         val path = params.absolutePath("path")
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
-        val entry = repo.writeTextInRootfs(workspace.id, path, text, overwrite, filesScope)
+        val entry = repo.writeToolText(workspace, path, text, overwrite, filesScope)
         listOf(UIMessagePart.Text(entry.toJson().toString()))
     },
 )
@@ -316,7 +317,7 @@ private fun createEditFileTool(
         } catch (e: IllegalArgumentException) {
             error("${e.message} (path: $path)")
         }
-        val entry = repo.writeTextInRootfs(workspace.id, path, result.updated, overwrite = true, filesScope = filesScope)
+        val entry = repo.writeToolText(workspace, path, result.updated, overwrite = true, filesScope = filesScope)
         val diff = generateUnifiedDiff(original, result.updated, entry.path)
         listOf(
             UIMessagePart.Text(
@@ -468,6 +469,7 @@ private fun createSubagentTool(
     toolRunner: WorkspaceToolRunner?,
     catalog: SubagentCatalogSnapshot,
     filesScope: String?,
+    bookStore: BookStore?,
 ) = Tool(
     name = BuiltinToolIds.SUBAGENT,
     description = BuiltinToolCatalog.require(BuiltinToolIds.SUBAGENT).defaultDescription,
@@ -477,14 +479,14 @@ private fun createSubagentTool(
     execute = { args ->
         dispatchSubagent(
             host, workspace, workspaceRepository, cwd,
-            persistentBashSessionManager, toolRunner, null, args, catalog, filesScope,
+            persistentBashSessionManager, toolRunner, null, args, catalog, filesScope, bookStore,
         )
     },
     // 有上下文时发布实时进度 metadata (running -> 终态), 卡片可点开读工作过程
     executeWithContext = { args, toolContext ->
         dispatchSubagent(
             host, workspace, workspaceRepository, cwd,
-            persistentBashSessionManager, toolRunner, toolContext, args, catalog, filesScope,
+            persistentBashSessionManager, toolRunner, toolContext, args, catalog, filesScope, bookStore,
         )
     },
 )
@@ -500,6 +502,7 @@ private suspend fun dispatchSubagent(
     args: JsonElement,
     catalog: SubagentCatalogSnapshot,
     filesScope: String?,
+    bookStore: BookStore?,
 ): List<UIMessagePart> {
     // Selection, context policy and model availability precede child mounting, runner/log/metadata.
     val parsed = parseSubagentArgs(args, catalog.allowContext)
@@ -541,6 +544,7 @@ private suspend fun dispatchSubagent(
                         snapshotEpochs = epochs,
                         exposedTargets = repo.executionMountTargets(latest.id, filesScope),
                         filesScope = filesScope,
+                        bookStore = bookStore,
                     )
                 }
             }
@@ -725,6 +729,17 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
     )
 }
 
+/** Book workspaces work without a Rootfs: their files are written in-process (atomically), not through a shell. */
+private suspend fun WorkspaceRepository.writeToolText(
+    workspace: WorkspaceEntity,
+    path: String,
+    text: String,
+    overwrite: Boolean,
+    filesScope: String?,
+): WorkspaceFileEntry =
+    if (workspace.bookMode) writeRootfsText(workspace.id, path, text, overwrite, filesScope)
+    else writeTextInRootfs(workspace.id, path, text, overwrite, filesScope)
+
 private suspend fun WorkspaceRepository.writeTextInRootfs(
     workspaceId: String,
     path: String,
@@ -735,46 +750,97 @@ private suspend fun WorkspaceRepository.writeTextInRootfs(
     // The write runs in a shell; a confined shell would silently create outside paths in the
     // scratch shell tree, so the file-tool boundary rejects them first.
     if (filesScope != null) statRootfs(workspaceId, path, filesScope)
-    val pathArg = path.shellQuote()
+    val bytes = text.toByteArray(Charsets.UTF_8)
     val result = runRootfsCommand(
         workspaceId = workspaceId,
         filesScope = filesScope,
         action = "Write file",
-        command = """
-            if [ -e $pathArg ] && [ ${(!overwrite).shellFlag()} = 1 ]; then
-              printf '%s\n' ${"File already exists: $path".shellQuote()} >&2
-              exit 1
-            fi
-            if [ -e $pathArg ] && [ ! -f $pathArg ]; then
-              printf '%s\n' ${"Path is not a file: $path".shellQuote()} >&2
+        command = buildWriteTextInRootfsCommand(path, bytes.size, overwrite),
+        stdin = bytes,
+    )
+    return result.stdout.parseRootfsEntry()
+}
+
+internal fun buildWriteTextInRootfsCommand(
+    path: String,
+    expectedBytes: Int,
+    overwrite: Boolean,
+    tempFileName: String = workspaceTempFileName(),
+): String {
+    val pathArg = path.shellQuote()
+    val existsMessage = "File already exists: $path".shellQuote()
+    if (!overwrite) {
+        return """
+            if [ -e $pathArg ] || [ -L $pathArg ]; then
+              printf '%s\n' $existsMessage >&2
               exit 1
             fi
             parent=${'$'}(dirname -- $pathArg) || exit 1
             mkdir -p -- "${'$'}parent" || exit 1
-            # Write a sibling temp file, then rename it over the target, so an interrupted write (timeout,
-            # stop, full disk) leaves the old file whole. A symlink keeps pointing at the file it names.
-            target=$pathArg
-            if [ -L "${'$'}target" ]; then target=${'$'}(readlink -f -- "${'$'}target") || exit 1; fi
-            target_dir=${'$'}(dirname -- "${'$'}target") || exit 1
-            tmp="${'$'}{target_dir%/}/${workspaceTempFileName()}"
-            trap 'rm -f -- "${'$'}tmp"' EXIT
-            cat > "${'$'}tmp" || exit 1
-            if [ -e "${'$'}target" ]; then
-              mode=${'$'}(stat -c '%a' -- "${'$'}target") || exit 1
-              [ "${'$'}(stat -c '%a' -- "${'$'}tmp")" = "${'$'}mode" ] || chmod "${'$'}mode" "${'$'}tmp" || exit 1
+            # POSIX set -C opens with O_CREAT|O_EXCL so concurrent creators cannot clobber each other.
+            # Run inside a subshell because dash/busybox sh abort the whole shell on special-builtin
+            # redirection errors, and emit a sentinel on fd 3 once the path is claimed so write errors
+            # (ENOSPC/EFBIG) are never misreported as "File already exists".
+            __rikki_err=${'$'}( ( set -C; { printf '__RIKKI_CLAIMED__:' >&3; cat 3>&-; } > $pathArg ) 3>&1 2>&1 )
+            __rikki_rc=${'$'}?
+            if [ "${'$'}__rikki_rc" -ne 0 ]; then
+              case "${'$'}__rikki_err" in
+                __RIKKI_CLAIMED__:*)
+                  __rikki_msg=${'$'}{__rikki_err#__RIKKI_CLAIMED__:}
+                  [ -n "${'$'}__rikki_msg" ] && printf '%s\n' "${'$'}__rikki_msg" >&2
+                  exit "${'$'}__rikki_rc"
+                  ;;
+                *)
+                  if [ -e $pathArg ] || [ -L $pathArg ]; then
+                    printf '%s\n' $existsMessage >&2
+                  elif [ -n "${'$'}__rikki_err" ]; then
+                    printf '%s\n' "${'$'}__rikki_err" >&2
+                  fi
+                  exit 1
+                  ;;
+              esac
             fi
-            mv -f -- "${'$'}tmp" "${'$'}target" || exit 1
-            for __rikki_tmp in "${'$'}{target_dir%/}"/$WORKSPACE_TEMP_FILE_GLOB; do
-              if [ -e "${'$'}__rikki_tmp" ] || [ -L "${'$'}__rikki_tmp" ]; then
-                find -H "${'$'}target_dir" -maxdepth 1 -name '$WORKSPACE_TEMP_FILE_GLOB' -type f -mmin +$WORKSPACE_TEMP_FILE_MAX_AGE_MINUTES -exec rm -f -- {} +
-              fi
-              break
-            done >/dev/null 2>&1 || true
+            __rikki_written=${'$'}(stat -c '%s' -- $pathArg) || exit 1
+            if [ "${'$'}__rikki_written" != "$expectedBytes" ]; then
+              printf 'Incomplete write (%s/%s bytes): %s\n' "${'$'}__rikki_written" "$expectedBytes" $pathArg >&2
+              exit 1
+            fi
             ${statEntryCommand(path)}
-        """.trimIndent(),
-        stdin = text.toByteArray(Charsets.UTF_8),
-    )
-    return result.stdout.parseRootfsEntry()
+        """.trimIndent()
+    }
+    return """
+        if [ -e $pathArg ] && [ ! -f $pathArg ]; then
+          printf '%s\n' ${"Path is not a file: $path".shellQuote()} >&2
+          exit 1
+        fi
+        parent=${'$'}(dirname -- $pathArg) || exit 1
+        mkdir -p -- "${'$'}parent" || exit 1
+        # Write a sibling temp file, then rename it over the target, so an interrupted write (timeout,
+        # stop, full disk) leaves the old file whole. A symlink keeps pointing at the file it names.
+        target=$pathArg
+        if [ -L "${'$'}target" ]; then target=${'$'}(readlink -f -- "${'$'}target") || exit 1; fi
+        target_dir=${'$'}(dirname -- "${'$'}target") || exit 1
+        tmp="${'$'}{target_dir%/}/$tempFileName"
+        trap 'rm -f -- "${'$'}tmp"' EXIT
+        cat > "${'$'}tmp" || exit 1
+        __rikki_written=${'$'}(stat -c '%s' -- "${'$'}tmp") || exit 1
+        if [ "${'$'}__rikki_written" != "$expectedBytes" ]; then
+          printf 'Incomplete write (%s/%s bytes): %s\n' "${'$'}__rikki_written" "$expectedBytes" $pathArg >&2
+          exit 1
+        fi
+        if [ -e "${'$'}target" ]; then
+          mode=${'$'}(stat -c '%a' -- "${'$'}target") || exit 1
+          [ "${'$'}(stat -c '%a' -- "${'$'}tmp")" = "${'$'}mode" ] || chmod "${'$'}mode" "${'$'}tmp" || exit 1
+        fi
+        mv -f -- "${'$'}tmp" "${'$'}target" || exit 1
+        for __rikki_tmp in "${'$'}{target_dir%/}"/$WORKSPACE_TEMP_FILE_GLOB; do
+          if [ -e "${'$'}__rikki_tmp" ] || [ -L "${'$'}__rikki_tmp" ]; then
+            find -H "${'$'}target_dir" -maxdepth 1 -name '$WORKSPACE_TEMP_FILE_GLOB' -type f -mmin +$WORKSPACE_TEMP_FILE_MAX_AGE_MINUTES -exec rm -f -- {} +
+          fi
+          break
+        done >/dev/null 2>&1 || true
+        ${statEntryCommand(path)}
+    """.trimIndent()
 }
 
 private suspend fun WorkspaceRepository.runRootfsCommand(
@@ -849,8 +915,6 @@ private fun String.rootfsName(): String =
 
 private fun String.shellQuote(): String =
     "'" + replace("'", "'\"'\"'") + "'"
-
-private fun Boolean.shellFlag(): Int = if (this) 1 else 0
 
 private fun JsonObjectBuilder.putPathProperty(required: Boolean) {
     put("path", buildJsonObject {

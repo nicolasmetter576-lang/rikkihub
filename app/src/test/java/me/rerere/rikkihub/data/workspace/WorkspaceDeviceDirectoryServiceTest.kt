@@ -584,6 +584,8 @@ class WorkspaceDeviceDirectoryServiceTest {
         override suspend fun setShellCompatibilityMode(id: String, enabled: Boolean, updatedAt: Long) = 0
         override suspend fun setFirstMessageFileSnapshot(id: String, enabled: Boolean, updatedAt: Long) = 0
         override suspend fun setFirstMessageFileSnapshotDepth(id: String, depth: Int, updatedAt: Long) = 0
+        override suspend fun setBookMode(id: String, enabled: Boolean, updatedAt: Long) = 0
+        override suspend fun setBookPromptLanguage(id: String, language: String, updatedAt: Long) = 0
         override suspend fun deleteById(id: String): Int = if (rows.remove(id) != null) 1 else 0
         // updateInTransaction / mergeToolApprovals / mergeToolEnablement 用接口默认实现
     }

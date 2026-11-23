@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import {
+  AlertCircle,
   ArrowDown,
   ChevronLeft,
   ChevronRight,
@@ -693,8 +694,9 @@ export const ChatMessage = React.memo(
     onClearTranslation,
     onToolApproval,
   }: ChatMessageProps) => {
+    const { t } = useTranslation("message");
     const isUser = message.role === "USER";
-    const hasMessageContent = message.parts.some(hasRenderablePart);
+    const hasMessageContent = message.parts.some(hasRenderablePart) || Boolean(message.stopReason);
     const showActions = isLastMessage ? !loading : hasMessageContent;
     const citationUrlMap = React.useMemo(() => buildCitationUrlMap(message.parts), [message.parts]);
     const handleClickCitation = React.useCallback(
@@ -755,6 +757,17 @@ export const ChatMessage = React.memo(
                 translating={translating}
                 onClickCitation={handleClickCitation}
               />
+
+              {!loading && !isUser && message.stopReason ? (
+                <div
+                  role="status"
+                  data-stop-reason={message.stopReason}
+                  className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-muted-foreground"
+                >
+                  <AlertCircle className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>{t(`chat_message.stop_reason_${message.stopReason}`)}</span>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

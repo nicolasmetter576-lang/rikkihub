@@ -19,6 +19,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import me.rerere.rikkihub.data.ai.tools.BookPromptLanguage
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
 import me.rerere.rikkihub.data.ai.tools.SubagentPresetConflictException
 import me.rerere.rikkihub.data.ai.tools.WorkspaceSubagentPreset
@@ -213,6 +215,20 @@ class WorkspaceRepositoryPublicationTest {
             statement.withLock {
                 val row = rows[id] ?: return@withLock 0
                 rows[id] = row.copy(firstMessageFileSnapshotDepth = depth, updatedAt = updatedAt)
+                publish()
+                1
+            }
+        override suspend fun setBookMode(id: String, enabled: Boolean, updatedAt: Long): Int =
+            statement.withLock {
+                val row = rows[id] ?: return@withLock 0
+                rows[id] = row.copy(bookMode = enabled, updatedAt = updatedAt)
+                publish()
+                1
+            }
+        override suspend fun setBookPromptLanguage(id: String, language: String, updatedAt: Long): Int =
+            statement.withLock {
+                val row = rows[id] ?: return@withLock 0
+                rows[id] = row.copy(bookPromptLanguage = language, updatedAt = updatedAt)
                 publish()
                 1
             }
@@ -1148,11 +1164,12 @@ class WorkspaceRepositoryPublicationTest {
     @Test
     fun `new workspaces start with the subagent tool off and other tools on`() = runBlocking {
         newHarness().use { h ->
-            for (minimal in listOf(false, true)) {
-                val created = h.repo.create("new-$minimal", harnessMinimal = minimal)
+            for (mode in WorkspaceMode.entries) {
+                val created = h.repo.create("new-$mode", mode, BookPromptLanguage.ZH)
+                assertEquals(mode, created.mode)
                 val enablement = WorkspaceToolEnablement.parse(h.dao.getById(created.id)!!.toolEnablement)
                 assertEquals(mapOf(BuiltinToolIds.SUBAGENT to false), enablement)
-                WorkspaceToolEnablement.idsFor(minimal).filter { it != BuiltinToolIds.SUBAGENT }
+                WorkspaceToolEnablement.idsFor(mode).filter { it != BuiltinToolIds.SUBAGENT }
                     .forEach { assertTrue(it, enablement[it] ?: true) }
                 assertFalse(created.firstMessageFileSnapshot)
             }

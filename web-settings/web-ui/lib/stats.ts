@@ -255,6 +255,7 @@ export const SOURCE_KEYS = [
   "POLISH",
   "TUIQIAO",
   "ZAIZAO",
+  "BOOK",
   "SUBAGENT",
   "KEEPALIVE",
   "QUBAGU",

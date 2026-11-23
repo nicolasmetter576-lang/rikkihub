@@ -80,6 +80,12 @@ interface WorkspaceDAO {
     @Query("UPDATE workspaces SET first_message_file_snapshot_depth = :depth, updated_at = :updatedAt WHERE id = :id")
     suspend fun setFirstMessageFileSnapshotDepth(id: String, depth: Int, updatedAt: Long): Int
 
+    @Query("UPDATE workspaces SET book_mode = :enabled, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setBookMode(id: String, enabled: Boolean, updatedAt: Long): Int
+
+    @Query("UPDATE workspaces SET book_prompt_language = :language, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setBookPromptLanguage(id: String, language: String, updatedAt: Long): Int
+
     /**
      * 事务内读最新行 → [transform] → 按差分列逐条定向 UPDATE.
      * App/Web 配置更新统一入口: 一次调用只写真实变化的列, 全部 UPDATE
@@ -102,6 +108,7 @@ interface WorkspaceDAO {
         require(next.id == current.id && next.root == current.root &&
             next.createdAt == current.createdAt && next.harnessMinimal == current.harnessMinimal
         ) { "updateInTransaction must not change id/root/createdAt/harnessMinimal" }
+        require(!(next.harnessMinimal && next.bookMode)) { "A harness workspace cannot be a book workspace" }
         // enablement 写入前严格校验新值, 防止把坏配置写进存储
         if (next.toolEnablement != current.toolEnablement) {
             WorkspaceToolEnablement.parse(next.toolEnablement)
@@ -129,6 +136,8 @@ interface WorkspaceDAO {
             patch.firstMessageFileSnapshotDepth?.let { setFirstMessageFileSnapshotDepth(id, it, now) }
             patch.toolApprovals?.let { updateToolApprovalsJson(id, it, now) }
             patch.toolEnablement?.let { updateToolEnablementJson(id, it, now) }
+            patch.bookMode?.let { setBookMode(id, it, now) }
+            patch.bookPromptLanguage?.let { setBookPromptLanguage(id, it, now) }
         }
         return next.copy(updatedAt = now)
     }

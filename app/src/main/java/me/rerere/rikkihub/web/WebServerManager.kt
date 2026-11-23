@@ -76,6 +76,7 @@ class WebServerManager(
     private val characterService: me.rerere.rikkihub.data.character.CharacterService? = null,
     private val usageStats: me.rerere.rikkihub.web.routes.WebUsageStats? = null,
     private val fileManager: me.rerere.rikkihub.data.files.FileManagerService? = null,
+    private val book: me.rerere.rikkihub.web.routes.WebBookServices? = null,
     private val acpSessionManager: me.rerere.rikkihub.data.cli.AcpSessionManager? = null,
 ) {
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -158,6 +159,7 @@ class WebServerManager(
                             characterService = characterService,
                             usageStats = usageStats,
                             fileManager = fileManager,
+                            book = book,
                             acpSessionManager = acpSessionManager,
                             localhostOnly = localhostOnly,
                         )

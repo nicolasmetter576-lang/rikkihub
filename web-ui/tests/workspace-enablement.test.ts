@@ -6,6 +6,7 @@ import {
   WORKSPACE_TOOL_ENABLEMENT_NORMAL_IDS,
   WORKSPACE_TOOL_ENABLEMENT_UI_ENABLED,
   resolveWorkspaceToolWireName,
+  workspaceMode,
   workspaceQueryKeys,
   workspaceToolEnablementIds,
 } from "../app/overlay/lib/workspace";
@@ -13,26 +14,39 @@ import {
 /* ---------- 稳定 ID 表（对照 WorkspaceToolEnablement.normalIds/minimalIds） ---------- */
 
 test("enablement ids: 普通模式 5 项且顺序固定", () => {
-  assert.deepEqual([...workspaceToolEnablementIds(false)], [
+  assert.deepEqual([...workspaceToolEnablementIds("normal")], [
     "workspace_read_file",
     "workspace_write_file",
     "workspace_edit_file",
     "workspace_shell",
     "subagent",
   ]);
-  assert.deepEqual([...WORKSPACE_TOOL_ENABLEMENT_NORMAL_IDS], workspaceToolEnablementIds(false));
+  assert.deepEqual([...WORKSPACE_TOOL_ENABLEMENT_NORMAL_IDS], workspaceToolEnablementIds("normal"));
 });
 
 test("enablement ids: 极简模式 3 项", () => {
-  assert.deepEqual([...workspaceToolEnablementIds(true)], [
+  assert.deepEqual([...workspaceToolEnablementIds("minimal")], [
     "bash",
     "str_replace_editor",
     "subagent",
   ]);
-  assert.deepEqual([...WORKSPACE_TOOL_ENABLEMENT_MINIMAL_IDS], workspaceToolEnablementIds(true));
+  assert.deepEqual([...WORKSPACE_TOOL_ENABLEMENT_MINIMAL_IDS], workspaceToolEnablementIds("minimal"));
 });
 
-test("enablement ids: 两模式并集共 7 个稳定 ID（与后端 configurableIds 一致）", () => {
+test("enablement ids: 作品模式 = 作品工具 + 标准工具", () => {
+  assert.deepEqual(
+    [...workspaceToolEnablementIds("book")],
+    ["book_contents", "book_read", "book_search", "book_update", ...WORKSPACE_TOOL_ENABLEMENT_NORMAL_IDS],
+  );
+});
+
+test("workspaceMode: 三种模式，旧服务端没有 bookMode 时是标准", () => {
+  assert.equal(workspaceMode({}), "normal");
+  assert.equal(workspaceMode({ bookMode: true }), "book");
+  assert.equal(workspaceMode({ harnessMinimal: true }), "minimal");
+});
+
+test("enablement ids: 标准与极简并集共 7 个稳定 ID（与后端 configurableIds 一致）", () => {
   const union = new Set([
     ...WORKSPACE_TOOL_ENABLEMENT_NORMAL_IDS,
     ...WORKSPACE_TOOL_ENABLEMENT_MINIMAL_IDS,

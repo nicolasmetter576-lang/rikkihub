@@ -1,7 +1,7 @@
 import type { TokenUsage } from "./core";
 import type { UIMessageAnnotation } from "./annotations";
 import type { ConversationCliSession } from "./conversation";
-import type { ContextCheckpointMetadata, ModelSnapshot } from "./message";
+import type { ContextCheckpointMetadata, MessageStopReason, ModelSnapshot } from "./message";
 import type { UIMessagePart } from "./parts";
 
 export interface ConversationListDto {
@@ -107,6 +107,8 @@ export interface MessageDto {
   usage?: TokenUsage | null;
   /** true = 完整成功累计；false = 生成中或已知不完整；null/缺省 = 旧数据未知 */
   usageComplete?: boolean | null;
+  /** 异常结束原因（达到最大输出/内容拦截/工具步数上限/提前结束）；正常结束缺省为 null */
+  stopReason?: MessageStopReason | null;
   /** 应用侧观测耗时（毫秒）：流式从首 chunk 起，非流式含请求等待；不含工具/审批 */
   generationTimeMs?: number | null;
   /** 最近逻辑模型步骤的 usage 参考，不是下一次请求的精确上下文容量 */
@@ -227,6 +229,22 @@ export interface ConversationErrorEventDto {
   message: string;
   /** "compress_and_retry": the reply overflowed the context window. */
   solution?: string | null;
+}
+
+export interface ConversationErrorDto {
+  id: string;
+  message: string;
+  title?: string | null;
+  /** "compress_and_retry": the reply overflowed the context window. */
+  solution?: string | null;
+  timestamp: number;
+  affectsReply?: boolean;
+}
+
+export interface ConversationErrorsEventDto {
+  type: "errors";
+  conversationId: string;
+  errors: ConversationErrorDto[];
 }
 
 /** Background compression state: SSE `compress_state` and GET/POST .../compress. */

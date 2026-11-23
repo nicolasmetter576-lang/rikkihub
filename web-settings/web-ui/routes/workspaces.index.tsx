@@ -8,7 +8,6 @@ import { toast } from "sonner";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Checkbox } from "~/components/ui/checkbox";
 import {
   ConfirmDeleteDialog,
   CreateNameDialog,
@@ -17,16 +16,18 @@ import {
   SettingsPageHeader,
   reportSettingsError,
 } from "@overlay/components/settings/settings-ui";
-import { workspaceApi, workspaceQueryKeys } from "@overlay/lib/workspace";
-import type { Workspace } from "@overlay/types/workspace";
+import { workspaceApi, workspaceMode, workspaceQueryKeys } from "@overlay/lib/workspace";
+import type { Workspace, WorkspaceMode } from "@overlay/types/workspace";
+
+const MODES: readonly WorkspaceMode[] = ["normal", "book", "minimal"];
 
 export default function WorkspacesIndexPage() {
-  const { t } = useTranslation("workspace");
+  const { t, i18n } = useTranslation("workspace");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
-  const [harnessMinimal, setHarnessMinimal] = React.useState(false);
+  const [mode, setMode] = React.useState<WorkspaceMode>("normal");
   const [renameTarget, setRenameTarget] = React.useState<Workspace | null>(null);
   const [renaming, setRenaming] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<Workspace | null>(null);
@@ -87,18 +88,18 @@ export default function WorkspacesIndexPage() {
               key={workspace.id}
               title={workspace.name}
               description={
-                workspace.harnessMinimal
-                  ? `${t(`status.${workspace.shellStatus}`)} · ${t("list.harness_minimal_badge")}`
-                  : t(`status.${workspace.shellStatus}`)
+                workspaceMode(workspace) === "normal"
+                  ? t(`status.${workspace.shellStatus}`)
+                  : `${t(`status.${workspace.shellStatus}`)} · ${t(`list.mode_badge.${workspaceMode(workspace)}`)}`
               }
               badges={
                 <>
                   <Badge variant={workspace.shellStatus === "READY" ? "default" : "secondary"}>
                     {t(`status.${workspace.shellStatus}`)}
                   </Badge>
-                  {workspace.harnessMinimal ? (
-                    <Badge variant="outline">{t("list.harness_minimal_badge")}</Badge>
-                  ) : null}
+                  {workspaceMode(workspace) === "normal" ? null : (
+                    <Badge variant="outline">{t(`list.mode_badge.${workspaceMode(workspace)}`)}</Badge>
+                  )}
                 </>
               }
               actions={
@@ -137,31 +138,41 @@ export default function WorkspacesIndexPage() {
         open={createOpen}
         onOpenChange={(open) => {
           setCreateOpen(open);
-          if (!open) setHarnessMinimal(false);
+          if (!open) setMode("normal");
         }}
         title={t("list.new")}
         placeholder={t("list.create_name_placeholder")}
         extra={
-          <label className="flex items-start gap-3 rounded-lg border px-3 py-2 text-sm">
-            <Checkbox
-              className="mt-1"
-              checked={harnessMinimal}
-              onCheckedChange={(checked) => setHarnessMinimal(checked === true)}
-            />
-            <span>
-              <span className="block font-medium">{t("list.harness_minimal")}</span>
-              <span className="mt-1 block text-muted-foreground">{t("list.harness_minimal_desc")}</span>
-            </span>
-          </label>
+          <div className="divide-y rounded-lg border" role="radiogroup">
+            {MODES.map((value) => (
+              <label key={value} className="flex items-start gap-3 px-3 py-2 text-sm">
+                <input
+                  type="radio"
+                  name="workspace-mode"
+                  className="mt-1"
+                  checked={mode === value}
+                  onChange={() => setMode(value)}
+                />
+                <span>
+                  <span className="block font-medium">{t(`list.mode.${value}`)}</span>
+                  <span className="mt-1 block text-muted-foreground">{t(`list.mode_desc.${value}`)}</span>
+                </span>
+              </label>
+            ))}
+          </div>
         }
         loading={creating}
         onSubmit={async (name) => {
           setCreating(true);
           try {
-            const workspace = await workspaceApi.create(name.trim() || undefined, harnessMinimal);
+            const workspace = await workspaceApi.create(
+              name.trim() || undefined,
+              mode,
+              i18n.language.startsWith("zh") ? "zh" : "en",
+            );
             toast.success(t("list.created"));
             setCreateOpen(false);
-            setHarnessMinimal(false);
+            setMode("normal");
             void navigate(`/workspaces/${workspace.id}`);
           } catch (error) {
             reportSettingsError(error, t("list.create_failed"));

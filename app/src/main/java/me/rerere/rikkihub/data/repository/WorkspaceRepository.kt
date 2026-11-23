@@ -27,7 +27,9 @@ import me.rerere.rikkihub.data.workspace.WorkspaceDeviceDirectoryService
 import me.rerere.rikkihub.utils.JsonInstant
 import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.data.db.dao.WorkspaceDAO
+import me.rerere.rikkihub.data.ai.tools.BookPromptLanguage
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.WorkspaceArchiveResult
 import me.rerere.workspace.WorkspaceCommandResult
@@ -116,6 +118,7 @@ class WorkspaceRepository(
                     require(next.id == current.id && next.root == current.root &&
                         next.createdAt == current.createdAt && next.harnessMinimal == current.harnessMinimal
                     ) { "Workspace identity and creation-time mode cannot be changed" }
+                    require(!(next.harnessMinimal && next.bookMode)) { "A harness workspace cannot be a book workspace" }
                     WorkspaceToolEnablement.parse(next.toolEnablement)
                     if (next.subagentPresets != current.subagentPresets) {
                         WorkspaceSubagentPresets.parse(next.subagentPresets)
@@ -219,7 +222,12 @@ class WorkspaceRepository(
         }
     }
 
-    suspend fun create(name: String, harnessMinimal: Boolean = false): WorkspaceEntity {
+    suspend fun create(
+        name: String,
+        mode: WorkspaceMode = WorkspaceMode.NORMAL,
+        bookPromptLanguage: BookPromptLanguage = BookPromptLanguage.ZH,
+    ): WorkspaceEntity {
+        val harnessMinimal = mode == WorkspaceMode.HARNESS_MINIMAL
         val id = Uuid.random().toString()
         val now = System.currentTimeMillis()
         val finalName = name.trim().ifBlank { "Workspace" }
@@ -239,6 +247,8 @@ class WorkspaceRepository(
             exposeToolOutputs = true,
             // 新工作区默认关闭子代理工具（可在「工具启用」里打开）；已有工作区不受影响
             toolEnablement = WorkspaceToolEnablement.validatedJson(mapOf(BuiltinToolIds.SUBAGENT to false)),
+            bookMode = mode == WorkspaceMode.BOOK,
+            bookPromptLanguage = bookPromptLanguage.id,
         )
         manager.ensureWorkspace(workspace.root)
         dao.insert(workspace)
@@ -257,6 +267,23 @@ class WorkspaceRepository(
     suspend fun isNameTaken(name: String, excludeId: String?): Boolean {
         val target = name.trim()
         return dao.getAll().any { it.id != excludeId && it.name.trim() == target }
+    }
+
+    /** 标准模式与作品模式互转；转回标准只是收起作品功能，文件和 `.book/` 都不动。 */
+    suspend fun setBookMode(id: String, enabled: Boolean): Boolean = applyConfigPatch(id) { it.copy(bookMode = enabled) } != null
+
+    suspend fun setBookPromptLanguage(id: String, language: BookPromptLanguage): Boolean =
+        applyConfigPatch(id) { it.copy(bookPromptLanguage = language.id) } != null
+
+    /** 在 FILES 根目录上做一次文件操作（作品数据层用）；与其他手动文件操作走同一准入。 */
+    suspend fun <T> withFilesRoot(id: String, block: suspend (File) -> T): T = runtimeGate.withOperation(
+        workspaceId = id,
+        kind = WorkspaceOperationKind.FILE_OPERATION,
+        handleClass = WorkspaceHandleClass.FILE_OPERATION,
+        waitIfSealed = true,
+        validate = { dao.getById(id) != null },
+    ) {
+        withContext(Dispatchers.IO) { block(manager.filesDir(requireWorkspace(id).root)) }
     }
 
     suspend fun setExposedMount(id: String, target: String, exposed: Boolean): Boolean {
@@ -400,7 +427,7 @@ class WorkspaceRepository(
      */
     suspend fun fileSnapshotForFirstMessage(id: String, workspaceCwd: String?): String? {
         val workspace = dao.getById(id) ?: return null
-        if (!workspace.firstMessageFileSnapshot || workspace.shellStatus != WorkspaceShellStatus.READY.name) return null
+        if (!workspace.firstMessageFileSnapshot || !workspace.toolsReady) return null
         val relative = runCatching { me.rerere.workspace.WorkspaceFilesScope.normalize(workspaceCwd) ?: "" }
             .getOrNull() ?: return null
         val entries = try {
@@ -689,11 +716,11 @@ class WorkspaceRepository(
             workspaceId = id,
             kind = WorkspaceOperationKind.FILE_OPERATION,
             handleClass = WorkspaceHandleClass.FILE_OPERATION,
-            validate = { dao.getById(id)?.shellStatus == WorkspaceShellStatus.READY.name },
+            validate = { dao.getById(id)?.toolsReady == true },
         ) {
             withContext(Dispatchers.IO) {
                 val workspace = requireWorkspace(id)
-                require(workspace.shellStatus == WorkspaceShellStatus.READY.name) { "Workspace is not ready" }
+                require(workspace.toolsReady) { "Workspace is not ready" }
                 val mounts = agentMounts(workspace, filesScope)
                 readBoundedAgentsText(
                     manager.rootfsFileSize(workspace.root, path, mounts),

@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.ai.tools
 
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,13 +18,13 @@ class WorkspaceHarnessMinimalToolsTest {
                 BuiltinToolIds.WORKSPACE_SHELL,
                 BuiltinToolIds.SUBAGENT,
             ),
-            workspaceToolNamesFor(false),
+            WorkspaceToolEnablement.idsFor(WorkspaceMode.NORMAL),
         )
         assertEquals(
             listOf(BuiltinToolIds.BASH, BuiltinToolIds.STR_REPLACE_EDITOR, BuiltinToolIds.SUBAGENT),
-            workspaceToolNamesFor(true),
+            WorkspaceToolEnablement.idsFor(WorkspaceMode.HARNESS_MINIMAL),
         )
-        assertTrue(workspaceToolNamesFor(true).none { it.startsWith("workspace_") })
+        assertTrue(WorkspaceToolEnablement.idsFor(WorkspaceMode.HARNESS_MINIMAL).none { it.startsWith("workspace_") })
     }
 
     @Test
@@ -36,11 +37,11 @@ class WorkspaceHarnessMinimalToolsTest {
                 BuiltinToolIds.WORKSPACE_SHELL,
                 BuiltinToolIds.SUBAGENT,
             ),
-            workspaceToolApprovalItemsFor(false),
+            workspaceToolApprovalItemsFor(WorkspaceMode.NORMAL),
         )
         assertEquals(
             listOf(BuiltinToolIds.BASH, BuiltinToolIds.STR_REPLACE_EDITOR, BuiltinToolIds.SUBAGENT),
-            workspaceToolApprovalItemsFor(true),
+            workspaceToolApprovalItemsFor(WorkspaceMode.HARNESS_MINIMAL),
         )
         assertFalse(resolveWorkspaceToolApproval(BuiltinToolIds.BASH, emptyMap()))
         assertFalse(resolveWorkspaceToolApproval(BuiltinToolIds.STR_REPLACE_EDITOR, emptyMap()))

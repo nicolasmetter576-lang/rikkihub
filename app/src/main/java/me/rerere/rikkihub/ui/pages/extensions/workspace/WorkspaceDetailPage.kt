@@ -3,6 +3,15 @@ package me.rerere.rikkihub.ui.pages.extensions.workspace
 import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import me.rerere.rikkihub.ui.theme.AppSpacing
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.ui.graphics.vector.ImageVector
+import me.rerere.hugeicons.stroke.BookOpen01
+import me.rerere.rikkihub.ui.components.ui.switchItem
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookPane
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.rememberBookVM
 import me.rerere.rikkihub.data.ai.tools.toolEnabled
 import me.rerere.rikkihub.ui.components.ui.CardGroup
 import me.rerere.rikkihub.data.workspace.WorkspaceEnvMirror
@@ -47,12 +56,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -77,7 +88,9 @@ import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
 import me.rerere.rikkihub.data.ai.tools.WorkspaceToolEnablement
 import me.rerere.rikkihub.data.ai.tools.resolveWorkspaceToolApproval
 import me.rerere.rikkihub.data.ai.tools.workspaceToolApprovalItemsFor
+import me.rerere.rikkihub.data.ai.tools.BookPromptLanguage
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.rikkihub.ui.components.ai.ModelSelector
 import me.rerere.rikkihub.ui.components.nav.BackButton
 import me.rerere.rikkihub.ui.context.LocalNavController
@@ -97,6 +110,12 @@ import org.koin.core.parameter.parametersOf
  */
 private const val WORKSPACE_TOOL_ENABLEMENT_UI_ENABLED = true
 
+private enum class WorkspaceDetailTab(@StringRes val label: Int, val icon: ImageVector) {
+    BOOK(R.string.workspace_mode_book, HugeIcons.BookOpen01),
+    BASIC(R.string.workspace_detail_tab_basic, HugeIcons.Settings03),
+    FILES(R.string.workspace_detail_tab_files, HugeIcons.File02),
+}
+
 @Composable
 fun WorkspaceDetailPage(id: String) {
     val navController = LocalNavController.current
@@ -108,11 +127,24 @@ fun WorkspaceDetailPage(id: String) {
     val envSetup by vm.envSetup.collectAsStateWithLifecycle()
     val envStatus by vm.envStatus.collectAsStateWithLifecycle()
     var showEnvSheet by remember { mutableStateOf(false) }
-    val pagerState = rememberPagerState { 2 }
+    var shownTab by rememberSaveable { mutableStateOf<WorkspaceDetailTab?>(null) }
+    val tabs = if (state.workspace?.bookMode == true) {
+        listOf(WorkspaceDetailTab.BOOK, WorkspaceDetailTab.FILES, WorkspaceDetailTab.BASIC)
+    } else {
+        listOf(WorkspaceDetailTab.BASIC, WorkspaceDetailTab.FILES)
+    }
+    val pagerState = rememberPagerState { tabs.size }
+    val bookVm = if (state.workspace?.bookMode == true) rememberBookVM(id) else null
+    // 切换作品模式时标签页增减，停在用户正看的那一页
+    LaunchedEffect(tabs) {
+        if (state.workspace == null) return@LaunchedEffect
+        shownTab?.let { tabs.indexOf(it) }?.takeIf { it >= 0 }?.let { pagerState.scrollToPage(it) }
+        snapshotFlow { pagerState.settledPage }.collect { shownTab = tabs.getOrNull(it) }
+    }
     val scope = rememberCoroutineScope()
     var showInstallDialog by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = pagerState.currentPage == 1 && state.path.isNotBlank()) {
+    BackHandler(enabled = tabs.getOrNull(pagerState.currentPage) == WorkspaceDetailTab.FILES && state.path.isNotBlank()) {
         vm.goUp()
     }
 
@@ -128,7 +160,10 @@ fun WorkspaceDetailPage(id: String) {
                 },
                 navigationIcon = { BackButton() },
                 actions = {
-                    IconButton(onClick = { vm.refresh() }) {
+                    IconButton(onClick = {
+                        vm.refresh()
+                        bookVm?.refresh()
+                    }) {
                         Icon(HugeIcons.Refresh01, contentDescription = null)
                     }
                     if (state.workspace?.shellStatus != WorkspaceShellStatus.DISABLED.name) {
@@ -143,18 +178,14 @@ fun WorkspaceDetailPage(id: String) {
         },
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 0,
-                    label = { Text(stringResource(R.string.workspace_detail_tab_basic)) },
-                    icon = { Icon(HugeIcons.Settings03, contentDescription = null) },
-                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
-                )
-                NavigationBarItem(
-                    selected = pagerState.currentPage == 1,
-                    label = { Text(stringResource(R.string.workspace_detail_tab_files)) },
-                    icon = { Icon(HugeIcons.File02, contentDescription = null) },
-                    onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
-                )
+                tabs.forEachIndexed { index, tab ->
+                    NavigationBarItem(
+                        selected = pagerState.currentPage == index,
+                        label = { Text(stringResource(tab.label)) },
+                        icon = { Icon(tab.icon, contentDescription = null) },
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                    )
+                }
             }
         },
         containerColor = CustomColors.topBarColors.containerColor,
@@ -165,8 +196,10 @@ fun WorkspaceDetailPage(id: String) {
                 .padding(innerPadding)
                 .fillMaxSize(),
         ) { page ->
-            when (page) {
-                0 -> WorkspaceBasicPage(
+            when (tabs.getOrNull(page) ?: WorkspaceDetailTab.BASIC) {
+                WorkspaceDetailTab.BOOK -> bookVm?.let { BookPane(it, workspaceId = id, workspaceName = state.workspace?.name.orEmpty()) }
+
+                WorkspaceDetailTab.BASIC -> WorkspaceBasicPage(
                     workspace = state.workspace,
                     presetVm = vm,
                     installProgress = installProgress,
@@ -189,9 +222,11 @@ fun WorkspaceDetailPage(id: String) {
                     onSubagentModelChange = vm::setSubagentModel,
                     onSubagentAllowContextChange = vm::setSubagentAllowContext,
                     hostMountEntries = vm::hostMountEntries,
+                    onBookModeChange = vm::setBookMode,
+                    onBookPromptLanguageChange = vm::setBookPromptLanguage,
                 )
 
-                1 -> WorkspaceFilesBrowser(
+                WorkspaceDetailTab.FILES -> WorkspaceFilesBrowser(
                     workspaceId = id,
                     vm = vm,
                     state = state,
@@ -279,6 +314,8 @@ private fun WorkspaceBasicPage(
     onSubagentModelChange: (String?) -> Unit,
     onSubagentAllowContextChange: (Boolean) -> Unit,
     hostMountEntries: (String) -> List<WorkspaceFileEntry>,
+    onBookModeChange: (Boolean) -> Unit,
+    onBookPromptLanguageChange: (BookPromptLanguage) -> Unit,
 ) {
     val shellStatus = workspace?.shellStatus
     val installing = installProgress != null || shellStatus == WorkspaceShellStatus.INSTALLING.name
@@ -352,18 +389,52 @@ private fun WorkspaceBasicPage(
                         }
                     },
                 )
-                item(
-                    headlineContent = { Text(stringResource(R.string.workspace_detail_tool_surface)) },
-                    trailingContent = {
-                        WorkspaceRowValue(
-                            if (workspace?.harnessMinimal == true) {
-                                stringResource(R.string.workspace_page_harness_minimal_badge)
-                            } else {
-                                stringResource(R.string.workspace_detail_tool_surface_default)
+                if (workspace == null || workspace.mode == WorkspaceMode.HARNESS_MINIMAL) {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.workspace_detail_tool_surface)) },
+                        trailingContent = {
+                            WorkspaceRowValue(
+                                stringResource(
+                                    if (workspace == null) R.string.workspace_detail_tool_surface_default
+                                    else R.string.workspace_page_harness_minimal_badge
+                                )
+                            )
+                        },
+                    )
+                } else {
+                    switchItem(
+                        checked = workspace.bookMode,
+                        onCheckedChange = onBookModeChange,
+                        supportingContent = { Text(stringResource(R.string.workspace_mode_book_switch_desc)) },
+                        headlineContent = { Text(stringResource(R.string.workspace_mode_book_switch)) },
+                    )
+                }
+                if (workspace?.bookMode == true) {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.workspace_mode_book_prompts)) },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(stringResource(R.string.workspace_mode_book_prompts_desc))
+                                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                                    BookPromptLanguage.entries.forEachIndexed { index, language ->
+                                        SegmentedButton(
+                                            selected = workspace.bookPromptLanguage == language.id,
+                                            onClick = { onBookPromptLanguageChange(language) },
+                                            shape = SegmentedButtonDefaults.itemShape(index, BookPromptLanguage.entries.size),
+                                        ) {
+                                            Text(
+                                                stringResource(
+                                                    if (language == BookPromptLanguage.ZH) R.string.workspace_mode_book_prompts_zh
+                                                    else R.string.workspace_mode_book_prompts_en
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                        )
-                    },
-                )
+                        },
+                    )
+                }
                 item(
                     headlineContent = { Text(stringResource(R.string.workspace_detail_first_message_snapshot)) },
                     supportingContent = { Text(stringResource(R.string.workspace_detail_first_message_snapshot_desc)) },
@@ -632,7 +703,7 @@ private fun WorkspaceToolEnablementGroup(
                 },
             )
         } else {
-            WorkspaceToolEnablement.idsFor(workspace?.harnessMinimal == true).forEach { toolId ->
+            WorkspaceToolEnablement.idsFor(workspace?.mode ?: WorkspaceMode.NORMAL).forEach { toolId ->
                 // 显示 Override 后的当前 wire 名 (没 Override 时即默认名 = stable id)
                 val wireName = overrides[toolId]?.name?.trim().orEmpty().ifBlank { toolId }
                 item(
@@ -683,6 +754,10 @@ private fun workspaceToolLabel(toolId: String): String = when (toolId) {
     BuiltinToolIds.BASH -> stringResource(R.string.workspace_detail_tool_bash)
     BuiltinToolIds.STR_REPLACE_EDITOR -> stringResource(R.string.workspace_detail_tool_str_replace_editor)
     BuiltinToolIds.SUBAGENT -> stringResource(R.string.workspace_detail_tool_subagent)
+    BuiltinToolIds.BOOK_CONTENTS -> stringResource(R.string.book_tool_contents)
+    BuiltinToolIds.BOOK_READ -> stringResource(R.string.book_tool_read)
+    BuiltinToolIds.BOOK_SEARCH -> stringResource(R.string.book_tool_search)
+    BuiltinToolIds.BOOK_UPDATE -> stringResource(R.string.book_tool_update)
     else -> toolId
 }
 
@@ -693,7 +768,7 @@ private fun WorkspaceToolApprovalGroup(
     modifier: Modifier = Modifier,
 ) {
     val overrides = workspace?.toolApprovalOverrides().orEmpty()
-    val items = workspaceToolApprovalItemsFor(workspace?.harnessMinimal == true)
+    val items = workspaceToolApprovalItemsFor(workspace?.mode ?: WorkspaceMode.NORMAL)
 
     CardGroup(
         modifier = modifier,

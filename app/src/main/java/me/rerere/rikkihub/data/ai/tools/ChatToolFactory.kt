@@ -7,6 +7,7 @@ import me.rerere.ai.core.ToolConcurrency
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.WorkspaceToolWirePolicy
+import me.rerere.rikkihub.data.book.BookStore
 import me.rerere.rikkihub.data.ai.GenerationLoop
 import me.rerere.rikkihub.data.ai.qubagu.Qubagu
 import me.rerere.rikkihub.data.ai.mcp.McpManager
@@ -68,6 +69,8 @@ class ChatToolFactory(
      * 创造助手的 `creator_*` 工具；会话助手为创造助手时追加。null（测试）时不追加。
      */
     private val creatorToolSurface: CreatorToolSurface? = null,
+    /** 作品模式工作区的作品工具；null（测试）时不追加。 */
+    private val bookStore: BookStore? = null,
 ) {
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
 
@@ -199,6 +202,7 @@ class ChatToolFactory(
                             snapshotEpochs = epochs,
                             exposedTargets = targets,
                             filesScope = filesScope,
+                            bookStore = bookStore,
                         )
                     }
                 }

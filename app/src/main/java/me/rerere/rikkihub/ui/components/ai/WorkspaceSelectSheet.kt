@@ -12,6 +12,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import me.rerere.rikkihub.ui.pages.extensions.workspace.badge
 import me.rerere.rikkihub.ui.components.ui.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
@@ -79,9 +80,9 @@ internal fun WorkspaceSelectSheet(
                         title = workspace.name,
                         status = buildString {
                             append(workspace.shellStatus.toShellStatusLabel())
-                            if (workspace.harnessMinimal) {
+                            workspace.mode.badge()?.let {
                                 append(" · ")
-                                append(stringResource(R.string.workspace_page_harness_minimal_badge))
+                                append(stringResource(it))
                             }
                         },
                         selected = workspace.id == assistant.workspaceId?.toString(),

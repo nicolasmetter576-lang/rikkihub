@@ -38,6 +38,7 @@ fun Route.installWebSettingsRoutes(
     characterService: me.rerere.rikkihub.data.character.CharacterService? = null,
     usageStats: WebUsageStats? = null,
     fileManager: me.rerere.rikkihub.data.files.FileManagerService? = null,
+    book: me.rerere.rikkihub.web.routes.WebBookServices? = null,
 ) {
     assistantRoutes(
         settingsStore, conversationRepo, memoryRepo, filesManager,
@@ -64,6 +65,7 @@ fun Route.installWebSettingsRoutes(
     val recorder = usageStats?.recorder
     tuiqiaoRoutes(settingsStore, me.rerere.rikkihub.data.ai.tuiqiao.TuiqiaoHandler(providerManager, recorder))
     zaizaoRoutes(settingsStore, me.rerere.rikkihub.data.ai.zaizao.ZaizaoHandler(providerManager, recorder))
+    bookConfigRoutes(settingsStore)
     promptPolishRoutes(settingsStore, me.rerere.rikkihub.data.ai.polish.PromptPolishHandler(providerManager, recorder), conversationRepo)
     if (tavernRuntime != null) {
         qubaguRoutes(settingsStore, me.rerere.rikkihub.data.ai.qubagu.Qubagu(tavernRuntime.regexFactory), chatService, conversationRepo)
@@ -80,6 +82,7 @@ fun Route.installWebSettingsRoutes(
     if (translationHandler != null) {
         translatorRoutes(settingsStore, translationHandler, translationHistoryRepo)
     }
+    if (workspaceRepository != null && book != null) bookRoutes(workspaceRepository, book)
     if (workspaceRepository != null) {
         workspaceSubagentPresetRoutes(workspaceRepository, settingsStore)
         if (subagentPresetRepository != null) subagentPresetLibraryRoutes(subagentPresetRepository, workspaceRepository, settingsStore)

@@ -528,6 +528,7 @@ internal fun buildFloatingChatUiState(
         queuedCount = queue.messages.size,
         queuePaused = queue.paused,
         error = error,
+        stopReason = reply?.stopReason,
         isCliSession = conversation.cliSession != null,
         sendBlockedReason = sendBlockedReason,
     )

@@ -35,6 +35,7 @@ const NAV_GROUPS: ReadonlyArray<{ title?: string; items: ReadonlyArray<{ to: str
       { to: "/settings/tuiqiao", key: "nav.tuiqiao" },
       { to: "/settings/zaizao", key: "nav.zaizao" },
       { to: "/settings/qubagu", key: "nav.qubagu" },
+      { to: "/settings/book", key: "nav.book" },
     ],
   },
 ];

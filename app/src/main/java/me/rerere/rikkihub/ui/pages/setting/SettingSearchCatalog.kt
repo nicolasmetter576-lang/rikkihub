@@ -124,6 +124,8 @@ internal val settingSearchItems = listOf(
     SettingSearchItem(R.string.zaizao_include_after, Screen.SettingZaizao, SettingToggle({ it.zaizao.includeAfter }) { s, v -> s.copy(zaizao = s.zaizao.copy(includeAfter = v)) }),
     SettingSearchItem(R.string.zaizao_default_type, Screen.SettingZaizao),
     SettingSearchItem(R.string.zaizao_files_shared, Screen.SettingZaizao),
+    // SettingBookPage
+    SettingSearchItem(R.string.zaizao_reasoning, Screen.SettingBook),
     // SettingQubaguPage
     SettingSearchItem(R.string.qubagu_protect_dialogue, Screen.SettingQubagu, SettingToggle({ it.qubagu.protectDialogue }) { s, v -> s.copy(qubagu = s.qubagu.copy(protectDialogue = v)) }),
     SettingSearchItem(R.string.qubagu_protect_corner, Screen.SettingQubagu, SettingToggle({ it.qubagu.protectCornerQuotes }) { s, v -> s.copy(qubagu = s.qubagu.copy(protectCornerQuotes = v)) }),

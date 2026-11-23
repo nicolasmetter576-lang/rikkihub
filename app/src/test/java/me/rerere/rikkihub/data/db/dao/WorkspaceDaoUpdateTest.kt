@@ -188,6 +188,20 @@ class WorkspaceDaoUpdateTest {
                 publish()
                 1
             }
+        override suspend fun setBookMode(id: String, enabled: Boolean, updatedAt: Long): Int =
+            statement.withLock {
+                val row = rows[id] ?: return@withLock 0
+                rows[id] = row.copy(bookMode = enabled, updatedAt = updatedAt)
+                publish()
+                1
+            }
+        override suspend fun setBookPromptLanguage(id: String, language: String, updatedAt: Long): Int =
+            statement.withLock {
+                val row = rows[id] ?: return@withLock 0
+                rows[id] = row.copy(bookPromptLanguage = language, updatedAt = updatedAt)
+                publish()
+                1
+            }
 
         override suspend fun updateInTransaction(
             id: String,

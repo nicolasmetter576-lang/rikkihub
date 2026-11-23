@@ -117,6 +117,10 @@ import me.rerere.rikkihub.ui.pages.extensions.skills.SkillDetailPage
 import me.rerere.rikkihub.ui.pages.extensions.skills.SkillsPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspacePage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceDetailPage
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookImportPage
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookOutlinePage
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookReplacePage
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.ChapterOutlinePage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceDeviceDirectoryPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceFileEditorPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceReaderPage
@@ -134,6 +138,7 @@ import me.rerere.rikkihub.ui.pages.memory.GlobalMemoryPage
 import me.rerere.rikkihub.ui.pages.memory.MemoryFilePage
 import me.rerere.rikkihub.ui.pages.setting.SettingQubaguPage
 import me.rerere.rikkihub.ui.pages.setting.SettingTuiqiaoPage
+import me.rerere.rikkihub.ui.pages.setting.SettingBookPage
 import me.rerere.rikkihub.ui.pages.setting.SettingZaizaoPage
 import me.rerere.rikkihub.ui.pages.setting.SettingPreferencesThemePage
 import me.rerere.rikkihub.ui.pages.setting.SettingPreferencesNotificationPage
@@ -627,6 +632,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingTuiqiaoPage()
                             }
 
+                            entry<Screen.SettingBook> {
+                                SettingBookPage()
+                            }
+
                             entry<Screen.SettingZaizao> {
                                 SettingZaizaoPage()
                             }
@@ -736,6 +745,22 @@ class RouteActivity : ComponentActivity() {
                                 WorkspacePage()
                             }
 
+                            entry<Screen.BookImport> { key ->
+                                BookImportPage(key.workspaceId)
+                            }
+
+                            entry<Screen.BookOutline> { key ->
+                                BookOutlinePage(key.workspaceId)
+                            }
+
+                            entry<Screen.ChapterOutline> { key ->
+                                ChapterOutlinePage(key.workspaceId, key.chapterId)
+                            }
+
+                            entry<Screen.BookReplace> { key ->
+                                BookReplacePage(key.workspaceId)
+                            }
+
                             entry<Screen.WorkspaceDetail> { key ->
                                 WorkspaceDetailPage(key.id)
                             }
@@ -749,6 +774,7 @@ class RouteActivity : ComponentActivity() {
                                     id = key.id,
                                     area = WorkspaceStorageArea.valueOf(key.area),
                                     path = key.path,
+                                    reveal = key.reveal,
                                 )
                             }
 
@@ -991,6 +1017,9 @@ sealed interface Screen : NavKey {
     data object SettingZaizao : Screen
 
     @Serializable
+    data object SettingBook : Screen
+
+    @Serializable
     data object SettingQubagu : Screen
 
     @Serializable
@@ -1065,12 +1094,25 @@ sealed interface Screen : NavKey {
     @Serializable
     data class WorkspaceDetail(val id: String) : Screen
 
+    @Serializable
+    data class BookReplace(val workspaceId: String) : Screen
+
+    @Serializable
+    data class BookOutline(val workspaceId: String) : Screen
+
+    @Serializable
+    data class ChapterOutline(val workspaceId: String, val chapterId: String) : Screen
+
+    @Serializable
+    data class BookImport(val workspaceId: String) : Screen
+
     /** [command] runs in a new tab (CLI install/login from a chat). */
     @Serializable
     data class WorkspaceTerminal(val id: String, val command: String? = null) : Screen
 
     @Serializable
-    data class WorkspaceFileEditor(val id: String, val area: String, val path: String) : Screen
+    /** [reveal]: select the first place this text occurs when the file opens; empty = the end of the file. */
+    data class WorkspaceFileEditor(val id: String, val area: String, val path: String, val reveal: String = "") : Screen
 
     @Serializable
     data class WorkspaceReader(val id: String, val area: String, val path: String) : Screen

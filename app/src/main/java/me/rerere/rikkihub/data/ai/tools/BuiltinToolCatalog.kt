@@ -5,6 +5,8 @@ import me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition
 enum class BuiltinToolCategory {
     LOCAL,
     WORKSPACE,
+    BOOK_ZH,
+    BOOK_EN,
     SEARCH,
     MEMORY,
     CONVERSATION,
@@ -23,6 +25,8 @@ data class BuiltinToolSpec(
     val isTool: Boolean = true,
     /** false：名称固定（按名称分派的私有工具），只允许覆盖描述与系统提示词。 */
     val renamable: Boolean = true,
+    /** 非 null：不是独立工具，只是 [variantOf] 在作品模式某种语言下的说明文字（见 [BookToolPrompts]）。 */
+    val variantOf: String? = null,
 )
 
 object BuiltinToolIds {
@@ -46,6 +50,10 @@ object BuiltinToolIds {
     const val SUBAGENT = "subagent"
     const val WORKSPACE_REMINDER = "workspace_reminder"
     const val HARNESS_MINIMAL_REMINDER = "harness_minimal_reminder"
+    const val BOOK_CONTENTS = "book_contents"
+    const val BOOK_READ = "book_read"
+    const val BOOK_SEARCH = "book_search"
+    const val BOOK_UPDATE = "book_update"
     const val SEARCH_WEB = "search_web"
     const val SCRAPE_WEB = "scrape_web"
     const val MEMORY_READ = "memory_read"
@@ -591,7 +599,7 @@ object BuiltinToolCatalog {
             """.trimIndent().replace("\n", " "),
             renamable = false,
         ),
-    )
+    ) + BookToolPrompts.specs
 
     val ids: Set<String> = all.map { it.id }.toSet()
 

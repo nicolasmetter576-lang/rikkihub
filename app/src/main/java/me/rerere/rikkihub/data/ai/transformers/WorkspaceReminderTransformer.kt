@@ -8,7 +8,6 @@ import me.rerere.rikkihub.data.workspace.workspaceReminderPrompt
 import me.rerere.rikkihub.data.workspace.workspaceAgentsInstructions
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
-import me.rerere.workspace.WorkspaceShellStatus
 
 /**
  * Workspace 系统提示注入转换器
@@ -65,7 +64,7 @@ class WorkspaceReminderTransformer internal constructor(
             // 旧路径（未提供快照的调用方）：查 DB + READY 门 + 按模式固定清单。
             val workspace = loadWorkspace(workspaceId) ?: return messages
             // 与 ChatService.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
-            if (workspace.shellStatus != WorkspaceShellStatus.READY.name) return messages
+            if (!workspace.toolsReady) return messages
             instructionsEligible = true
             instructionsCwd = ctx.workspaceCwd
             reminder = workspaceReminderPrompt(

@@ -9,6 +9,9 @@ import me.rerere.workspace.WorkspaceFileEntry
 data class CreateWorkspaceRequest(
     val name: String? = null,
     val harnessMinimal: Boolean = false,
+    val bookMode: Boolean = false,
+    /** "zh" / "en"; null = Chinese. */
+    val bookPromptLanguage: String? = null,
 )
 
 @Serializable
@@ -34,6 +37,8 @@ data class WorkspaceDto(
     // 存储 JSON 损坏时为 null 且 toolEnablementCorrupt=true (fail-closed, UI 显示受限)
     val toolEnablement: Map<String, Boolean>? = null,
     val toolEnablementCorrupt: Boolean = false,
+    val bookMode: Boolean = false,
+    val bookPromptLanguage: String = "zh",
 )
 
 @Serializable
@@ -161,6 +166,8 @@ fun WorkspaceEntity.toDto(): WorkspaceDto = WorkspaceDto(
     firstMessageFileSnapshotDepth = firstMessageFileSnapshotDepth,
     toolEnablement = WorkspaceToolEnablement.tryParse(toolEnablement),
     toolEnablementCorrupt = WorkspaceToolEnablement.tryParse(toolEnablement) == null,
+    bookMode = bookMode,
+    bookPromptLanguage = bookPromptLanguage,
 )
 
 fun WorkspaceFileEntry.toDto(): WorkspaceFileEntryDto = WorkspaceFileEntryDto(

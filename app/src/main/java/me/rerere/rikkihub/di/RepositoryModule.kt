@@ -2,6 +2,9 @@ package me.rerere.rikkihub.di
 
 import android.content.Context
 import android.os.Environment
+import me.rerere.rikkihub.data.book.BookReplacer
+import me.rerere.rikkihub.data.book.BookStore
+import me.rerere.rikkihub.data.book.transfer.BookImporter
 import me.rerere.rikkihub.data.character.imageBytesToPng
 import me.rerere.rikkihub.data.files.FileFolders
 import me.rerere.rikkihub.data.files.FileManagerService
@@ -174,6 +177,19 @@ val repositoryModule = module {
     }
 
     single { FileManagerPicks() }
+
+    single {
+        BookStore(
+            repository = get(),
+            cacheDir = File(get<Context>().cacheDir, "book_index"),
+        )
+    }
+
+    single { BookImporter(store = get()) }
+
+    single {
+        BookReplacer(store = get(), undoDir = File(get<Context>().noBackupFilesDir, "book_undo"))
+    }
 
     single {
         SkillManager(get(), get())

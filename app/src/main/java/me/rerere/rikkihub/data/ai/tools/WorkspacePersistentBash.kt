@@ -125,7 +125,14 @@ internal fun maybeTruncatePersistentBash(content: String, maxOutputChars: Int, i
     return if (content.length <= maxOutputChars) {
         content + TRUNCATED_MESSAGE
     } else {
-        content.take(maxOutputChars) + TRUNCATED_MESSAGE
+        var end = maxOutputChars.coerceAtLeast(0)
+        if (end in 1 until content.length &&
+            content[end - 1].isHighSurrogate() &&
+            content[end].isLowSurrogate()
+        ) {
+            end--
+        }
+        content.substring(0, end) + TRUNCATED_MESSAGE
     }
 }
 
@@ -543,7 +550,7 @@ class WorkspacePersistentBashSessionManager(
         val result: CompletableDeferred<Unit>,
     )
 
-    private class LiveSession(
+    internal class LiveSession(
         val workspaceId: String,
         /** 会话表键（[persistentBashSessionKey]）：工作区 + 可选所属者。 */
         val key: String,
@@ -561,27 +568,27 @@ class WorkspacePersistentBashSessionManager(
 
         init {
             thread(name = "workspace-persistent-bash-$workspaceId", isDaemon = true) {
-                // 增量 UTF-8 解码: read chunk 边界可能切开多字节字符, 逐块 new String 会产生乱码
-                val decoder = Charsets.UTF_8.newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPLACE)
-                    .onUnmappableCharacter(CodingErrorAction.REPLACE)
+                val decoder = IncrementalUtf8Decoder()
                 val buffer = ByteArray(PERSISTENT_BASH_READ_BUFFER_BYTES)
-                val chars = CharBuffer.allocate(PERSISTENT_BASH_READ_BUFFER_BYTES)
-                while (!closed.get()) {
-                    val n = pty.read(buffer)
-                    if (n <= 0) break
-                    chars.clear()
-                    decoder.decode(ByteBuffer.wrap(buffer, 0, n), chars, false)
-                    chars.flip()
-                    if (chars.remaining() <= 0) continue
+                try {
+                    while (!closed.get()) {
+                        val n = pty.read(buffer)
+                        if (n < 0) break
+                        if (n == 0) continue
+                        val text = decoder.decode(buffer, n)
+                        if (text.isEmpty()) continue
+                        synchronized(lock) {
+                            appendLocked(text)
+                            checkPendingLocked()
+                        }
+                    }
+                } finally {
+                    val tail = decoder.finish()
                     synchronized(lock) {
-                        appendLocked(chars.toString())
+                        if (tail.isNotEmpty()) appendLocked(tail)
+                        eof = true
                         checkPendingLocked()
                     }
-                }
-                synchronized(lock) {
-                    eof = true
-                    checkPendingLocked()
                 }
             }
         }
@@ -644,7 +651,14 @@ class WorkspacePersistentBashSessionManager(
             val limit = PERSISTENT_BASH_MAX_OUTPUT_CHARS * 4
             if (scrollback.length > limit) {
                 truncated = true
-                scrollback.delete(0, scrollback.length - PERSISTENT_BASH_MAX_OUTPUT_CHARS * 2)
+                var drop = scrollback.length - PERSISTENT_BASH_MAX_OUTPUT_CHARS * 2
+                if (drop in 1 until scrollback.length &&
+                    scrollback[drop - 1].isHighSurrogate() &&
+                    scrollback[drop].isLowSurrogate()
+                ) {
+                    drop++
+                }
+                scrollback.delete(0, drop)
             }
         }
 
@@ -652,5 +666,75 @@ class WorkspacePersistentBashSessionManager(
             val text: String,
             val truncated: Boolean,
         )
+    }
+}
+
+/**
+ * 增量 UTF-8 解码器：在输入缓冲中保留跨 chunk 的未完整多字节前缀，并在输出缓冲满时循环排空，
+ * 避免 PTY 分片读入切分中文/emoji 或截断单次输出。
+ */
+internal class IncrementalUtf8Decoder(
+    byteBufferCapacity: Int = PERSISTENT_BASH_READ_BUFFER_BYTES + 4,
+    charBufferCapacity: Int = PERSISTENT_BASH_READ_BUFFER_BYTES,
+) {
+    private val decoder = Charsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPLACE)
+        .onUnmappableCharacter(CodingErrorAction.REPLACE)
+    private val inBuf = ByteBuffer.allocate(byteBufferCapacity.coerceAtLeast(4))
+    private val outBuf = CharBuffer.allocate(charBufferCapacity.coerceAtLeast(2))
+
+    fun decode(bytes: ByteArray, length: Int = bytes.size): String {
+        if (length <= 0) return ""
+        var result: StringBuilder? = null
+        var singleShot: String? = null
+        var offset = 0
+        while (offset < length) {
+            val chunk = minOf(length - offset, inBuf.remaining())
+            inBuf.put(bytes, offset, chunk)
+            offset += chunk
+            inBuf.flip()
+            while (true) {
+                outBuf.clear()
+                val cr = decoder.decode(inBuf, outBuf, false)
+                outBuf.flip()
+                if (outBuf.hasRemaining()) {
+                    if (result == null && singleShot == null && offset == length && !cr.isOverflow) {
+                        singleShot = outBuf.toString()
+                    } else {
+                        val sb = result ?: StringBuilder().also {
+                            singleShot?.let(it::append)
+                            singleShot = null
+                            result = it
+                        }
+                        sb.append(outBuf)
+                    }
+                }
+                if (!cr.isOverflow) break
+            }
+            inBuf.compact()
+        }
+        return result?.toString() ?: singleShot.orEmpty()
+    }
+
+    fun finish(): String {
+        val sb = StringBuilder()
+        inBuf.flip()
+        while (true) {
+            outBuf.clear()
+            val cr = decoder.decode(inBuf, outBuf, true)
+            outBuf.flip()
+            if (outBuf.hasRemaining()) sb.append(outBuf)
+            if (!cr.isOverflow) break
+        }
+        while (true) {
+            outBuf.clear()
+            val cr = decoder.flush(outBuf)
+            outBuf.flip()
+            if (outBuf.hasRemaining()) sb.append(outBuf)
+            if (!cr.isOverflow) break
+        }
+        inBuf.clear()
+        decoder.reset()
+        return sb.toString()
     }
 }

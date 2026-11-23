@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.di
 
+import me.rerere.rikkihub.data.ai.book.BookOutliner
+import me.rerere.rikkihub.data.ai.book.BeatWriter
+import me.rerere.rikkihub.data.ai.book.BookAi
+import me.rerere.rikkihub.data.ai.book.BookAliasFinder
 import me.rerere.rikkihub.data.ai.QuotaTracker
 import me.rerere.rikkihub.data.ai.UsageRecorder
 import android.content.Context
@@ -248,6 +252,24 @@ val dataSourceModule = module {
 
     single {
         ZaizaoHandler(providerManager = get(), usageRecorder = get())
+    }
+
+    single {
+        BookAi(providerManager = get(), usageRecorder = get())
+    }
+
+    single {
+        BookAliasFinder(store = get(), ai = get())
+    }
+
+    single {
+        val settingsStore = get<SettingsStore>()
+        BeatWriter(store = get(), ai = get(), repository = get(), scope = get<AppScope>(), settings = { settingsStore.settingsFlow.value })
+    }
+
+    single {
+        val settingsStore = get<SettingsStore>()
+        BookOutliner(store = get(), ai = get(), repository = get(), scope = get<AppScope>(), settings = { settingsStore.settingsFlow.value })
     }
 
     single {

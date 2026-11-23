@@ -63,7 +63,11 @@
     "usage_current_unknown": "The latest model step has no complete usage snapshot; context and cache are unknown.",
     "usage_reported_total": "Reported total tokens: {{tokens}}",
     "usage_context_note": "Context is a usage reference for the latest logical model step, not the exact capacity of the next request.",
-    "usage_timing_note": "App-observed time: streaming starts at the first chunk; non-streaming includes request waiting. Tool execution and approval waits are excluded. Output may include reasoning and intermediate steps; this is not plain-text or hardware throughput."
+    "usage_timing_note": "App-observed time: streaming starts at the first chunk; non-streaming includes request waiting. Tool execution and approval waits are excluded. Output may include reasoning and intermediate steps; this is not plain-text or hardware throughput.",
+    "stop_reason_max_tokens": "Output token limit reached; reply may be incomplete",
+    "stop_reason_content_filter": "Output stopped by content filter",
+    "stop_reason_step_limit": "Maximum tool-call steps reached; task may be incomplete",
+    "stop_reason_incomplete": "Response ended early and may be incomplete"
   },
   "translation": {
     "translate": "Translate",

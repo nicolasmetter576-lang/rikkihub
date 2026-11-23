@@ -40,6 +40,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import android.webkit.MimeTypeMap
 import me.rerere.rikkihub.data.ai.tools.WorkspaceToolEnablement
+import me.rerere.rikkihub.data.ai.tools.BookPromptLanguage
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkihub.data.files.FileFolders
 import me.rerere.rikkihub.data.files.FileManagerSource
@@ -1085,6 +1086,14 @@ class WorkspaceDetailVM(
 
     fun setSubagentAllowContext(allowContext: Boolean) {
         patchWorkspace { it.copy(subagentAllowContext = allowContext) }
+    }
+
+    fun setBookMode(enabled: Boolean) {
+        patchWorkspace { it.copy(bookMode = enabled) }
+    }
+
+    fun setBookPromptLanguage(language: BookPromptLanguage) {
+        patchWorkspace { it.copy(bookPromptLanguage = language.id) }
     }
 
     fun setShellCompatibilityMode(enabled: Boolean) {

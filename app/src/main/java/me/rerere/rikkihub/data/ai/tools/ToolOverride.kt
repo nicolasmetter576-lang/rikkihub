@@ -73,19 +73,26 @@ fun builtinToolPlaceholders(
     )
 }
 
+/** [promptLanguage]: book workspaces take description and system prompt from that language's variant; the name is shared. */
 fun Tool.applyBuiltinOverride(
     overrides: Map<String, ToolOverride>,
     placeholders: Map<String, String> = emptyMap(),
+    promptLanguage: BookPromptLanguage? = null,
 ): Tool {
-    val spec = BuiltinToolCatalog[name] ?: return this
+    val base = BuiltinToolCatalog[name] ?: return this
+    val spec = promptLanguage?.let { BookToolPrompts.variant(it, base.id) } ?: base
     val override = overrides[spec.id]
-    val resolvedName = spec.resolvedName(overrides)
+    val resolvedName = base.resolvedName(overrides)
     val descriptionSource = override?.description?.takeIf { it.isNotBlank() } ?: spec.defaultDescription
     val originalSystemPrompt = systemPrompt
     val customPrompt = override?.systemPrompt
+    val originalParameters = parameters
     return copy(
         name = resolvedName,
         description = interpolateToolText(descriptionSource, placeholders),
+        parameters = if (promptLanguage == null) originalParameters else {
+            { BookToolPrompts.describeParameters(promptLanguage, base.id, originalParameters()) }
+        },
         systemPrompt = { model, messages ->
             val original = interpolateToolText(originalSystemPrompt(model, messages), placeholders)
             val custom = customPrompt?.let { interpolateToolText(it, placeholders) }
@@ -101,7 +108,8 @@ fun Tool.applyBuiltinOverride(
 fun Iterable<Tool>.applyBuiltinOverrides(
     overrides: Map<String, ToolOverride>,
     placeholders: Map<String, String> = emptyMap(),
-): List<Tool> = map { it.applyBuiltinOverride(overrides, placeholders) }
+    promptLanguage: BookPromptLanguage? = null,
+): List<Tool> = map { it.applyBuiltinOverride(overrides, placeholders, promptLanguage) }
 
 fun resolveBuiltinToolId(
     name: String,

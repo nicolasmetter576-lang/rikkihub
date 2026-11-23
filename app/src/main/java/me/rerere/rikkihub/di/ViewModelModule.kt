@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.di
 
+import me.rerere.rikkihub.data.repository.CharacterRepository
+import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.ui.pages.memory.GlobalMemoryVM
 import me.rerere.rikkihub.ui.pages.memory.MemoryFileVM
 import me.rerere.rikkihub.ui.pages.assistant.AssistantVM
@@ -20,6 +22,13 @@ import me.rerere.rikkihub.ui.pages.extensions.skills.SkillDetailVM
 import me.rerere.rikkihub.ui.pages.extensions.skills.SkillsVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceDetailVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookImportVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BeatBoardVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookOutlineVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookReplaceVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.ChapterOutlineVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.bookMentions
 import me.rerere.rikkihub.ui.pages.setting.SettingVM
 import me.rerere.rikkihub.ui.pages.setting.subagent.SubagentLibraryVM
 import me.rerere.rikkihub.ui.pages.share.handler.ShareHandlerVM
@@ -106,6 +115,24 @@ val viewModelModule = module {
     // viewModelOf 会对全部参数做 DI 解析并直接炸 NoDefinitionFoundException —— 显式构造
     viewModel { SkillDetailVM(skillManager = get()) }
     viewModelOf(::WorkspaceVM)
+    viewModel {
+        val settingsStore = get<SettingsStore>()
+        val characters = get<CharacterRepository>()
+        BookReplaceVM(
+            workspaceId = it.get(),
+            store = get(),
+            replacer = get(),
+            aliasFinder = get(),
+            settingsStore = settingsStore,
+            workspaceRepository = get(),
+            mentions = { words -> bookMentions(words, settingsStore.settingsFlow.value, characters) },
+        )
+    }
+    viewModel { BookImportVM(workspaceId = it.get(), context = get(), importer = get()) }
+    viewModel { BookOutlineVM(workspaceId = it.get(), store = get(), outliner = get()) }
+    viewModel { params -> ChapterOutlineVM(workspaceId = params[0], chapterId = params[1], store = get(), outliner = get()) }
+    viewModel { params -> BeatBoardVM(workspaceId = params[0], chapterId = params[1], store = get(), writer = get()) }
+    viewModel { BookVM(workspaceId = it.get(), store = get()) }
     viewModel<WorkspaceDetailVM> {
         WorkspaceDetailVM(
             id = it.get(),

@@ -18,6 +18,7 @@ import me.rerere.rikkihub.data.datastore.Settings
 import me.rerere.rikkihub.data.workspace.WorkspaceRequestCapabilities
 import me.rerere.rikkihub.data.workspace.workspaceReminderPrompt
 import me.rerere.rikkihub.data.model.Assistant
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -29,10 +30,10 @@ class WorkspaceSubagentTest {
     @Test
     fun catalogAndApprovalsIncludeSubagentOnBothSurfaces() {
         assertEquals(BuiltinToolIds.SUBAGENT, BuiltinToolCatalog.require(BuiltinToolIds.SUBAGENT).id)
-        assertTrue(workspaceToolNamesFor(false).contains(BuiltinToolIds.SUBAGENT))
-        assertTrue(workspaceToolNamesFor(true).contains(BuiltinToolIds.SUBAGENT))
-        assertTrue(workspaceToolApprovalItemsFor(false).contains(BuiltinToolIds.SUBAGENT))
-        assertTrue(workspaceToolApprovalItemsFor(true).contains(BuiltinToolIds.SUBAGENT))
+        assertTrue(WorkspaceToolEnablement.idsFor(WorkspaceMode.NORMAL).contains(BuiltinToolIds.SUBAGENT))
+        assertTrue(WorkspaceToolEnablement.idsFor(WorkspaceMode.HARNESS_MINIMAL).contains(BuiltinToolIds.SUBAGENT))
+        assertTrue(workspaceToolApprovalItemsFor(WorkspaceMode.NORMAL).contains(BuiltinToolIds.SUBAGENT))
+        assertTrue(workspaceToolApprovalItemsFor(WorkspaceMode.HARNESS_MINIMAL).contains(BuiltinToolIds.SUBAGENT))
         assertFalse(resolveWorkspaceToolApproval(BuiltinToolIds.SUBAGENT, emptyMap()))
         assertTrue(resolveWorkspaceToolApproval(BuiltinToolIds.SUBAGENT, mapOf(BuiltinToolIds.SUBAGENT to true)))
     }

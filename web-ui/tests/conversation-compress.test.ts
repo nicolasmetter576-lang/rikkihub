@@ -244,6 +244,54 @@ test("a failure explains the reason and offers retry; the size warning hides whi
   );
 });
 
+test("generationErrors render persistent error and warning notices with compress_and_retry action", () => {
+  const html = renderNotices({
+    generationErrors: [
+      {
+        id: "err-1",
+        title: "Generation failed",
+        message: "context_length_exceeded: 200k tokens",
+        solution: "compress_and_retry",
+        timestamp: 1000,
+        affectsReply: true,
+      },
+      {
+        id: "err-2",
+        title: null,
+        message: "Title generation failed",
+        solution: null,
+        timestamp: 1001,
+        affectsReply: false,
+      },
+    ],
+    onDismissGenerationError: () => {},
+    onCompressAndRetry: () => {},
+  });
+  assert.match(html, /role="alert"/);
+  assert.match(html, /Generation failed/);
+  assert.match(html, /context_length_exceeded: 200k tokens/);
+  assert.match(html, /Compress and retry/);
+  assert.match(html, /Title generation failed/);
+
+  // Hide compress_and_retry button while compression is already running.
+  const whileRunning = renderNotices({
+    compressState: state("running"),
+    generationErrors: [
+      {
+        id: "err-1",
+        message: "overflow",
+        solution: "compress_and_retry",
+        timestamp: 1000,
+        affectsReply: true,
+      },
+    ],
+    onDismissGenerationError: () => {},
+    onCompressAndRetry: () => {},
+  });
+  assert.match(whileRunning, /overflow/);
+  assert.doesNotMatch(whileRunning, /Compress and retry/);
+});
+
 test("preview covers the messages after the last checkpoint, minus the kept ones", () => {
   const nodes = [node("USER"), node("ASSISTANT"), node("USER"), node("ASSISTANT"), node("USER")];
   assert.equal(compressionPreviewRange(nodes, 0).length, 5);

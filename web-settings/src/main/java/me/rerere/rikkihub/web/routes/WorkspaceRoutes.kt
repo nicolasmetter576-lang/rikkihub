@@ -41,6 +41,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
+import me.rerere.rikkihub.data.ai.tools.BookPromptLanguage
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.rikkihub.data.ai.tools.WorkspacePersistentBashSessionManager
 import me.rerere.rikkihub.data.ai.tools.WorkspaceToolDefaultApprovals
 import me.rerere.rikkihub.data.ai.tools.WorkspaceToolEnablement
@@ -124,7 +126,13 @@ fun Route.workspaceRoutes(
             val workspace = try {
                 workspaceRepository.create(
                     name = request.name.orEmpty(),
-                    harnessMinimal = request.harnessMinimal,
+                    mode = when {
+                        request.harnessMinimal && request.bookMode -> throw BadRequestException("Choose one workspace mode")
+                        request.harnessMinimal -> WorkspaceMode.HARNESS_MINIMAL
+                        request.bookMode -> WorkspaceMode.BOOK
+                        else -> WorkspaceMode.NORMAL
+                    },
+                    bookPromptLanguage = BookPromptLanguage.of(request.bookPromptLanguage.orEmpty()),
                 )
             } catch (error: IllegalArgumentException) {
                 throw BadRequestException(error.message ?: "Invalid workspace name")
@@ -197,7 +205,10 @@ fun Route.workspaceRoutes(
                             )
                             else -> workspace.toolEnablement
                         },
+                        bookMode = patch.bookMode ?: workspace.bookMode,
+                        bookPromptLanguage = patch.bookPromptLanguage?.id ?: workspace.bookPromptLanguage,
                     ).also { next ->
+                        require(!(next.bookMode && next.harnessMinimal)) { "A harness workspace cannot be a book workspace" }
                         if (patch.hasName && next.name != workspace.name &&
                             workspaceRepository.isNameTaken(next.name, excludeId = id)
                         ) {
@@ -854,6 +865,10 @@ internal data class WorkspaceUpdatePatch(
     // 工具启用覆盖 (稳定内建 ID -> enabled): 增量 merge, 缺键保留; 损坏配置修复走 reset 标记
     val hasToolEnablement: Boolean,
     val toolEnablement: Map<String, Boolean>,
+    // null = 不变；DSH 极简工作区不能转
+    val bookMode: Boolean? = null,
+    // null = 不变
+    val bookPromptLanguage: BookPromptLanguage? = null,
     // true = 显式重置 tool_enablement 为 "{}" (全部启用); 与 toolEnablement 互斥
     val resetToolEnablement: Boolean,
 )
@@ -880,7 +895,7 @@ internal fun parseWorkspaceUpdate(body: JsonObject): WorkspaceUpdatePatch {
     }
     if ("name" !in body && "subagentModelId" !in body && "subagentAllowContext" !in body &&
         "shellCompatibilityMode" !in body && "firstMessageFileSnapshot" !in body && "firstMessageFileSnapshotDepth" !in body && "toolApprovals" !in body &&
-        "toolEnablement" !in body && "resetToolEnablement" !in body &&
+        "toolEnablement" !in body && "resetToolEnablement" !in body && "bookMode" !in body && "bookPromptLanguage" !in body &&
         EXPOSED_MOUNT_FIELD_TARGETS.keys.none { it in body }
     ) {
         throw BadRequestException("No workspace fields to update")
@@ -974,6 +989,13 @@ internal fun parseWorkspaceUpdate(body: JsonObject): WorkspaceUpdatePatch {
     if (resetToolEnablement && hasToolEnablement) {
         throw BadRequestException("resetToolEnablement cannot be combined with toolEnablement")
     }
+    val bookPromptLanguage = if ("bookPromptLanguage" in body) {
+        val raw = (body["bookPromptLanguage"] as? JsonPrimitive)?.contentOrNull
+        BookPromptLanguage.entries.firstOrNull { it.id == raw }
+            ?: throw BadRequestException("bookPromptLanguage must be zh or en")
+    } else {
+        null
+    }
     return WorkspaceUpdatePatch(
         hasName = hasName,
         name = name,
@@ -990,6 +1012,8 @@ internal fun parseWorkspaceUpdate(body: JsonObject): WorkspaceUpdatePatch {
         hasToolEnablement = hasToolEnablement,
         toolEnablement = toolEnablement,
         resetToolEnablement = resetToolEnablement,
+        bookMode = parseRequiredBoolean(body, "bookMode"),
+        bookPromptLanguage = bookPromptLanguage,
     )
 }
 

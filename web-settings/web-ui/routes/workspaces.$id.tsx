@@ -22,6 +22,7 @@ import {
   SettingsSwitchRow,
   reportSettingsError,
 } from "@overlay/components/settings/settings-ui";
+import { WorkspaceBook } from "@overlay/components/workspace/workspace-book";
 import { WorkspaceDevicePanel } from "@overlay/components/workspace/workspace-device-panel";
 import { WorkspaceSubagentPresets } from "@overlay/components/workspace/workspace-subagent-presets";
 import { WorkspaceSubagentLibrary } from "@overlay/components/workspace/workspace-subagent-library";
@@ -34,6 +35,7 @@ import {
   WORKSPACE_TOOL_ENABLEMENT_UI_ENABLED,
   resolveWorkspaceToolWireName,
   workspaceApi,
+  workspaceMode,
   workspaceQueryKeys,
   workspaceToolEnablementIds,
 } from "@overlay/lib/workspace";
@@ -51,7 +53,12 @@ const TOOL_APPROVAL_DEFAULTS: ReadonlyArray<readonly [string, boolean]> = [
   ["bash", false],
   ["str_replace_editor", false],
   ["subagent", false],
+  ["book_contents", false],
+  ["book_read", false],
+  ["book_search", false],
+  ["book_update", false],
 ];
+const BOOK_TOOLS = new Set(["book_contents", "book_read", "book_search", "book_update"]);
 
 // 对照 App WorkspaceExposedMountsCard: field -> rootfs 挂载目标
 const EXPOSED_MOUNT_ROWS = [
@@ -79,7 +86,6 @@ export default function WorkspaceDetailPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const tab = requestedTab === "terminal" || requestedTab === "device" ? requestedTab : "files";
   const [resetEnablementOpen, setResetEnablementOpen] = React.useState(false);
   const toolOverrides = useSettingsStore((state) => state.settings?.toolOverrides);
   const providers = useSettingsStore((state) => state.settings?.providers);
@@ -109,6 +115,11 @@ export default function WorkspaceDetailPage() {
       query.state.data?.shellStatus === "INSTALLING" ? 2000 : false,
   });
   const workspace = workspaceQuery.data ?? null;
+  const defaultTab = workspace?.bookMode ? "book" : "files";
+  const tab =
+    requestedTab === "files" || requestedTab === "terminal" || requestedTab === "device"
+      ? requestedTab
+      : defaultTab;
 
   const updateMutation = useMutation({
     mutationFn: (patch: Parameters<typeof workspaceApi.update>[1]) =>
@@ -157,9 +168,9 @@ export default function WorkspaceDetailPage() {
             <Badge variant={workspace.shellStatus === "READY" ? "default" : "secondary"}>
               {t(`status.${workspace.shellStatus}`)}
             </Badge>
-            {workspace.harnessMinimal ? (
-              <Badge variant="outline">{t("list.harness_minimal_badge")}</Badge>
-            ) : null}
+            {workspaceMode(workspace) === "normal" ? null : (
+              <Badge variant="outline">{t(`list.mode_badge.${workspaceMode(workspace)}`)}</Badge>
+            )}
           </div>
           <p className="font-mono text-xs text-muted-foreground">{workspace.id}</p>
           <WorkspaceRootfsInstall workspace={workspace} className="pt-1" />
@@ -168,15 +179,61 @@ export default function WorkspaceDetailPage() {
           value={tab}
           onChange={next => requestWorkspaceEditorLeave(() => setSearchParams(current => {
             current.set("tab", next);
+            current.delete("file");
             return current;
           }, { replace: true }))}
           options={[
+            ...(workspace.bookMode ? [{ value: "book" as const, label: t("book.tab") }] : []),
             { value: "files", label: t("detail.files") },
             { value: "terminal", label: t("detail.terminal") },
             { value: "device", label: t("detail.device") },
           ]}
         />
       </div>
+
+      {tab === "book" ? (
+        <WorkspaceBook
+          workspaceId={workspace.id}
+          onOpenFile={(path) =>
+            setSearchParams((current) => {
+              current.set("tab", "files");
+              current.set("file", path);
+              return current;
+            })
+          }
+        />
+      ) : null}
+
+      {workspace.harnessMinimal ? null : (
+        <div className="space-y-3 rounded-xl border p-3" data-testid="book-mode">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-1">
+              <h2 className="text-sm font-medium">{t("book.mode")}</h2>
+              <p className="text-xs text-muted-foreground">{t("book.mode_desc")}</p>
+            </div>
+            <Switch
+              checked={workspace.bookMode === true}
+              onCheckedChange={(checked) => applyPatch({ bookMode: checked })}
+            />
+          </div>
+          {workspace.bookMode ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <h3 className="text-sm">{t("book.prompts")}</h3>
+                <p className="text-xs text-muted-foreground">{t("book.prompts_desc")}</p>
+              </div>
+              <SettingsSegmented
+                value={workspace.bookPromptLanguage ?? "zh"}
+                onChange={(language) => applyPatch({ bookPromptLanguage: language })}
+                options={[
+                  { value: "zh", label: t("book.prompts_zh") },
+                  { value: "en", label: t("book.prompts_en") },
+                ]}
+              />
+            </div>
+          ) : null}
+        </div>
+      )}
 
       <div className="space-y-3 rounded-xl border p-3">
         <div className="flex items-center justify-between gap-3">
@@ -322,7 +379,7 @@ export default function WorkspaceDetailPage() {
             </div>
           ) : (
             <div className="divide-y overflow-hidden rounded-xl border">
-              {workspaceToolEnablementIds(workspace.harnessMinimal === true).map((toolId) => {
+              {workspaceToolEnablementIds(workspaceMode(workspace)).map((toolId) => {
                 const enabled = workspace.toolEnablement?.[toolId] ?? true;
                 // 显示 Override 后的当前 wire 名（未 Override 时 = 稳定 ID 本身）
                 const wireName = resolveWorkspaceToolWireName(toolId, toolOverrides);
@@ -357,7 +414,7 @@ export default function WorkspaceDetailPage() {
           <p className="text-xs text-muted-foreground">{t("detail.tool_approval_desc")}</p>
         </div>
         <div className="divide-y overflow-hidden rounded-xl border">
-          {TOOL_APPROVAL_DEFAULTS.map(([toolName, defaultNeedsApproval]) => {
+          {TOOL_APPROVAL_DEFAULTS.filter(([toolName]) => workspace.bookMode || !BOOK_TOOLS.has(toolName)).map(([toolName, defaultNeedsApproval]) => {
             const checked = workspace.toolApprovals?.[toolName] ?? defaultNeedsApproval;
             return (
               <div
@@ -380,8 +437,18 @@ export default function WorkspaceDetailPage() {
         </div>
       </div>
 
-      {tab === "files" ? (
-        <WorkspaceFileBrowser workspaceId={workspace.id} />
+      {tab === "book" ? null : tab === "files" ? (
+        <WorkspaceFileBrowser
+          workspaceId={workspace.id}
+          initialFile={searchParams.get("file")}
+          onInitialFileClosed={() =>
+            setSearchParams((current) => {
+              current.delete("tab");
+              current.delete("file");
+              return current;
+            })
+          }
+        />
       ) : tab === "terminal" ? (
         <WorkspaceTerminal
           workspaceId={workspace.id}

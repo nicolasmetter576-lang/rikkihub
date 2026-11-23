@@ -73,10 +73,20 @@ import type {
   WorkspaceStorageArea,
 } from "@overlay/types/workspace";
 
-export function WorkspaceFileBrowser({ workspaceId }: { workspaceId: string }) {
+export function WorkspaceFileBrowser({
+  workspaceId,
+  initialFile = null,
+  onInitialFileClosed,
+}: {
+  workspaceId: string;
+  /** FILES 里要直接打开的文本文件（作品目录点进来） */
+  initialFile?: string | null;
+  /** 关掉 initialFile 的编辑器之后（回到作品目录） */
+  onInitialFileClosed?: () => void;
+}) {
   const { t } = useTranslation("workspace");
   const [area, setArea] = React.useState<WorkspaceStorageArea>("FILES");
-  const [path, setPath] = React.useState("");
+  const [path, setPath] = React.useState(() => (initialFile?.includes("/") ? initialFile.slice(0, initialFile.lastIndexOf("/")) : ""));
   const [entries, setEntries] = React.useState<WorkspaceFileEntry[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [mkdirOpen, setMkdirOpen] = React.useState(false);
@@ -85,6 +95,7 @@ export function WorkspaceFileBrowser({ workspaceId }: { workspaceId: string }) {
   const { session, requestLeave, notice, guard } = useWorkspaceEditorSession((path, source, revision) => workspaceApi.writeFile(workspaceId, path, source, revision));
   const editorDraft = session.source;
   const setEditorDraft = (value: string) => session.change(value);
+  const initialOpened = React.useRef(false);
   const [saving, setSaving] = React.useState(false);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const [batchBusy, setBatchBusy] = React.useState(false);
@@ -130,6 +141,29 @@ export function WorkspaceFileBrowser({ workspaceId }: { workspaceId: string }) {
     }
     window.open(workspaceFileUrl(workspaceId, area, entry.path), "_blank", "noopener,noreferrer");
   };
+
+  React.useEffect(() => {
+    if (!initialFile) return;
+    void (async () => {
+      try {
+        const content = await workspaceApi.readFile(workspaceId, "FILES", initialFile);
+        if (session.load(content)) {
+          initialOpened.current = true;
+          setEditor(content);
+        }
+      } catch (error) {
+        toast.error(t(workspaceEditorErrorKey(error, "files.load_failed")));
+      }
+    })();
+    // 只在换文件时打开一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile, workspaceId]);
+
+  React.useEffect(() => {
+    if (editor != null || !initialOpened.current) return;
+    initialOpened.current = false;
+    onInitialFileClosed?.();
+  }, [editor, onInitialFileClosed]);
 
   // 上传对两个区都开放: 后端 upload 路由不限 area (LINUX 区只是文本只读)
   const { dragActive, uploadRef, dragHandlers, handleFileInputChange } = useWorkspaceDragUpload({

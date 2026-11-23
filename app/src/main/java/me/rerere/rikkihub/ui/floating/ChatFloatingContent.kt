@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import me.rerere.ai.ui.MessageStopReason
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Alert01
@@ -87,6 +88,7 @@ import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
 import me.rerere.rikkihub.data.cli.AcpParts
 import me.rerere.rikkihub.data.model.GenerationPhase
 import me.rerere.rikkihub.service.ChatError
+import me.rerere.rikkihub.ui.components.message.labelRes
 import me.rerere.rikkihub.ui.components.ui.RabbitLoadingIndicator
 import kotlin.uuid.Uuid
 
@@ -118,6 +120,8 @@ data class FloatingChatUiState(
     val queuePaused: Boolean,
     /** 这一轮出现的错误 */
     val error: ChatError?,
+    /** 这一轮的异常结束原因（截断/拦截/步数上限/提前结束） */
+    val stopReason: MessageStopReason? = null,
     val isCliSession: Boolean = false,
     val sendBlockedReason: String? = null,
 ) {
@@ -660,6 +664,7 @@ private fun FloatingChatUiState.statusText(): String {
     if (!generating) {
         return when {
             error != null -> error.title ?: error.error.message ?: stringResource(R.string.floating_chat_status_failed)
+            stopReason != null -> stringResource(stopReason.labelRes())
             hasReply -> stringResource(R.string.floating_chat_status_done)
             else -> stringResource(R.string.floating_chat_status_idle)
         }

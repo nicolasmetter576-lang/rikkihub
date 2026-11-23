@@ -45,8 +45,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowLeft01
+import me.rerere.hugeicons.stroke.BookOpen01
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.rikkihub.R
+import me.rerere.rikkihub.Screen
+import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceDetailVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceFilesBrowser
 import me.rerere.rikkihub.ui.theme.CustomColors
@@ -204,6 +207,7 @@ private fun ChatWorkspaceFilesPane(
         parameters = { parametersOf(workspaceId) },
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    val nav = LocalNavController.current
     val canGoUp = state.path.isNotBlank()
 
     BackHandler(enabled = isOpen) {
@@ -248,6 +252,11 @@ private fun ChatWorkspaceFilesPane(
                         }
                     },
                     actions = {
+                        if (state.workspace?.bookMode == true) {
+                            IconButton(onClick = { nav.navigate(Screen.WorkspaceDetail(workspaceId)) }) {
+                                Icon(HugeIcons.BookOpen01, contentDescription = stringResource(R.string.workspace_mode_book))
+                            }
+                        }
                         IconButton(onClick = vm::refresh) {
                             Icon(HugeIcons.Refresh01, contentDescription = null)
                         }

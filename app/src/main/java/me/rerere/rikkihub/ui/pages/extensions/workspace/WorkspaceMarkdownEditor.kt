@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.extensions.workspace
 
+import androidx.compose.runtime.withFrameNanos
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.text.input.InputTransformation
@@ -19,6 +20,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
 import me.rerere.rikkihub.ui.context.LocalToaster
@@ -155,6 +157,11 @@ internal fun WorkspaceMarkdownEditor(
     active: Boolean = true,
     /** Non-null offers 八股 in the toolbar; while its marks are shown the text is read-only and a tap on a mark opens it. */
     qubagu: WorkspaceEditorQubagu? = null,
+    /** Non-null offers 节拍 in the toolbar. */
+    onBeats: (() -> Unit)? = null,
+    /** Selected and scrolled into view once the text is laid out, then [onRevealed]. */
+    reveal: TextRange? = null,
+    onRevealed: () -> Unit = {},
 ) {
     val qubaguActive = qubagu?.active == true
     val locked = readOnly || qubaguActive
@@ -244,6 +251,16 @@ internal fun WorkspaceMarkdownEditor(
         if (end > state.text.length) return
         state.edit { selection = TextRange(start, end) }
         scope.launch { layout.scrollIntoView(scroll, start) }
+    }
+    LaunchedEffect(reveal) {
+        if (reveal == null || reveal.max > state.text.length) return@LaunchedEffect
+        // The field's first layout comes a frame or two after the text is loaded.
+        withTimeoutOrNull(2_000) {
+            while (layout.viewportHeight <= 0f || layout.get()?.layoutInput?.text?.length != state.text.length) withFrameNanos { }
+        }
+        state.edit { selection = reveal }
+        layout.scrollIntoView(scroll, reveal.min)
+        onRevealed()
     }
     // Matches follow the text, the query and the case option. Only a new query / option or a replacement
     // moves the editor to a match: typing in the editor with the bar open never jumps the caret.
@@ -434,7 +451,7 @@ internal fun WorkspaceMarkdownEditor(
     val toolbar: @Composable () -> Unit = {
         if (!readOnly) WorkspaceEditorToolbar(
             state,
-            WorkspaceEditorToolbarActions(markdown, formatKind, onTuiqiao, onZaizao, onFind = ::openFind, qubagu = qubagu),
+            WorkspaceEditorToolbarActions(markdown, formatKind, onTuiqiao, onZaizao, onFind = ::openFind, qubagu = qubagu, onBeats = onBeats),
             onEdited = pairs::clear,
         )
     }

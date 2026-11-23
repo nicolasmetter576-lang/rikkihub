@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.data.workspace
 
+import me.rerere.rikkihub.data.ai.tools.BookPromptLanguage
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
 
 /**
@@ -37,6 +38,8 @@ data class WorkspaceRequestCapabilities(
     val instructionsEligible: Boolean = false,
     /** FILES directory the agent is confined to in this request; null = whole workspace. */
     val filesScope: String? = null,
+    /** Book workspaces: which set of tool prompts this request uses; null = not a book workspace. */
+    val promptLanguage: BookPromptLanguage? = null,
     /** Rendered `{{rootfs_environment}}` lines (shell + distribution) captured with this snapshot. */
     val rootfsEnvironment: String = "",
 ) {

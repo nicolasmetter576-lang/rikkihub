@@ -22,6 +22,11 @@ import { WorkspaceTuiqiaoPanel, type TuiqiaoPanelRequest } from "@overlay/compon
 import { WorkspaceZaizaoPanel, type ZaizaoPanelRequest } from "@overlay/components/workspace/workspace-zaizao-panel";
 import { ZAIZAO_MAX_SELECTION_CHARS, zaizaoChange } from "@overlay/lib/zaizao";
 import { WEB_EDITOR_TYPOGRAPHY_DEFAULT, editorFocusMaxWidth, editorTypographyStyle, type EditorTypography } from "@overlay/lib/editor-typography";
+import { takeReveal } from "@overlay/lib/editor-reveal";
+import { useQuery } from "@tanstack/react-query";
+import { WorkspaceBeatsPanel } from "@overlay/components/workspace/workspace-beats-panel";
+import { bookApi, bookQueryKey, insertionChanges, type BeatInsertion } from "@overlay/lib/book";
+import { workspaceApi, workspaceQueryKeys } from "@overlay/lib/workspace";
 
 
 export interface WorkspaceSourceEditorProps {
@@ -102,6 +107,12 @@ export function createEditorTheme(dark: boolean, typography: EditorTypography = 
     },
     { dark },
   );
+}
+
+/** A file of a workspace's own files area, from the editor's key. */
+function workspaceFileOf(key?: string): { workspaceId: string; path: string } | null {
+  const match = key ? /^([0-9a-f-]{36}):FILES:(.+)$/.exec(key) : null;
+  return match ? { workspaceId: match[1], path: match[2] } : null;
 }
 
 function isMarkdownFileName(fileName?: string): boolean {
@@ -268,6 +279,15 @@ export function WorkspaceSourceEditor({
     return () => fonts.removeEventListener("loadingdone", remeasure);
   }, []);
 
+  // Opened to show a passage: select it once both the view and the file's text are there.
+  const revealPassage = (view: EditorView | null) => {
+    const target = view ? takeReveal(tuiqiaoKey, view.state.doc.toString()) : null;
+    if (!view || !target) return;
+    view.dispatch({ selection: { anchor: target.from, head: target.to }, effects: EditorView.scrollIntoView(target.from, { y: "center" }) });
+    view.focus();
+  };
+  useEffect(() => revealPassage(viewRef.current), [value, tuiqiaoKey]);
+
   const writingButtons = (
     <>
       <button type="button" disabled={!selectionKinds.tuiqiao} data-testid="tuiqiao-toolbar"
@@ -279,11 +299,45 @@ export function WorkspaceSourceEditor({
     </>
   );
 
+  // 节拍: chapters of a book workspace.
+  const workspaceFile = workspaceFileOf(tuiqiaoKey);
+  const bookWorkspaceId = workspaceFile?.workspaceId ?? "";
+  const workspace = useQuery({
+    queryKey: workspaceQueryKeys.detail(bookWorkspaceId),
+    queryFn: () => workspaceApi.get(bookWorkspaceId),
+    enabled: workspaceFile !== null,
+    retry: false,
+  });
+  const book = useQuery({
+    queryKey: bookQueryKey(bookWorkspaceId),
+    queryFn: () => bookApi.get(bookWorkspaceId),
+    enabled: workspaceFile !== null && workspace.data?.bookMode === true,
+    retry: false,
+  });
+  const chapter = workspaceFile ? book.data?.items.find(item => item.type === "chapter" && item.path === workspaceFile.path) : undefined;
+  const [beatsOpen, setBeatsOpen] = useState(false);
+  const insertBeats = (insertions: BeatInsertion[]) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const changes = insertionChanges(insertions, view.state.doc.length);
+    const last = insertions[insertions.length - 1];
+    view.dispatch({ changes, selection: { anchor: last.offset + last.text.trimEnd().length }, userEvent: "input.beats", scrollIntoView: true });
+    toast.success(t("book.beats_inserted_done"));
+  };
+  const replaceBeat = (from: number, to: number, text: string) => {
+    viewRef.current?.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length }, userEvent: "input.beats", scrollIntoView: true });
+    toast.success(t("tuiqiao.replaced"));
+  };
+
   const toolButton = "rounded px-1.5 py-1 text-xs hover:bg-muted disabled:opacity-40";
   const findButton = (
     <button type="button" data-testid="find-toolbar" className={toolButton} title={`${t("writing.find")} (Ctrl+F)`}
       onMouseDown={event => event.preventDefault()} onClick={() => openFind(false)}>{t("writing.find")}</button>
   );
+  const beatsButton = chapter ? (
+    <button type="button" data-testid="beats-toolbar" className={cn(toolButton, "font-medium text-primary")} title={t("book.beats_hint")}
+      onMouseDown={event => event.preventDefault()} onClick={() => setBeatsOpen(open => !open)}>{t("book.beats_title")}</button>
+  ) : null;
   const formatMenu = formatKind && !readOnly ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -322,10 +376,12 @@ export function WorkspaceSourceEditor({
         {findButton}
         {formatMenu}
         {tuiqiaoEnabled ? writingButtons : null}
+        {beatsButton}
       </div> : <div role="toolbar" aria-label={t("writing.find")} className="flex shrink-0 flex-wrap gap-1 border-b px-2 py-1">
         {findButton}
         {formatMenu}
         {tuiqiaoEnabled ? writingButtons : null}
+        {beatsButton}
       </div>}
       {findRequest ? (
         <WorkspaceFindPanel view={viewRef.current} doc={value} readOnly={readOnly} request={findRequest} onClose={() => setFindRequest(null)} />
@@ -339,7 +395,7 @@ export function WorkspaceSourceEditor({
       editable={!readOnly}
       theme="none"
       className="h-full overflow-hidden"
-      onCreateEditor={view => { viewRef.current = view; trackSelection(view); }}
+      onCreateEditor={view => { viewRef.current = view; trackSelection(view); revealPassage(view); }}
       onUpdate={onEditorUpdate}
       height="100%"
       basicSetup={{
@@ -370,6 +426,20 @@ export function WorkspaceSourceEditor({
     </div>
     {tuiqiaoEnabled ? <WorkspaceTuiqiaoPanel request={tuiqiaoRequest} onClose={() => setTuiqiaoRequest(null)} onPick={pickTuiqiao} /> : null}
     {tuiqiaoEnabled ? <WorkspaceZaizaoPanel request={zaizaoRequest} onClose={() => setZaizaoRequest(null)} onPick={pickZaizao} /> : null}
+    {beatsOpen && chapter ? (
+      <WorkspaceBeatsPanel
+        key={chapter.id}
+        workspaceId={bookWorkspaceId}
+        chapterId={chapter.id}
+        text={value}
+        getText={() => viewRef.current?.state.doc.toString() ?? ""}
+        getCursor={() => viewRef.current?.state.selection.main.head ?? 0}
+        readOnly={readOnly}
+        onInsert={insertBeats}
+        onReplace={replaceBeat}
+        onClose={() => setBeatsOpen(false)}
+      />
+    ) : null}
     </div>
   );
 }

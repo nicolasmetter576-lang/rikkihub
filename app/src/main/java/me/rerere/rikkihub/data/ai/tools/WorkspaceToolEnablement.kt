@@ -3,6 +3,7 @@ package me.rerere.rikkihub.data.ai.tools
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.rikkihub.utils.JsonInstant
 
 /**
@@ -17,10 +18,11 @@ import me.rerere.rikkihub.utils.JsonInstant
 object WorkspaceToolEnablement {
 
     /**
-     * 可配置的稳定 ID, 按模式区分 (两个模式共 7 个):
+     * 可配置的稳定 ID, 按模式区分:
      * - 普通模式: workspace_read_file / workspace_write_file / workspace_edit_file /
      *   workspace_shell / subagent
      * - 极简模式: bash / str_replace_editor / subagent
+     * - 作品模式: 普通模式的全部 + 作品工具 (book_*)
      */
     val normalIds: List<String> = listOf(
         BuiltinToolIds.WORKSPACE_READ_FILE,
@@ -36,12 +38,24 @@ object WorkspaceToolEnablement {
         BuiltinToolIds.SUBAGENT,
     )
 
-    /** 两个模式的并集, 共 7 个稳定 ID; 写入校验用 */
-    val configurableIds: Set<String> = (normalIds + minimalIds).toSet()
+    val bookToolIds: List<String> = listOf(
+        BuiltinToolIds.BOOK_CONTENTS,
+        BuiltinToolIds.BOOK_READ,
+        BuiltinToolIds.BOOK_SEARCH,
+        BuiltinToolIds.BOOK_UPDATE,
+    )
+
+    val bookIds: List<String> = bookToolIds + normalIds
+
+    /** 各模式的并集; 写入校验用 */
+    val configurableIds: Set<String> = (normalIds + minimalIds + bookToolIds).toSet()
 
     /** 按工作区模式给出可配置 ID 列表 */
-    fun idsFor(harnessMinimal: Boolean): List<String> =
-        if (harnessMinimal) minimalIds else normalIds
+    fun idsFor(mode: WorkspaceMode): List<String> = when (mode) {
+        WorkspaceMode.NORMAL -> normalIds
+        WorkspaceMode.HARNESS_MINIMAL -> minimalIds
+        WorkspaceMode.BOOK -> bookIds
+    }
 
     /**
      * 严格解码存储 JSON. 存储约定是非空 JSON 对象 (迁移默认 "{}"),

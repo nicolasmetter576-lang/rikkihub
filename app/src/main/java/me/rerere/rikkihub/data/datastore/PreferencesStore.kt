@@ -55,6 +55,7 @@ import me.rerere.rikkihub.data.ai.CompressionConfig
 import me.rerere.rikkihub.data.ai.MemoryDreamConfig
 import me.rerere.rikkihub.data.ai.polish.PromptPolishConfig
 import me.rerere.rikkihub.data.ai.qubagu.QubaguConfig
+import me.rerere.rikkihub.data.ai.book.BookConfig
 import me.rerere.rikkihub.data.ai.tuiqiao.TuiqiaoConfig
 import me.rerere.rikkihub.data.ai.zaizao.ZaizaoConfig
 import me.rerere.rikkihub.data.creator.definition.CreatorAssistantDefinition
@@ -302,6 +303,7 @@ class SettingsStore private constructor(
         val TOOL_EXECUTION_CONFIG = stringPreferencesKey("tool_execution_config")
         val TUIQIAO_CONFIG = stringPreferencesKey("tuiqiao_config")
         val ZAIZAO_CONFIG = stringPreferencesKey("zaizao_config")
+        val BOOK_CONFIG = stringPreferencesKey("book_config")
         val QUBAGU_CONFIG = stringPreferencesKey("qubagu_config")
         val PROMPT_POLISH_CONFIG = stringPreferencesKey("prompt_polish_config")
         val MEMORY_DREAM_CONFIG = stringPreferencesKey("memory_dream_config")
@@ -471,6 +473,8 @@ class SettingsStore private constructor(
                     preferences[TUIQIAO_CONFIG] = JsonInstant.encodeToString(settings.tuiqiao)
                 if (old == null || old.zaizao != settings.zaizao)
                     preferences[ZAIZAO_CONFIG] = JsonInstant.encodeToString(settings.zaizao)
+                if (old == null || old.book != settings.book)
+                    preferences[BOOK_CONFIG] = JsonInstant.encodeToString(settings.book)
                 if (old == null || old.qubagu != settings.qubagu)
                     preferences[QUBAGU_CONFIG] = JsonInstant.encodeToString(settings.qubagu)
                 if (old == null || old.promptPolish != settings.promptPolish)
@@ -888,6 +892,9 @@ class SettingsStore private constructor(
                 zaizao = preferences[ZAIZAO_CONFIG]?.let {
                     runCatching { JsonInstant.decodeFromString<ZaizaoConfig>(it) }.getOrNull()
                 } ?: ZaizaoConfig(),
+                book = preferences[BOOK_CONFIG]?.let {
+                    runCatching { JsonInstant.decodeFromString<BookConfig>(it) }.getOrNull()
+                } ?: BookConfig(),
                 qubagu = preferences[QUBAGU_CONFIG]?.let {
                     runCatching { JsonInstant.decodeFromString<QubaguConfig>(it) }.getOrNull()
                 } ?: QubaguConfig(),
@@ -1215,6 +1222,7 @@ data class Settings(
     val tuiqiao: TuiqiaoConfig = TuiqiaoConfig(),
     /** 再造：模型与推理参数、后文开关、默认类型、三种类型的提示词、最近用过的要求。 */
     val zaizao: ZaizaoConfig = ZaizaoConfig(),
+    val book: BookConfig = BookConfig(),
     /** 去八股：模式、保护项、句式规则、词包开关、自定义规则、AI 精修。对哪个助手生效由助手上的开关决定。 */
     val qubagu: QubaguConfig = QubaguConfig(),
     /** 聊天框润色：模型、提示词、是否带对话上下文及条数。 */

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.ui.MessageStopReason
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -178,5 +179,27 @@ class FloatingChatCliStateTest {
             .reduce(Action.JobsChanged(setOf(cliId)))
             .reduce(Action.JobsChanged(setOf(cliId, ordinaryId), keepTarget = true))
         assertEquals(cliId, state.target)
+    }
+
+    @Test
+    fun `buildFloatingChatUiState carries reply stopReason`() {
+        val reply = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(UIMessagePart.Text("cut off")),
+            stopReason = MessageStopReason.MAX_TOKENS,
+        )
+        val conversation = Conversation.ofId(Uuid.random()).copy(
+            messageNodes = listOf(reply.toMessageNode()),
+        )
+        val state = buildFloatingChatUiState(
+            conversation = conversation,
+            replyMessageId = reply.id,
+            generating = false,
+            compressing = false,
+            processingStatus = null,
+            queue = MessageQueueState(),
+            error = null,
+        )
+        assertEquals(MessageStopReason.MAX_TOKENS, state.stopReason)
     }
 }

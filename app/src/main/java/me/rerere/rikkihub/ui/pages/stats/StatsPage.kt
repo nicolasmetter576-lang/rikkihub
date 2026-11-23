@@ -618,6 +618,7 @@ private fun sourceLabel(source: String): String = when (runCatching { UsageSourc
     UsageSource.SUBAGENT -> stringResource(R.string.stats_source_subagent)
     UsageSource.KEEPALIVE -> stringResource(R.string.stats_source_keepalive)
     UsageSource.CLI -> stringResource(R.string.stats_source_cli)
+    UsageSource.BOOK -> stringResource(R.string.workspace_mode_book)
     null -> source
 }
 

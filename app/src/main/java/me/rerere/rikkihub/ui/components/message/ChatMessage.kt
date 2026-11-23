@@ -1,6 +1,7 @@
 package me.rerere.rikkihub.ui.components.message
 
 import android.content.Intent
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.platform.LocalDensity
@@ -79,6 +80,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.MessageStopReason
 import me.rerere.ai.ui.displayTextOf
 import me.rerere.ai.ui.stripMessageTitle
 import me.rerere.ai.ui.UIMessage
@@ -86,6 +88,7 @@ import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Alert01
 import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
@@ -179,7 +182,7 @@ fun ChatMessage(
         horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        if (!message.parts.isEmptyUIMessage()) {
+        if (!message.parts.isEmptyUIMessage() || message.stopReason != null) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth(),
@@ -223,6 +226,12 @@ fun ChatMessage(
             }
         }
 
+        if (!loading && message.role == MessageRole.ASSISTANT) {
+            message.stopReason?.let { stopReason ->
+                MessageStopReasonNotice(stopReason = stopReason)
+            }
+        }
+
         if (qubaguActions != null && qubaguRecords.isNotEmpty() && !loading) {
             QubaguBar(records = qubaguRecords, onClick = { showQubagu = true })
         }
@@ -230,7 +239,7 @@ fun ChatMessage(
         val showActions = if (lastMessage) {
             !loading
         } else {
-            message.parts.isEmptyUIMessage().not()
+            message.parts.isEmptyUIMessage().not() || message.stopReason != null
         }
 
         AnimatedVisibility(
@@ -818,6 +827,44 @@ private fun MessagePartsBlock(
             ) {
                 Text(stringResource(R.string.citations_count, annotations.size))
             }
+        }
+    }
+}
+
+@StringRes
+internal fun MessageStopReason.labelRes(): Int = when (this) {
+    MessageStopReason.MAX_TOKENS -> R.string.chat_message_stop_reason_max_tokens
+    MessageStopReason.CONTENT_FILTER -> R.string.chat_message_stop_reason_content_filter
+    MessageStopReason.STEP_LIMIT -> R.string.chat_message_stop_reason_step_limit
+    MessageStopReason.INCOMPLETE -> R.string.chat_message_stop_reason_incomplete
+}
+
+@Composable
+private fun MessageStopReasonNotice(
+    stopReason: MessageStopReason,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.padding(top = 4.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = HugeIcons.Alert01,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Text(
+                text = stringResource(stopReason.labelRes()),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
         }
     }
 }

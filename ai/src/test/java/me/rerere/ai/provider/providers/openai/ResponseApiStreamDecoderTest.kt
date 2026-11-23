@@ -74,6 +74,49 @@ class ResponseApiStreamDecoderTest {
     }
 
     @Test
+    fun `non-streaming incomplete response preserves incomplete_details reason`() {
+        val maxTokensResult = api.parseResponseOutput(buildJsonObject {
+            put("id", "resp_non_stream_1")
+            put("model", "gpt-5")
+            put("status", "incomplete")
+            put("incomplete_details", buildJsonObject {
+                put("reason", "max_output_tokens")
+            })
+            put("output", buildJsonArray {
+                add(buildJsonObject {
+                    put("type", "message")
+                    put("content", buildJsonArray {
+                        add(buildJsonObject {
+                            put("type", "output_text")
+                            put("text", "partial")
+                        })
+                    })
+                })
+            })
+        })
+        assertEquals("incomplete:max_output_tokens", maxTokensResult.finishReason)
+
+        val contentFilterResult = api.parseResponseOutput(buildJsonObject {
+            put("id", "resp_non_stream_2")
+            put("model", "gpt-5")
+            put("status", "incomplete")
+            put("incomplete_details", buildJsonObject {
+                put("reason", "content_filter")
+            })
+            put("output", buildJsonArray {})
+        })
+        assertEquals("incomplete:content_filter", contentFilterResult.finishReason)
+
+        val plainIncomplete = api.parseResponseOutput(buildJsonObject {
+            put("id", "resp_non_stream_3")
+            put("model", "gpt-5")
+            put("status", "incomplete")
+            put("output", buildJsonArray {})
+        })
+        assertEquals("incomplete", plainIncomplete.finishReason)
+    }
+
+    @Test
     fun `failed response should terminate with provider error`() {
         val decoder = ResponseApiStreamDecoder()
 

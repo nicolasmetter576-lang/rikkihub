@@ -201,6 +201,7 @@ val appModule = module {
             persistentBashSessionManager = get(),
             qubagu = Qubagu(get<TavernRuntime>().regexFactory),
             creatorToolSurface = get(),
+            bookStore = get(),
         )
     }
 
@@ -393,6 +394,7 @@ val appModule = module {
                 messageNodeDao = get(),
             ),
             fileManager = get(),
+            book = me.rerere.rikkihub.web.routes.WebBookServices(store = get(), replacer = get(), importer = get(), outliner = get(), writer = get(), tempDir = get<android.content.Context>().cacheDir),
             acpSessionManager = get(),
         )
     }

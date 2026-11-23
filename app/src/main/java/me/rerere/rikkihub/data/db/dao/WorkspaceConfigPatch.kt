@@ -27,6 +27,8 @@ data class WorkspaceConfigPatch(
     val firstMessageFileSnapshotDepth: Int? = null,
     val toolApprovals: String? = null,
     val toolEnablement: String? = null,
+    val bookMode: Boolean? = null,
+    val bookPromptLanguage: String? = null,
 ) {
     /** 是否有任何列差异; 无差异时调用方只需 touch updated_at */
     val hasChanges: Boolean
@@ -34,7 +36,8 @@ data class WorkspaceConfigPatch(
             exposeUpload != null || exposeSkills != null || exposeToolOutputs != null ||
             hasLastAccessAt || shellStatus != null || shellCompatibilityMode != null || firstMessageFileSnapshot != null ||
             firstMessageFileSnapshotDepth != null ||
-            toolApprovals != null || toolEnablement != null || subagentPresets != null
+            toolApprovals != null || toolEnablement != null || subagentPresets != null ||
+            bookMode != null || bookPromptLanguage != null
 
     companion object {
         /** 计算 [from] → [to] 的列差异 (不校验身份字段, 由调用方 require) */
@@ -56,6 +59,8 @@ data class WorkspaceConfigPatch(
                 firstMessageFileSnapshotDepth = to.firstMessageFileSnapshotDepth.takeIf { it != from.firstMessageFileSnapshotDepth },
                 toolApprovals = to.toolApprovals.takeIf { it != from.toolApprovals },
                 toolEnablement = to.toolEnablement.takeIf { it != from.toolEnablement },
+                bookMode = to.bookMode.takeIf { it != from.bookMode },
+                bookPromptLanguage = to.bookPromptLanguage.takeIf { it != from.bookPromptLanguage },
             )
     }
 }

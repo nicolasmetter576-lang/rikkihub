@@ -22,6 +22,7 @@ class SettingSearchTest {
         Screen.SettingTools to "SettingToolsPage",
         Screen.SettingTuiqiao to "SettingTuiqiaoPage",
         Screen.SettingZaizao to "SettingZaizaoPage",
+        Screen.SettingBook to "SettingBookPage",
         Screen.SettingQubagu to "SettingQubaguPage",
         Screen.SettingWeb to "SettingWebPage",
     )

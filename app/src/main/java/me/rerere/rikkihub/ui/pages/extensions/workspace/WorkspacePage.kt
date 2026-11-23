@@ -2,6 +2,7 @@ package me.rerere.rikkihub.ui.pages.extensions.workspace
 
 import me.rerere.rikkihub.ui.theme.AppTopBarHeight
 import androidx.compose.foundation.clickable
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +24,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +49,7 @@ import me.rerere.hugeicons.stroke.File02
 import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.rikkihub.Screen
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import androidx.compose.ui.res.stringResource
 import me.rerere.rikkihub.R
 import me.rerere.rikkihub.ui.components.nav.BackButton
@@ -112,11 +116,11 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
             title = stringResource(R.string.workspace_page_create),
             initialName = "",
             existingNames = workspaces.map { it.name.trim() }.toSet(),
-            showHarnessMinimalOption = true,
+            showModeOption = true,
             initialEnvMirror = vm.lastEnvMirror,
             onDismiss = { showAddDialog = false },
-            onConfirm = { name, harnessMinimal, envMirror ->
-                vm.create(name, harnessMinimal, envMirror)
+            onConfirm = { name, mode, envMirror ->
+                vm.create(name, mode, envMirror)
                 showAddDialog = false
             },
         )
@@ -227,9 +231,9 @@ private fun WorkspaceCard(
                     Text(
                         text = buildString {
                             append(workspace.shellStatus.toShellStatusLabel())
-                            if (workspace.harnessMinimal) {
+                            workspace.mode.badge()?.let {
                                 append(" · ")
-                                append(stringResource(R.string.workspace_page_harness_minimal_badge))
+                                append(stringResource(it))
                             }
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -280,15 +284,15 @@ private fun EditWorkspaceDialog(
     title: String,
     initialName: String,
     existingNames: Set<String>,
-    showHarnessMinimalOption: Boolean = false,
+    showModeOption: Boolean = false,
     /** Non-null on the create dialog: offers "install the system and set up the environment". */
     initialEnvMirror: WorkspaceEnvMirror? = null,
     onDismiss: () -> Unit,
-    /** name, harnessMinimal, mirror of the environment setup to run (null = none). */
-    onConfirm: (String, Boolean, WorkspaceEnvMirror?) -> Unit,
+    /** name, mode, mirror of the environment setup to run (null = none). */
+    onConfirm: (String, WorkspaceMode, WorkspaceEnvMirror?) -> Unit,
 ) {
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
-    var harnessMinimal by rememberSaveable { mutableStateOf(false) }
+    var mode by rememberSaveable { mutableStateOf(WorkspaceMode.NORMAL) }
     var setupEnvironment by rememberSaveable { mutableStateOf(false) }
     var envMirror by rememberSaveable { mutableStateOf(initialEnvMirror ?: WorkspaceEnvMirror.OFFICIAL) }
     val trimmedName = name.trim()
@@ -310,30 +314,19 @@ private fun EditWorkspaceDialog(
                         { Text(stringResource(R.string.workspace_page_name_duplicate)) }
                     } else null,
                 )
-                if (showHarnessMinimalOption) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.workspace_page_harness_minimal),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text(
-                                text = stringResource(R.string.workspace_page_harness_minimal_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                if (showModeOption) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        WorkspaceModeOption(mode == WorkspaceMode.NORMAL, R.string.workspace_mode_normal, R.string.workspace_mode_normal_desc) {
+                            mode = WorkspaceMode.NORMAL
                         }
-                        Switch(
-                            checked = harnessMinimal,
-                            onCheckedChange = { harnessMinimal = it },
-                        )
+                        WorkspaceModeOption(mode == WorkspaceMode.BOOK, R.string.workspace_mode_book, R.string.workspace_mode_book_desc) {
+                            mode = WorkspaceMode.BOOK
+                        }
+                        WorkspaceModeOption(
+                            mode == WorkspaceMode.HARNESS_MINIMAL,
+                            R.string.workspace_page_harness_minimal,
+                            R.string.workspace_page_harness_minimal_desc,
+                        ) { mode = WorkspaceMode.HARNESS_MINIMAL }
                     }
                 }
                 if (initialEnvMirror != null) {
@@ -350,7 +343,7 @@ private fun EditWorkspaceDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(trimmedName, harnessMinimal, envMirror.takeIf { setupEnvironment }) },
+                onClick = { onConfirm(trimmedName, mode, envMirror.takeIf { setupEnvironment }) },
                 enabled = name.isNotBlank() && !isDuplicate,
             ) {
                 Text(stringResource(R.string.common_save))
@@ -362,4 +355,34 @@ private fun EditWorkspaceDialog(
             }
         },
     )
+}
+
+@Composable
+private fun WorkspaceModeOption(selected: Boolean, @StringRes title: Int, @StringRes description: Int, onSelect: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(text = stringResource(title), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = stringResource(description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** 列表里跟在状态后面的模式标记；标准模式不标。 */
+@StringRes
+internal fun WorkspaceMode.badge(): Int? = when (this) {
+    WorkspaceMode.NORMAL -> null
+    WorkspaceMode.BOOK -> R.string.workspace_mode_book
+    WorkspaceMode.HARNESS_MINIMAL -> R.string.workspace_page_harness_minimal_badge
 }

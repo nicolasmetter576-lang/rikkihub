@@ -3,6 +3,7 @@ package me.rerere.rikkihub.web.dto
 import kotlinx.serialization.json.Json
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
+import me.rerere.ai.ui.MessageStopReason
 import me.rerere.ai.ui.ModelSnapshot
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -25,6 +26,7 @@ class MessageDtoFieldsTest {
             modelSnapshot = ModelSnapshot(modelId = "m", displayName = "Model M"),
             usage = TokenUsage(promptTokens = 250, completionTokens = 30),
             usageComplete = true,
+            stopReason = MessageStopReason.MAX_TOKENS,
             generationTimeMs = 900,
             lastUsage = TokenUsage(promptTokens = 150, completionTokens = 20),
             stepCount = 2,
@@ -35,11 +37,13 @@ class MessageDtoFieldsTest {
         assertEquals(900L, dto.generationTimeMs)
         assertEquals(message.lastUsage, dto.lastUsage)
         assertEquals(true, dto.usageComplete)
+        assertEquals(MessageStopReason.MAX_TOKENS, dto.stopReason)
         assertEquals(2, dto.stepCount)
         assertTrue(dto.isContextCheckpoint)
         val encoded = json.encodeToString(MessageDto.serializer(), dto)
         assertTrue(encoded.contains("\"lastUsage\""))
         assertTrue(encoded.contains("\"usageComplete\":true"))
+        assertTrue(encoded.contains("\"stopReason\":\"max_tokens\""))
         assertTrue(encoded.contains("\"isContextCheckpoint\":true"))
     }
 

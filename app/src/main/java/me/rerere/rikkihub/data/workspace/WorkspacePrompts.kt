@@ -1,5 +1,7 @@
 package me.rerere.rikkihub.data.workspace
 
+import me.rerere.rikkihub.data.ai.tools.BookPromptLanguage
+import me.rerere.rikkihub.data.ai.tools.BookToolPrompts
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolCatalog
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
 import me.rerere.rikkihub.data.ai.tools.ToolOverride
@@ -211,6 +213,9 @@ fun workspaceReminderPrompt(
     capabilities: WorkspaceRequestCapabilities?,
     rootfsEnvironment: String = capabilities?.rootfsEnvironment.orEmpty(),
 ): String {
+    if (capabilities?.promptLanguage != null) {
+        return bookReminderPrompt(capabilities.promptLanguage, workspaceName, cwd, overrides, capabilities)
+    }
     val spec = BuiltinToolCatalog.require(
         if (harnessMinimal) BuiltinToolIds.HARNESS_MINIMAL_REMINDER else BuiltinToolIds.WORKSPACE_REMINDER,
     )
@@ -237,6 +242,37 @@ fun workspaceReminderPrompt(
                 availableWorkspaceToolsBlock(capabilities, effectiveHarnessMinimal),
             ROOTFS_ENVIRONMENT_PLACEHOLDER to rootfsEnvironment,
         ),
+    ).trim()
+}
+
+/** 作品模式的系统提示：模板与环境说明都用所选语言。 */
+private fun bookReminderPrompt(
+    language: BookPromptLanguage,
+    workspaceName: String,
+    cwd: String?,
+    overrides: Map<String, ToolOverride>,
+    capabilities: WorkspaceRequestCapabilities,
+): String {
+    val spec = BookToolPrompts.reminder(language)
+    val template = overrides[spec.id]?.systemPrompt?.takeIf { it.isNotBlank() } ?: spec.defaultSystemPrompt.orEmpty()
+    val chinese = language == BookPromptLanguage.ZH
+    val scope = capabilities.filesScope?.let { path ->
+        if (chinese) BookToolPrompts.zhScopeLine(me.rerere.workspace.WorkspaceFilesScope.guestPath(path))
+        else workspaceScopePromptLine(path)
+    }.orEmpty()
+    val mounts = if (chinese) {
+        BookToolPrompts.zhMountLines(capabilities.exposedTargets, capabilities.hasReadbackTool)
+    } else {
+        workspaceMountPromptLines(capabilities.exposedTargets, capabilities.hasReadbackTool)
+    }
+    val placeholders = builtinToolPlaceholders(cwd = cwd, workspaceName = workspaceName, extraMounts = scope + mounts) + mapOf(
+        WORKSPACE_TOOLS_PLACEHOLDER to BookToolPrompts.availableTools(language, capabilities),
+        ROOTFS_ENVIRONMENT_PLACEHOLDER to
+            if (chinese) BookToolPrompts.zhRootfsLines(capabilities.rootfsEnvironment) else capabilities.rootfsEnvironment,
+    )
+    return interpolateToolText(
+        text = template,
+        placeholders = if (chinese) placeholders + ("cwd_line" to BookToolPrompts.zhCwdLine(cwd)) else placeholders,
     ).trim()
 }
 

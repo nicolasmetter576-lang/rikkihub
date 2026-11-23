@@ -512,7 +512,7 @@ object SettingsCollectionInterpreter {
         require(a.presetMessages.all { msg -> msg.parts.all { it is UIMessagePart.Text && it.metadata.isNullOrEmpty() } &&
             msg.annotations.isEmpty() && msg.usage == null && msg.modelId == null && msg.translation == null &&
             msg.modelSnapshot == null && msg.lastUsage == null && msg.stepCount == null &&
-            msg.generationTimeMs == null && !msg.isContextCheckpoint &&
+            msg.generationTimeMs == null && !msg.isContextCheckpoint && msg.stopReason == null &&
             msg.finishedAt == null && msg.role != MessageRole.TOOL }) { "presetMessages must be plain text messages (role USER, ASSISTANT or SYSTEM)" }
         // Managed image IDs are resolved by the native planner, never arbitrary host URIs.
         val before = s.assistants.firstOrNull { it.id == a.id }

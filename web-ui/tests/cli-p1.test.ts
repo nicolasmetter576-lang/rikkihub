@@ -151,3 +151,38 @@ test("ChatMessage falls back to message.contextLength and modelSnapshot when mod
 
   assert.ok(fallbackHtml.includes("codex-cli"));
 });
+
+test("ChatMessage renders stopReason notice including empty content_filter reply and hides it while loading", () => {
+  const truncated = makeCliMessage({ stopReason: "max_tokens" });
+  const truncatedHtml = renderToStaticMarkup(
+    createElement(ChatMessage, {
+      node: { id: "node-stop-1", messages: [truncated], selectIndex: 0 },
+      message: truncated,
+      model: null,
+    }),
+  );
+  assert.ok(truncatedHtml.includes('data-stop-reason="max_tokens"'));
+  assert.ok(truncatedHtml.includes("Output token limit reached"));
+
+  const emptyFiltered = makeCliMessage({ parts: [], stopReason: "content_filter" });
+  const filteredHtml = renderToStaticMarkup(
+    createElement(ChatMessage, {
+      node: { id: "node-stop-2", messages: [emptyFiltered], selectIndex: 0 },
+      message: emptyFiltered,
+      model: null,
+    }),
+  );
+  assert.ok(filteredHtml.includes('data-stop-reason="content_filter"'));
+  assert.ok(filteredHtml.includes("Output stopped by content filter"));
+  assert.ok(filteredHtml.includes("data-message-actions"));
+
+  const loadingHtml = renderToStaticMarkup(
+    createElement(ChatMessage, {
+      node: { id: "node-stop-3", messages: [truncated], selectIndex: 0 },
+      message: truncated,
+      model: null,
+      loading: true,
+    }),
+  );
+  assert.ok(!loadingHtml.includes("data-stop-reason"));
+});

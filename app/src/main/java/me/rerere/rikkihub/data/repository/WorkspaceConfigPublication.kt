@@ -16,7 +16,7 @@ internal fun workspaceConfigChangeSpec(
     // Validate writes, but never reject or normalize unchanged corrupt JSON on metadata updates.
     val newPresets = if (presetsChanged) WorkspaceSubagentPresets.parse(next.subagentPresets) else null
 
-    if (current.root != next.root || current.harnessMinimal != next.harnessMinimal ||
+    if (current.root != next.root || current.mode != next.mode ||
         current.shellStatus != next.shellStatus ||
         current.exposedMountTargets() != next.exposedMountTargets() ||
         current.shellCompatibilityMode != next.shellCompatibilityMode
@@ -45,7 +45,8 @@ internal fun workspaceConfigChangeSpec(
         current.subagentAllowContext != next.subagentAllowContext ||
         current.firstMessageFileSnapshot != next.firstMessageFileSnapshot ||
         current.firstMessageFileSnapshotDepth != next.firstMessageFileSnapshotDepth ||
-        current.toolEnablement != next.toolEnablement || presetsChanged
+        current.toolEnablement != next.toolEnablement || presetsChanged ||
+        current.bookPromptLanguage != next.bookPromptLanguage
     ) return WorkspaceChangeSpec.toolPolicy(emptySet())
     return null
 }

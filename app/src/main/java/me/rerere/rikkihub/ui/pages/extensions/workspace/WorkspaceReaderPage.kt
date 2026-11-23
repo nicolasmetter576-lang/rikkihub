@@ -93,6 +93,7 @@ import me.rerere.rikkihub.RouteActivity
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.context.LocalSettings
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.rememberWorkspaceBook
 import me.rerere.rikkihub.ui.theme.LocalAmoledStrong
 import me.rerere.rikkihub.ui.theme.amoledOutlineBorder
 import me.rerere.workspace.WorkspaceStorageArea
@@ -145,7 +146,10 @@ fun WorkspaceReaderPage(id: String, area: WorkspaceStorageArea, path: String) {
         )
     }
 
-    val chapters by produceState<List<String>>(listOf(path), id, area, folder) {
+    // A book reads in its own order, across folders; any other folder reads by file name.
+    val book = rememberWorkspaceBook(id, area)
+    val bookChapters = book?.entries?.filterNot { it.missing }?.map { it.path }?.takeIf { path in it }
+    val folderChapters by produceState<List<String>>(listOf(path), id, area, folder) {
         value = runCatching { repository.listFiles(id, area, folder) }.getOrNull()
             ?.filter { !it.isDirectory && isReadableName(it.name) }
             ?.sortedWith(compareBy(naturalNameOrder) { it.name })
@@ -153,11 +157,14 @@ fun WorkspaceReaderPage(id: String, area: WorkspaceStorageArea, path: String) {
             ?.takeIf { path in it }
             ?: listOf(path)
     }
+    val chapters = bookChapters ?: folderChapters
+    fun titleOf(chapterPath: String): String =
+        book?.takeIf { bookChapters != null }?.entryByPath(chapterPath)?.title ?: chapterPath.substringAfterLast('/')
     val position = chapters.indexOf(chapter.path)
     val previous = chapters.getOrNull(position - 1)
     val next = chapters.getOrNull(position + 1)
-    val previousTitle = previous?.substringAfterLast('/')
-    val nextTitle = next?.substringAfterLast('/')
+    val previousTitle = previous?.let(::titleOf)
+    val nextTitle = next?.let(::titleOf)
     val verticalScroll = LocalSettings.current.displaySetting.workspaceReaderVerticalScroll
 
     // Explicit onSurface: outside a Surface the content color is black, unreadable on dark themes.
@@ -174,7 +181,7 @@ fun WorkspaceReaderPage(id: String, area: WorkspaceStorageArea, path: String) {
             .systemBarsPadding(),
     ) {
         ReaderTopBar(
-            fileName = chapter.path.substringAfterLast('/'),
+            fileName = titleOf(chapter.path),
             chapterIndex = position,
             chapterCount = chapters.size,
             onBack = { nav.popBackStack() },
@@ -210,7 +217,7 @@ fun WorkspaceReaderPage(id: String, area: WorkspaceStorageArea, path: String) {
                                 style = style,
                                 initialCharOffset = anchorCharOffset,
                                 onAnchorChange = { anchorCharOffset = it },
-                                fileName = chapter.path.substringAfterLast('/'),
+                                fileName = titleOf(chapter.path),
                                 chapterIndex = position,
                                 chapterCount = chapters.size,
                                 previousTitle = previousTitle,
@@ -229,7 +236,7 @@ fun WorkspaceReaderPage(id: String, area: WorkspaceStorageArea, path: String) {
                                 measurer = measurer,
                                 initialCharOffset = anchorCharOffset,
                                 onAnchorChange = { anchorCharOffset = it },
-                                fileName = chapter.path.substringAfterLast('/'),
+                                fileName = titleOf(chapter.path),
                                 chapterIndex = position,
                                 chapterCount = chapters.size,
                                 previousTitle = previousTitle,

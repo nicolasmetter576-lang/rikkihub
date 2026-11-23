@@ -6,12 +6,15 @@ import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
+import me.rerere.ai.ui.MessageStopReason
+import me.rerere.rikkihub.data.ai.GenerationChunk
 import me.rerere.rikkihub.data.ai.tools.shouldUseExternalWebSearch
 import me.rerere.rikkihub.data.model.Assistant
 import me.rerere.rikkihub.data.model.Conversation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.uuid.Uuid
@@ -111,5 +114,37 @@ class ChatServiceTest {
         val model = Model(tools = setOf(BuiltInTools.UrlContext))
 
         assertTrue(shouldUseExternalWebSearch(assistant, model))
+    }
+
+    @Test
+    fun `classifyGenerationStopReason maps step limit and provider finish reasons while suppressing approval pause`() {
+        assertEquals(
+            MessageStopReason.STEP_LIMIT,
+            classifyGenerationStopReason(GenerationChunk.GenerationEnd.Reason.STEP_LIMIT, "tool_calls"),
+        )
+        assertEquals(
+            MessageStopReason.MAX_TOKENS,
+            classifyGenerationStopReason(GenerationChunk.GenerationEnd.Reason.COMPLETED, "length"),
+        )
+        assertEquals(
+            MessageStopReason.CONTENT_FILTER,
+            classifyGenerationStopReason(GenerationChunk.GenerationEnd.Reason.COMPLETED, "SAFETY"),
+        )
+        assertNull(
+            classifyGenerationStopReason(GenerationChunk.GenerationEnd.Reason.COMPLETED, "stop"),
+        )
+        assertNull(
+            classifyGenerationStopReason(GenerationChunk.GenerationEnd.Reason.AWAITING_APPROVAL, "length"),
+        )
+    }
+
+    @Test
+    fun `classifyCliStopReason maps abnormal ACP stop reasons and ignores normal completion`() {
+        assertEquals(MessageStopReason.MAX_TOKENS, classifyCliStopReason("max_tokens"))
+        assertEquals(MessageStopReason.STEP_LIMIT, classifyCliStopReason("max_turn_requests"))
+        assertEquals(MessageStopReason.CONTENT_FILTER, classifyCliStopReason("refusal"))
+        assertNull(classifyCliStopReason("end_turn"))
+        assertNull(classifyCliStopReason("cancelled"))
+        assertNull(classifyCliStopReason(null))
     }
 }

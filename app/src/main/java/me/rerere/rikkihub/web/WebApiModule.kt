@@ -75,6 +75,7 @@ fun Application.configureWebApi(
     characterService: me.rerere.rikkihub.data.character.CharacterService? = null,
     usageStats: me.rerere.rikkihub.web.routes.WebUsageStats? = null,
     fileManager: me.rerere.rikkihub.data.files.FileManagerService? = null,
+    book: me.rerere.rikkihub.web.routes.WebBookServices? = null,
     // Optional injection point for DI (AppModule); null → per-server instance
     // under filesDir/web-auth (fail-closed default, no external wiring needed).
     webAuthSecurity: WebAuthSecurity? = null,
@@ -165,6 +166,7 @@ fun Application.configureWebApi(
                     characterService = characterService,
                     usageStats = usageStats,
                     fileManager = fileManager,
+                    book = book,
                     acpSessionManager = acpSessionManager,
                     authConfigProvider = currentAuthConfig,
                 )
@@ -213,6 +215,7 @@ private fun Route.installApiRoutes(
     characterService: me.rerere.rikkihub.data.character.CharacterService? = null,
     usageStats: me.rerere.rikkihub.web.routes.WebUsageStats? = null,
     fileManager: me.rerere.rikkihub.data.files.FileManagerService? = null,
+    book: me.rerere.rikkihub.web.routes.WebBookServices? = null,
     acpSessionManager: me.rerere.rikkihub.data.cli.AcpSessionManager? = null,
     authConfigProvider: (() -> WebAuthConfig)? = null,
 ) {
@@ -253,6 +256,7 @@ private fun Route.installApiRoutes(
         characterService = characterService,
         usageStats = usageStats,
         fileManager = fileManager,
+        book = book,
     )
     filesRoutes(filesManager, context)
     assetsRoutes(context)

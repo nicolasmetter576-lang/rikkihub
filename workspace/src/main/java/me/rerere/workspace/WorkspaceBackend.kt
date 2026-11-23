@@ -3,6 +3,7 @@ package me.rerere.workspace
 import kotlinx.serialization.Serializable
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.File
 
 /**
  * Mount selection for rootfs paths and command execution: exposed host trees by target
@@ -54,6 +55,8 @@ interface WorkspacePty : AutoCloseable {
 /** Everything the app needs from the workspace runtime ([LocalWorkspaceBackend] = [WorkspaceManager] + PRoot). */
 interface WorkspaceBackend {
     fun ensureWorkspace(root: String)
+    /** Host directory of the FILES area. */
+    fun filesDir(root: String): File
     fun hasRootfs(root: String): Boolean
     /** Shell and distribution of the installed rootfs; null when no rootfs is installed. */
     fun rootfsEnvironment(root: String): RootfsEnvironment? = null

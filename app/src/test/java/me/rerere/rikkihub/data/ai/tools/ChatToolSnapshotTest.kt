@@ -175,13 +175,13 @@ class ChatToolSnapshotTest {
             workspace(shellStatus = WorkspaceShellStatus.BROKEN.name),
             emptyMap(),
         )
-        assertEquals(WorkspaceToolEnablement.configurableIds, nonReady.values.toSet())
+        assertEquals(WorkspaceToolEnablement.configurableIds - WorkspaceToolEnablement.bookToolIds.toSet(), nonReady.values.toSet())
 
         val corrupt = forbiddenWorkspaceToolNames(
             workspace(toolEnablement = "{broken"),
             emptyMap(),
         )
-        assertEquals("损坏配置 fail-closed：全部 ID 进禁用面", WorkspaceToolEnablement.configurableIds, corrupt.values.toSet())
+        assertEquals("损坏配置 fail-closed：全部 ID 进禁用面", WorkspaceToolEnablement.configurableIds - WorkspaceToolEnablement.bookToolIds.toSet(), corrupt.values.toSet())
     }
 
     // ---------- checkForbiddenNameConflicts ----------

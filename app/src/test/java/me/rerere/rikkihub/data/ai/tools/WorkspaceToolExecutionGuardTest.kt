@@ -704,7 +704,7 @@ class WorkspaceToolExecutionGuardTest {
         )
         assertTrue(snap.tools.isEmpty())
         assertTrue("非 READY 也给空能力面（非 null）", snap.capabilities.availableToolNames.isEmpty())
-        assertEquals(WorkspaceToolEnablement.configurableIds, snap.forbidden.values.toSet())
+        assertEquals(WorkspaceToolEnablement.configurableIds - WorkspaceToolEnablement.bookToolIds.toSet(), snap.forbidden.values.toSet())
         Unit
     }
 

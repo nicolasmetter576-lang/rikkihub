@@ -6,7 +6,9 @@ import type {
   CreateWorkspaceDirectoryRequest,
   WorkspaceFileContent,
   WorkspaceFileEntry,
+  BookPromptLanguage,
   WorkspaceFileKind,
+  WorkspaceMode,
   WorkspaceFileListResponse,
   WorkspaceStorageArea,
   WorkspaceTerminalSession,
@@ -46,10 +48,28 @@ export const WORKSPACE_TOOL_ENABLEMENT_MINIMAL_IDS = [
   "subagent",
 ] as const;
 
-export function workspaceToolEnablementIds(harnessMinimal: boolean): readonly string[] {
-  return harnessMinimal
-    ? WORKSPACE_TOOL_ENABLEMENT_MINIMAL_IDS
-    : WORKSPACE_TOOL_ENABLEMENT_NORMAL_IDS;
+export const WORKSPACE_TOOL_ENABLEMENT_BOOK_IDS = [
+  "book_contents",
+  "book_read",
+  "book_search",
+  "book_update",
+  ...WORKSPACE_TOOL_ENABLEMENT_NORMAL_IDS,
+] as const;
+
+export function workspaceMode(workspace: Pick<Workspace, "harnessMinimal" | "bookMode">): WorkspaceMode {
+  if (workspace.harnessMinimal) return "minimal";
+  return workspace.bookMode ? "book" : "normal";
+}
+
+export function workspaceToolEnablementIds(mode: WorkspaceMode): readonly string[] {
+  switch (mode) {
+    case "normal":
+      return WORKSPACE_TOOL_ENABLEMENT_NORMAL_IDS;
+    case "book":
+      return WORKSPACE_TOOL_ENABLEMENT_BOOK_IDS;
+    case "minimal":
+      return WORKSPACE_TOOL_ENABLEMENT_MINIMAL_IDS;
+  }
 }
 
 /**
@@ -499,8 +519,13 @@ export const workspaceApi = {
   get(id: string) {
     return api.get<Workspace>(`workspaces/${id}`);
   },
-  create(name?: string, harnessMinimal?: boolean) {
-    return api.post<Workspace>("workspaces", { name, harnessMinimal: harnessMinimal ?? false });
+  create(name?: string, mode: WorkspaceMode = "normal", bookPromptLanguage?: BookPromptLanguage) {
+    return api.post<Workspace>("workspaces", {
+      name,
+      harnessMinimal: mode === "minimal",
+      bookMode: mode === "book",
+      ...(mode === "book" ? { bookPromptLanguage } : {}),
+    });
   },
   rename(id: string, name: string) {
     return api.put<Workspace>(`workspaces/${id}`, { name });
@@ -520,6 +545,8 @@ export const workspaceApi = {
       toolApprovals?: Record<string, boolean>;
       toolEnablement?: Record<string, boolean>;
       resetToolEnablement?: boolean;
+      bookMode?: boolean;
+      bookPromptLanguage?: BookPromptLanguage;
     },
   ) {
     return api.put<Workspace>(`workspaces/${id}`, patch);

@@ -101,6 +101,12 @@ class WorkspaceConfigPublicationTest {
         assertStructural(workspaceConfigChangeSpec(ws(), ws(root = "other")))
     }
 
+    @Test
+    fun `book mode switch is structural and the prompt language only changes the view of the tools`() {
+        assertStructural(workspaceConfigChangeSpec(ws(), ws().copy(bookMode = true)))
+        assertToolPolicy(workspaceConfigChangeSpec(ws(), ws().copy(bookPromptLanguage = "en")), emptySet())
+    }
+
     // ------------------------------------------------- enablement 差分 → toolPolicy(affected)
 
     @Test

@@ -226,6 +226,8 @@ class GenerationLoopParallelToolsTest {
 
     @Test
     fun `concurrent progress is coalesced and both parts keep their latest metadata`() = runBlocking {
+        val started = AtomicInteger(0)
+        val bothStarted = CompletableDeferred<Unit>()
         val progress = { name: String ->
             Tool(
                 name = name,
@@ -234,6 +236,9 @@ class GenerationLoopParallelToolsTest {
                 concurrency = ToolConcurrency.Parallel,
                 execute = { error("uses executeWithContext") },
                 executeWithContext = { _, context ->
+                    // 只有一个调用在跑时进度照常即时发送：等两个都开始了再发，否则先开始的那个可能独自发完
+                    if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
+                    withTimeout(5_000) { bothStarted.await() }
                     repeat(50) { i -> context.publishMetadata(buildJsonObject { put("step", i) }) }
                     delay(50)
                     listOf(UIMessagePart.Text(name))

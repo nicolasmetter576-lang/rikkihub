@@ -78,11 +78,13 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.ContextCheckpointKind
 import me.rerere.ai.ui.ContextCheckpointMetadata
+import me.rerere.ai.ui.MessageStopReason
 import me.rerere.ai.ui.ModelSnapshot
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.canResumeToolExecution
+import me.rerere.ai.ui.classifyProviderFinishReason
 import me.rerere.ai.ui.finishPendingTools
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.ai.ui.limitContext
@@ -440,6 +442,7 @@ class ChatService(
         appScope.launch {
             conversationRepo.deletedConversationIds.collect { id ->
                 stopCacheWarm(id, "conversation deleted")
+                clearConversationErrors(id)
             }
         }
 
@@ -718,6 +721,23 @@ class ChatService(
         _errors.update { list -> list.filter { it.id != id } }
     }
 
+    fun dismissConversationError(conversationId: Uuid, errorId: Uuid) {
+        _errors.update { list ->
+            val filtered = list.filterNot { it.id == errorId && it.conversationId == conversationId }
+            if (filtered.size == list.size) list else filtered
+        }
+    }
+
+    fun clearConversationErrors(
+        conversationId: Uuid,
+        predicate: (ChatError) -> Boolean = { true },
+    ) {
+        _errors.update { list ->
+            val filtered = list.filterNot { it.conversationId == conversationId && predicate(it) }
+            if (filtered.size == list.size) list else filtered
+        }
+    }
+
     fun clearAllErrors() {
         _errors.value = emptyList()
     }
@@ -922,6 +942,7 @@ class ChatService(
         withConversationSession(conversationId) { session ->
             initializeSession(session, characterId)
             settingsStore.updateAssistant(session.state.value.assistantId)
+            scheduleStaleCliCleanup(conversationId)
             // Keep the fork's lazy pending-tool repair, including inactive branches.
             scheduleWorkspacePendingRepair(conversationId, "conversation loaded")
         }
@@ -1106,11 +1127,13 @@ class ChatService(
         ) {
             try {
                 previousJob?.join()
+                if (answer) clearConversationErrors(conversationId)
                 // 新消息开始处理前就清掉上一轮的回复，处理失败也不能留着旧预览
                 session.replyMessageId.value = null
                 // 遗留工作区 pending 先按真实绑定/启用态精确复核
-                // （unavailable 非空输出），再交旧的兜底 cancelled 清理。
+                // （unavailable 非空输出），再收尾失联 CLI 残卡，最后交旧的兜底 cancelled 清理。
                 reconcileWorkspacePendingTools(conversationId)
+                finishStaleCliTools(conversationId)
                 finishInterruptedPendingTools(conversationId)
 
                 val currentConversation = session.state.value
@@ -1261,6 +1284,9 @@ class ChatService(
         ) {
             try {
                 previousJob?.join()
+                if (message.role == MessageRole.USER || regenerateAssistantMsg) {
+                    clearConversationErrors(conversationId)
+                }
                 session.replyMessageId.value = null
                 val conversation = session.state.value
 
@@ -1328,7 +1354,13 @@ class ChatService(
             if (acpSessionManager?.tryDeliverPermissionDecision(conversationId, toolCallId, decision) == true) return@synchronized
             if (previousJob != null) return@synchronized
             val job = launchGenerationJob(conversationId, keepAliveInBackground = false) {
-                finishStaleCliTools(conversationId)
+                try {
+                    finishStaleCliTools(conversationId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    Log.w(TAG, "stale CLI cleanup failed for $conversationId", failure)
+                }
             }
             session.setJob(job, cancelPrevious = false)
             return@synchronized
@@ -1404,6 +1436,7 @@ class ChatService(
 
                     // Only continue generation when all pending tools are handled
                     if (!hasPendingTools) {
+                        clearConversationErrors(conversationId)
                         handleMessageComplete(conversationId)
                     }
 
@@ -1688,6 +1721,7 @@ class ChatService(
                     // 回合中途落库：每一步结束、每多一个工具结果就存一次，进程被杀最多丢正在进行的这一步。
                     // 留下的未执行调用由下次发送/加载时的清理写成 unavailable，与中途停止一样。
                     var executedTools: Int? = null
+                    var lastStepFinishReason: String? = null
                     generationFlow.collect { chunk ->
                         when (chunk) {
                             is GenerationChunk.Messages -> {
@@ -1711,9 +1745,19 @@ class ChatService(
                                 }
                             }
 
-                            // 主聊天 UI 以消息列表为准；步结束只用来落库，终态由收尾保存负责。
-                            is GenerationChunk.StepFinished -> saveMidTurn(session)
-                            is GenerationChunk.GenerationEnd -> Unit
+                            // 主聊天 UI 以消息列表为准；步结束记录最后一步 finishReason 并落库。
+                            is GenerationChunk.StepFinished -> {
+                                lastStepFinishReason = chunk.finishReason
+                                saveMidTurn(session)
+                            }
+                            is GenerationChunk.GenerationEnd -> {
+                                val stopReason = classifyGenerationStopReason(chunk.reason, lastStepFinishReason)
+                                if (stopReason != null) {
+                                    session.replyMessageId.value?.let { replyId ->
+                                        updateConversationNodeMessage(conversationId, replyId) { it.copy(stopReason = stopReason) }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1936,6 +1980,7 @@ class ChatService(
     private suspend fun handleCliMessageComplete(conversationId: Uuid) {
         val session = sessions[conversationId] ?: return
         val manager = checkNotNull(acpSessionManager) { "CLI sessions are not available" }
+        finishStaleCliTools(conversationId)
         val settings = settingsStore.settingsFlow.first()
         val conversation = session.state.value
         val cli = conversation.cliSession ?: return
@@ -1981,7 +2026,14 @@ class ChatService(
             reply = transform(reply)
             session.replyMessageId.value = reply.id
             updateConversation(conversationId, session.state.value.updateCurrentMessages(messages + reply), checkFileRefs = false)
-            executedTools.value = reply.parts.count { it is UIMessagePart.Tool && it.isExecuted }
+            // 真实输出覆盖 [completed]/[failed] 占位符时单调递增，触发中途落盘
+            executedTools.value = reply.parts.sumOf { part ->
+                if (part is UIMessagePart.Tool && part.isExecuted) {
+                    if (AcpParts.hasPlaceholderOutput(part)) 1 else 2
+                } else {
+                    0
+                }
+            }
             appEventBus.tryEmit(AppEvent.ChatGenerationUpdate(conversationId, reply, agent.name))
         }
 
@@ -2092,6 +2144,7 @@ class ChatService(
                             totalTokens = usage.cliInt("totalTokens"),
                         )
                     }
+                    val stopReason = classifyCliStopReason(result.stopReason)
                     if (tokenUsage != null || contextUsed != null) {
                         // The agent reports the whole turn at once; its context occupancy comes from usage_update.
                         publish {
@@ -2103,6 +2156,7 @@ class ChatService(
                                 lastUsage = contextUsed?.let { used -> TokenUsage(promptTokens = used, totalTokens = used) },
                                 stepCount = 1,
                                 usageComplete = tokenUsage != null,
+                                stopReason = stopReason,
                             )
                         }
                     } else {
@@ -2111,6 +2165,7 @@ class ChatService(
                                 modelSnapshot = modelSnapshot,
                                 contextLength = contextLength,
                                 generationTimeMs = generationTimeMs,
+                                stopReason = stopReason,
                             )
                         }
                     }
@@ -2252,20 +2307,43 @@ class ChatService(
             persist = { conversationRepo.updateCliSession(conversationId, it.cliSession) },
         )
 
-    /** Pending CLI cards nobody waits for any more (process gone, app restarted). */
-    private suspend fun finishStaleCliTools(conversationId: Uuid) {
-        val conversation = getConversationFlow(conversationId).value
-        val interrupted = context.getString(R.string.cli_tool_interrupted)
-        val nodes = conversation.messageNodes.map { node ->
-            node.copy(messages = node.messages.map { message ->
-                message.copy(parts = message.parts.map { part ->
-                    if (part is UIMessagePart.Tool && AcpParts.isAcpTool(part) && !part.isExecuted) {
-                        part.copy(output = listOf(UIMessagePart.Text(interrupted)), approvalState = ToolApprovalState.Denied(interrupted))
-                    } else part
-                })
-            })
+    /** Idle-only stale CLI cleanup: never touches a live CLI turn, active job, or compression. */
+    private fun scheduleStaleCliCleanup(conversationId: Uuid) {
+        val session = sessions[conversationId] ?: return
+        if (!session.state.value.hasStaleCliState()) return
+        synchronized(session) {
+            if (session.getJob() != null || session.isCompressing || acpSessionManager?.isRunning(conversationId) == true) {
+                return
+            }
+            val job = launchGenerationJob(conversationId, keepAliveInBackground = false) {
+                try {
+                    finishStaleCliTools(conversationId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Throwable) {
+                    Log.w(TAG, "stale CLI cleanup failed for $conversationId", failure)
+                }
+            }
+            session.setJob(job, cancelPrevious = false)
         }
-        if (nodes != conversation.messageNodes) saveConversation(conversationId, conversation.copy(messageNodes = nodes))
+    }
+
+    /** Unfinished CLI cards and open reasoning nobody waits for any more (process gone, app restarted). */
+    private suspend fun finishStaleCliTools(conversationId: Uuid) {
+        val session = sessions[conversationId] ?: return
+        if (acpSessionManager?.isRunning(conversationId) == true) return
+        val interrupted = context.getString(R.string.cli_tool_interrupted)
+        var changed = false
+        session.updateState { current ->
+            val updated = current.finishStaleCliState(interrupted)
+            if (updated !== current) changed = true
+            updated
+        }
+        if (changed) {
+            persistSessionState(conversationId)
+            revalidateCacheWarm(conversationId)
+            dispatchNextQueuedMessage(conversationId)
+        }
     }
 
     // ---- 检查无效消息 ----
@@ -2780,6 +2858,7 @@ class ChatService(
             createNewConversation = request.createNewConversation,
         )
         session.compressSuggestion.value = null
+        clearConversationErrors(session.id) { it.solution == ChatErrorSolution.CompressAndRetry }
         // The task holds its own reference: leaving the chat page no longer stops it.
         session.acquire()
         val outcome = java.util.concurrent.atomic.AtomicReference<CompressState?>(null)
@@ -3087,6 +3166,7 @@ class ChatService(
         val job = launchGenerationJob(conversationId = conversationId, keepAliveInBackground = true) {
             try {
                 previousJob?.join()
+                clearConversationErrors(conversationId)
                 handleMessageComplete(conversationId)
                 _generationDoneFlow.emit(conversationId)
             } catch (e: Exception) {
@@ -4351,7 +4431,8 @@ class ChatService(
         // claudelife：切换分支 → 旧基线不再适用即停止保活。
         revalidateCacheWarm(conversationId)
 
-        // 惰性复核：切到的分支可能带着 gate 事件后未修的 pending。
+        // 惰性复核：切到的分支可能带着失联 CLI 残卡或 gate 事件后未修的 pending。
+        scheduleStaleCliCleanup(conversationId)
         scheduleWorkspacePendingRepair(conversationId, "message node selected")
 
         // 切换分支可能解除工具审批阻塞，重新检查队列。
@@ -4589,6 +4670,7 @@ class ChatService(
         }
         if (jobs.isEmpty()) return
         jobs.forEach { it.join() }
+        finishStaleCliTools(conversationId)
         finishInterruptedPendingTools(conversationId)
     }
 }
@@ -4772,3 +4854,66 @@ internal suspend fun cliPromptBlocks(
         else -> emptyList()
     }
 }
+
+internal fun Conversation.hasStaleCliState(): Boolean =
+    messageNodes.any { node ->
+        node.messages.any { message ->
+            var hasAcpTool = false
+            var hasOpenReasoning = false
+            for (part in message.parts) {
+                if (part is UIMessagePart.Tool && AcpParts.isAcpTool(part)) {
+                    if (!part.isExecuted) return@any true
+                    hasAcpTool = true
+                } else if (part is UIMessagePart.Reasoning && part.finishedAt == null) {
+                    hasOpenReasoning = true
+                }
+            }
+            hasOpenReasoning && (cliSession != null || hasAcpTool)
+        }
+    }
+
+internal fun Conversation.finishStaleCliState(
+    interruptedReason: String,
+    now: kotlin.time.Instant = Clock.System.now(),
+): Conversation {
+    var anyChanged = false
+    val nodes = messageNodes.map { node ->
+        var nodeChanged = false
+        val messages = node.messages.map { message ->
+            val closeReasoning = cliSession != null ||
+                message.parts.any { it is UIMessagePart.Tool && AcpParts.isAcpTool(it) }
+            val updated = AcpParts.finishInterrupted(
+                message = message,
+                reason = interruptedReason,
+                now = now,
+                closeOpenReasoning = closeReasoning,
+            )
+            if (updated !== message) nodeChanged = true
+            updated
+        }
+        if (nodeChanged) {
+            anyChanged = true
+            node.copy(messages = messages)
+        } else {
+            node
+        }
+    }
+    return if (anyChanged) copy(messageNodes = nodes) else this
+}
+
+internal fun classifyGenerationStopReason(
+    endReason: GenerationChunk.GenerationEnd.Reason,
+    lastStepFinishReason: String?,
+): MessageStopReason? = when (endReason) {
+    GenerationChunk.GenerationEnd.Reason.STEP_LIMIT -> MessageStopReason.STEP_LIMIT
+    GenerationChunk.GenerationEnd.Reason.COMPLETED -> classifyProviderFinishReason(lastStepFinishReason)
+    GenerationChunk.GenerationEnd.Reason.AWAITING_APPROVAL -> null
+}
+
+internal fun classifyCliStopReason(stopReason: String?): MessageStopReason? =
+    when (stopReason?.trim()?.lowercase()) {
+        "max_tokens" -> MessageStopReason.MAX_TOKENS
+        "max_turn_requests" -> MessageStopReason.STEP_LIMIT
+        "refusal" -> MessageStopReason.CONTENT_FILTER
+        else -> null
+    }

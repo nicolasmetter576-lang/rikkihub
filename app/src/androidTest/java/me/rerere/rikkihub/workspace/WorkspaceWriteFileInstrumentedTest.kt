@@ -7,6 +7,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -17,6 +19,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.Tool
 import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
+import me.rerere.rikkihub.data.ai.tools.buildWriteTextInRootfsCommand
 import me.rerere.rikkihub.data.ai.tools.createWorkspaceTools
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.data.workspace.WorkspaceDeviceDirectoryService
@@ -25,6 +28,7 @@ import me.rerere.workspace.WORKSPACE_TEMP_FILE_PREFIX
 import me.rerere.workspace.WorkspaceStorageArea
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -241,5 +245,97 @@ class WorkspaceWriteFileInstrumentedTest {
         assertFalse(stale.exists())
         assertEquals(emptyList<String>(), userNames.filterNot { File(files, it).exists() })
         assertTrue(fresh.exists())
+    }
+
+    @Test(timeout = 20 * 60_000)
+    fun truncatedStdinFailsAndPreservesOriginalInProot() = withWorkspace { id, files ->
+        val target = File(files, "target.txt").apply { writeText("original-in-proot") }
+        val command = buildWriteTextInRootfsCommand(
+            path = "/workspace/target.txt",
+            expectedBytes = 4096,
+            overwrite = true,
+        )
+        val result = repo.executeCommand(
+            id = id,
+            command = command,
+            stdin = ByteArray(1024) { 'a'.code.toByte() },
+        )
+        assertNotEquals("truncated stdin must fail inside PRoot", 0, result.exitCode)
+        assertTrue("expected Incomplete write stderr, got: ${result.stderr}", result.stderr.contains("Incomplete write"))
+        assertEquals("original-in-proot", target.readText())
+        val leftovers = files.list().orEmpty().filter { it.startsWith(WORKSPACE_TEMP_FILE_PREFIX) }
+        assertEquals(emptyList<String>(), leftovers)
+    }
+
+    @Test(timeout = 20 * 60_000)
+    fun overwriteFalseIsExclusiveAcrossProotAndFuseAndRejectsDanglingSymlink() = withWorkspace { id, files ->
+        val write = tool(id, BuiltinToolIds.WORKSPACE_WRITE_FILE)
+
+        // 1. 8-way concurrent overwrite=false inside /workspace
+        val wsOutcomes = (0 until 8).map { idx ->
+            async(Dispatchers.IO) {
+                val body = "ws-winner-$idx-" + "w".repeat(16 * 1024)
+                idx to runCatching {
+                    write.execute(args("path" to "/workspace/contended.txt", "text" to body, "overwrite" to false))
+                }
+            }
+        }.awaitAll()
+        val wsWinners = wsOutcomes.filter { it.second.isSuccess }
+        val wsLosers = wsOutcomes.filter { it.second.isFailure }
+        assertEquals("expected exactly 1 /workspace winner, got ${wsWinners.map { it.first }}", 1, wsWinners.size)
+        assertEquals(7, wsLosers.size)
+        wsLosers.forEach { (_, res) ->
+            assertTrue(
+                "expected File already exists, got: ${res.exceptionOrNull()?.message}",
+                res.exceptionOrNull()?.message.orEmpty().contains("File already exists"),
+            )
+        }
+        val expectedWs = "ws-winner-${wsWinners.single().first}-" + "w".repeat(16 * 1024)
+        assertEquals(expectedWs, File(files, "contended.txt").readText())
+
+        // 2. Dangling symlink rejected and kept intact
+        val dangling = File(files, "dangling.txt")
+        val danglingTarget = File(files, "nowhere.txt")
+        Files.createSymbolicLink(dangling.toPath(), Paths.get("nowhere.txt"))
+        val danglingRes = runCatching {
+            write.execute(args("path" to "/workspace/dangling.txt", "text" to "hi", "overwrite" to false))
+        }
+        assertTrue(danglingRes.isFailure)
+        assertTrue(danglingRes.exceptionOrNull()?.message.orEmpty().contains("File already exists"))
+        assertTrue(Files.isSymbolicLink(dangling.toPath()))
+        assertFalse(danglingTarget.exists())
+
+        // 3. 8-way concurrent overwrite=false on Android shared storage FUSE (/device/ext)
+        ParcelFileDescriptor.AutoCloseInputStream(
+            instrumentation.uiAutomation
+                .executeShellCommand("appops set ${context.packageName} MANAGE_EXTERNAL_STORAGE allow"),
+        ).use { it.readBytes() }
+        val relative = "Download/rikkihub-itest-noclobber-${System.currentTimeMillis()}"
+        val source = File(Environment.getExternalStorageDirectory(), relative).apply { mkdirs() }
+        try {
+            devices.create(id, "ext", relative)
+            val fuseOutcomes = (0 until 8).map { idx ->
+                async(Dispatchers.IO) {
+                    val body = "fuse-winner-$idx-" + "f".repeat(16 * 1024)
+                    idx to runCatching {
+                        write.execute(args("path" to "/device/ext/contended.txt", "text" to body, "overwrite" to false))
+                    }
+                }
+            }.awaitAll()
+            val fuseWinners = fuseOutcomes.filter { it.second.isSuccess }
+            val fuseLosers = fuseOutcomes.filter { it.second.isFailure }
+            assertEquals("expected exactly 1 FUSE winner, got ${fuseWinners.map { it.first }}", 1, fuseWinners.size)
+            assertEquals(7, fuseLosers.size)
+            fuseLosers.forEach { (_, res) ->
+                assertTrue(
+                    "expected File already exists on FUSE, got: ${res.exceptionOrNull()?.message}",
+                    res.exceptionOrNull()?.message.orEmpty().contains("File already exists"),
+                )
+            }
+            val expectedFuse = "fuse-winner-${fuseWinners.single().first}-" + "f".repeat(16 * 1024)
+            assertEquals(expectedFuse, File(source, "contended.txt").readText())
+        } finally {
+            source.deleteRecursively()
+        }
     }
 }

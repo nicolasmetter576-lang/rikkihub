@@ -97,7 +97,6 @@ import me.rerere.rikkihub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkihub.ui.context.LocalNavController
 import me.rerere.rikkihub.ui.context.LocalSettings
 import me.rerere.rikkihub.ui.hooks.ChatInputState
-import me.rerere.workspace.WorkspaceShellStatus
 import androidx.compose.material3.CircularProgressIndicator
 import me.rerere.rikkihub.data.model.lastContextTokens
 import me.rerere.rikkihub.data.datastore.findModelById
@@ -371,7 +370,7 @@ internal fun FilesPicker(
         val boundWorkspace = remember(workspaces, assistant.workspaceId) {
             workspaces.find { it.id == assistant.workspaceId?.toString() }
         }
-        if (boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name) {
+        if (boundWorkspace != null && boundWorkspace.toolsReady) {
             var showCwdSheet by remember { mutableStateOf(false) }
             // 工作目录 + 「仅此目录」开关并排：开且选了子目录时模型只看得到该目录。
             Row(

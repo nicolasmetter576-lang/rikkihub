@@ -24,6 +24,7 @@ class LocalWorkspaceBackend(
 ) : WorkspaceBackend {
 
     override fun ensureWorkspace(root: String) { manager.ensureWorkspace(root) }
+    override fun filesDir(root: String): File = manager.filesDir(root)
     override fun hasRootfs(root: String): Boolean = manager.hasRootfs(root)
     override fun rootfsEnvironment(root: String): RootfsEnvironment? = manager.rootfsEnvironment(root)
     override fun workspaceExists(root: String): Boolean = manager.workspaceDir(root).isDirectory

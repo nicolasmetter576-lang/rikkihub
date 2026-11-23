@@ -21,7 +21,8 @@
     "writing": "Writing",
     "tavern": "Tavern",
     "global_memory": "Global Memory",
-    "compression": "Compression"
+    "compression": "Compression",
+    "book": "Books"
   },
   "common": {
     "save": "Save",
@@ -822,7 +823,8 @@
       "ZAIZAO": "Zaizao",
       "SUBAGENT": "Subagents",
       "KEEPALIVE": "Cache keep-alive",
-      "QUBAGU": "Cliché cleanup"
+      "QUBAGU": "Cliché cleanup",
+      "BOOK": "Books"
     },
     "quota_daily": "Daily quota",
     "quota_weekly": "Weekly quota",
@@ -905,5 +907,9 @@
     "chunk_timeout": "Per-chunk request timeout",
     "chunk_timeout_follow": "Follow network settings",
     "chunk_timeout_seconds": "{{seconds}}s"
+  },
+  "book": {
+    "title": "Books",
+    "description": "The model used by book features: finding nicknames, the outline and beats. It gets no assistant prompt and no tools."
   }
 }

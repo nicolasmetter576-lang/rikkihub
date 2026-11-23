@@ -359,24 +359,7 @@ function useConversationDetail(
     connect: (handlers, signal) => sse(`conversations/${activeId}/stream`, handlers, { signal }),
     onSummary: (conversation) => callbacks.current.updateSummary(toConversationSummaryUpdate(conversation)),
     onClock: (serverTime) => useAppStore.getState().setClockOffset(serverTime),
-    onGenerationError: (message, solution) => {
-      if (solution === "compress_and_retry" && activeId) {
-        // Overflowed the context window: offer to compress, then regenerate. Stays until acted on.
-        toast.error(message, {
-          duration: Infinity,
-          action: {
-            label: t("conversations.compress.compress_and_retry"),
-            onClick: () => {
-              api.post(`conversations/${activeId}/compress/retry`).catch((error) => {
-                const code = error instanceof ApiError ? error.errorCode : undefined;
-                toast.error(t(compressErrorKey(code)));
-              });
-            },
-          },
-        });
-      } else {
-        toast.error(message);
-      }
+    onGenerationError: () => {
       callbacks.current.onStreamError?.();
     },
   }), [activeId]);
@@ -416,6 +399,7 @@ function useConversationDetail(
     cacheWarm: state.cacheWarm,
     compressState: state.compressState,
     compressSuggestion: state.compressSuggestion,
+    generationErrors: state.generationErrors,
     syncing,
     syncStatus: state.status,
     syncNotice: syncing && detail
@@ -1078,10 +1062,30 @@ function ConversationsPageInner() {
     cacheWarm,
     compressState,
     compressSuggestion,
+    generationErrors,
     syncing,
     syncStatus,
     syncNotice,
   } = useConversationDetail(activeId, updateConversationSummary, clearTranslating);
+  React.useEffect(() => {
+    if (generationErrors.length > 0) clearTranslating();
+  }, [generationErrors, clearTranslating]);
+
+  const handleDismissGenerationError = React.useCallback(
+    (errorId: string) => {
+      if (!activeId) return;
+      void api.delete(`conversations/${activeId}/errors/${errorId}`).catch(() => undefined);
+    },
+    [activeId],
+  );
+
+  const handleCompressAndRetry = React.useCallback(() => {
+    if (!activeId) return;
+    void api.post(`conversations/${activeId}/compress/retry`).catch((error) => {
+      const code = error instanceof ApiError ? error.errorCode : undefined;
+      toast.error(t(compressErrorKey(code)));
+    });
+  }, [activeId, t]);
   const conversationAssistant = React.useMemo(
     () => assistants?.find((item) => item.id === detail?.assistantId) ?? null,
     [assistants, detail?.assistantId],
@@ -1858,6 +1862,7 @@ function ConversationsPageInner() {
           <ConversationNotices
             compressState={compressState}
             compressFailure={compressFailure}
+            generationErrors={generationErrors}
             sizeInfo={sizeInfo}
             sizeWarningDismissed={sizeWarningDismissedFor === activeId}
             isCliSession={isCliSession}
@@ -1866,6 +1871,8 @@ function ConversationsPageInner() {
             onOpenCompress={() => setCompressDialogOpen(true)}
             compressSuggestion={compressSuggestion}
             onDismissSuggestion={() => void api.delete(`conversations/${activeId}/compress/suggestion`).catch(() => undefined)}
+            onDismissGenerationError={handleDismissGenerationError}
+            onCompressAndRetry={handleCompressAndRetry}
             onOpenReview={() => setReviewOpen(true)}
             onDismissFailure={() => setCompressFailure(null)}
             onDismissSizeWarning={() => setSizeWarningDismissedFor(activeId)}
