@@ -18,6 +18,7 @@ import me.rerere.workspace.WorkspaceFileRevisionConflictException
 import me.rerere.workspace.WorkspaceFileSystem
 import me.rerere.workspace.WorkspaceTextSnapshot
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -110,19 +111,17 @@ class BookStore(
             withContext(Dispatchers.IO) { staged.outputStream().use { exporter(book.workspaceId).export(book, options, it) } }
             repository.withFilesRoot(book.workspaceId) { root ->
                 fileSystem.mkdir(root, path.substringBeforeLast('/'))
-                val target = File(root, path)
-                val temp = File(target.parentFile, ".${target.name}.tmp")
-                staged.copyTo(temp, overwrite = true)
-                if (!temp.renameTo(target)) {
-                    temp.delete()
-                    error("Cannot write $path")
-                }
+                fileSystem.replaceWith(root, path, staged)
             }
             edit(book.workspaceId) { it.manifest.copy(ignored = it.manifest.ignored + path) }
         } finally {
             staged.delete()
         }
     }
+
+    /** 版本没变时，在存储根锁里拿现在的内容做 [block]（加锁用，中间不会被别的写入插进来）；变了抛 [WorkspaceFileRevisionConflictException]。 */
+    suspend fun <T> withRevision(workspaceId: String, path: String, expectedRevision: String, block: (ByteArray) -> T): T =
+        repository.withFilesRoot(workspaceId) { root -> fileSystem.withRevision(root, path, expectedRevision, block) }
 
     /** 版本没变才写，返回新版本；变了抛 [WorkspaceFileRevisionConflictException]。 */
     suspend fun write(workspaceId: String, path: String, text: String, expectedRevision: String): String =
@@ -149,11 +148,33 @@ class BookStore(
         return edit(workspaceId) { book -> book.manifest.updateChapter(chapterId) { it.copy(path = target) } }
     }
 
+    /** 删一个不在目录里的文件（作品记录的文件由版本史的删除钩子移进回收站）。 */
+    suspend fun deleteFile(workspaceId: String, path: String) {
+        repository.withFilesRoot(workspaceId) { root -> fileSystem.delete(root, path) }
+    }
+
     /** 删除章节：文件和目录项一起删。 */
+    /** 逐个删：删掉的照样从目录里移除；删不了的（例如锁定的章节进不了回收站）留在目录里，最后一起报错。 */
     suspend fun deleteChapters(workspaceId: String, ids: Set<String>): Book {
-        val paths = open(workspaceId).entries.filter { it.id in ids && !it.missing }.map { it.path }
-        repository.withFilesRoot(workspaceId) { root -> paths.forEach { fileSystem.delete(root, it) } }
-        return edit(workspaceId) { book -> book.manifest.remove(ids) }
+        val entries = open(workspaceId).entries.filter { it.id in ids }
+        val failed = LinkedHashMap<String, Exception>()
+        repository.withFilesRoot(workspaceId) { root ->
+            entries.filterNot { it.missing }.forEach { entry ->
+                try {
+                    fileSystem.delete(root, entry.path)
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    failed[entry.id] = error
+                }
+            }
+        }
+        val book = edit(workspaceId) { book -> book.manifest.remove(ids - failed.keys) }
+        // 锁挡住的原样抛（网页端回 423，App 按原因说明）；其他的合成一条
+        failed.values.firstOrNull { it is me.rerere.workspace.WorkspaceLockedException }?.let { throw it }
+        failed.values.firstOrNull()?.let { first ->
+            throw IOException(entries.filter { it.id in failed }.joinToString("、") { it.path } + ": " + (first.message ?: first.javaClass.simpleName), first)
+        }
+        return book
     }
 
     // ---- 章节笔记（计划、反向大纲、节拍稿） --------------------------------------------------------
@@ -283,6 +304,12 @@ class BookStore(
 
     private fun indexFile(workspaceId: String) = File(cacheDir, "$workspaceId.json")
 
+    /** 工作区删除后丢掉它的文件索引缓存。 */
+    fun forget(workspaceId: String) {
+        indexes.remove(workspaceId)
+        indexFile(workspaceId).delete()
+    }
+
     private fun remembered(workspaceId: String): Map<String, BookFileInfo> = indexes.getOrPut(workspaceId) {
         runCatching { JsonInstant.decodeFromString<Map<String, BookFileInfo>>(indexFile(workspaceId).readText()) }.getOrDefault(emptyMap())
     }
@@ -298,6 +325,8 @@ class BookStore(
     companion object {
         const val BOOK_DIR = ".book"
         const val MANIFEST_PATH = "$BOOK_DIR/book.json"
+        /** 平行稿（点子 11），[BOOK_DIR] 里唯一允许模型文件工具写的地方。 */
+        const val BRANCHES_DIR = "$BOOK_DIR/branches"
         private const val NOTES_DIR = "$BOOK_DIR/chapters"
         private val SAFE_ID = Regex("[A-Za-z0-9_-]{1,64}")
         const val MAX_TEXT_BYTES = 4L * 1024 * 1024

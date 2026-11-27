@@ -41,6 +41,8 @@ export interface WorkspaceTextEditorProps {
   centered?: boolean;
   /** 文件身份，推敲结果按它缓存；缺省用文件名。 */
   tuiqiaoKey?: string;
+  /** 作品版本历史整章还原或取回一段后：重新读文件。 */
+  onFileReplaced?: () => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export function WorkspaceTextEditor({
   readOnlyNotice,
   centered = false,
   tuiqiaoKey,
+  onFileReplaced,
 }: WorkspaceTextEditorProps) {
   const { t } = useTranslation("workspace");
   // 字体/字号/间距（Web 那一套），编辑与预览共用
@@ -103,6 +106,7 @@ export function WorkspaceTextEditor({
           typography={typography}
           centered={centered}
           tuiqiaoKey={tuiqiaoKey}
+          onFileReplaced={onFileReplaced}
           onSelectionChange={setSelection}
         />
         <WorkspaceStatusBar text={value} selection={selection} />
@@ -163,6 +167,7 @@ export function WorkspaceTextEditor({
             typography={typography}
             centered={centered}
             tuiqiaoKey={tuiqiaoKey}
+            onFileReplaced={onFileReplaced}
             onSelectionChange={setSelection}
           />
         </div>

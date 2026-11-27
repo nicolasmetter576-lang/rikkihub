@@ -64,7 +64,15 @@ class WorkspaceDetailVM(
     private val rootfsInstallService: WorkspaceRootfsInstallService,
     private val envSetupService: WorkspaceEnvSetupService,
     private val context: Context,
+    private val bookHistory: me.rerere.rikkihub.data.book.history.BookHistory,
 ) : ViewModel() {
+    /** 这些路径（含文件夹里的）有几个文件带定稿锁（作品工作区的 FILES 区；删除、移出前提示用）。 */
+    suspend fun lockedCount(paths: List<String>, area: WorkspaceStorageArea = WorkspaceStorageArea.FILES): Int {
+        if (area != WorkspaceStorageArea.FILES || !bookHistory.isBook(id)) return 0
+        val locked = bookHistory.locks(id).filterValues { !it.isEmpty }.keys
+        return locked.count { file -> paths.any { file == it || file.startsWith("$it/") } }
+    }
+
     private val _state = MutableStateFlow(WorkspaceDetailState())
     val state = _state.asStateFlow()
 
@@ -327,7 +335,7 @@ class WorkspaceDetailVM(
             }.onSuccess {
                 refresh()
             }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: context.getString(R.string.workspace_files_delete_failed)) }
+                _state.update { it.copy(error = me.rerere.rikkihub.ui.pages.extensions.workspace.book.lockAwareMessage(context, error)) }
             }
         }
     }
@@ -341,7 +349,7 @@ class WorkspaceDetailVM(
             }.onSuccess {
                 refresh()
             }.onFailure { error ->
-                _state.update { it.copy(error = error.message ?: context.getString(R.string.workspace_files_rename_failed)) }
+                _state.update { it.copy(error = me.rerere.rikkihub.ui.pages.extensions.workspace.book.lockAwareMessage(context, error)) }
             }
         }
     }
@@ -421,6 +429,8 @@ class WorkspaceDetailVM(
         targetWorkspaceId: String,
         destinationDir: String,
         mode: WorkspaceTransferMode,
+        /** 已确认“移出作品后定稿锁会解除”：带移出许可移动。 */
+        moveOut: Boolean = false,
     ) {
         val sameWorkspace = targetWorkspaceId == id
         val paths = entries
@@ -445,7 +455,10 @@ class WorkspaceDetailVM(
         transferJob = viewModelScope.launch {
             var message: Pair<String?, String?> = null to null
             try {
-                val result = repository.transferFiles(id, paths, targetWorkspaceId, destinationDir, mode) { progress ->
+                val permit = me.rerere.rikkihub.data.book.history.BookHistory.lockElement(
+                    me.rerere.rikkihub.data.book.history.BookLockContext(moveOut = moveOut),
+                )
+                val result = withContext(permit) { repository.transferFiles(id, paths, targetWorkspaceId, destinationDir, mode) { progress ->
                     finished = progress.itemIndex
                     _state.update {
                         it.copy(
@@ -456,7 +469,7 @@ class WorkspaceDetailVM(
                             ),
                         )
                     }
-                }
+                } }
                 message = transferResultMessage(result, mode, destination)
             } catch (error: CancellationException) {
                 withContext(NonCancellable) {
@@ -548,6 +561,7 @@ class WorkspaceDetailVM(
         WorkspaceFileOperationException.TRANSFER_INTO_ITSELF -> context.getString(R.string.workspace_transfer_error_into_itself)
         WorkspaceFileOperationException.SYMLINK_NOT_ALLOWED -> context.getString(R.string.workspace_transfer_error_symlink)
         WorkspaceFileOperationException.NOT_ENOUGH_SPACE -> context.getString(R.string.workspace_transfer_error_no_space)
+        WorkspaceFileOperationException.FILE_LOCKED -> context.getString(R.string.workspace_transfer_error_locked)
         WorkspaceFileOperationException.FILE_ALREADY_EXISTS -> context.getString(R.string.workspace_transfer_error_name_taken)
         WorkspaceFileOperationException.PARENT_NOT_FOUND,
         WorkspaceFileOperationException.PARENT_NOT_DIRECTORY -> context.getString(R.string.workspace_transfer_error_target_missing)
@@ -1087,6 +1101,10 @@ class WorkspaceDetailVM(
     fun setSubagentAllowContext(allowContext: Boolean) {
         patchWorkspace { it.copy(subagentAllowContext = allowContext) }
     }
+
+    /** 关作品模式前要不要提醒：这本书有锁或待处理的定稿锁提醒。 */
+    suspend fun bookLockedOrNoticed(): Boolean =
+        bookHistory.isBook(id) && (bookHistory.locks(id).isNotEmpty() || bookHistory.notices(id).isNotEmpty())
 
     fun setBookMode(enabled: Boolean) {
         patchWorkspace { it.copy(bookMode = enabled) }

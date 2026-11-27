@@ -24,6 +24,8 @@ open class WorkspaceFileOperationException(
         const val FILE_NOT_FILE = "FILE_NOT_FILE"
         const val FILE_IO_ERROR = "FILE_IO_ERROR"
         const val FILE_PERMISSION_DENIED = "FILE_PERMISSION_DENIED"
+        /** 作品的定稿锁拒绝了这次写入（[WorkspaceLockedException]）。 */
+        const val FILE_LOCKED = "FILE_LOCKED"
         const val ATOMIC_SAVE_UNSUPPORTED = "ATOMIC_SAVE_UNSUPPORTED"
         const val TRANSFER_SAME_LOCATION = "TRANSFER_SAME_LOCATION"
         const val TRANSFER_INTO_ITSELF = "TRANSFER_INTO_ITSELF"

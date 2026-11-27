@@ -6,6 +6,8 @@ import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.book.history.BookLockContext
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
@@ -47,6 +49,12 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
     private fun backend(): WorkspaceBackend = GlobalContext.get().get()
 
     private fun manager(): WorkspaceManager = GlobalContext.get().get()
+
+    private fun bookHistory(): BookHistory = GlobalContext.get().get()
+
+    /** 整章锁定的章节对别的 App 只读。 */
+    private fun chapterLocked(root: String, relPath: String): Boolean =
+        runCatching { bookHistory().chapterLocked(manager().resolveFile(root, relPath)) }.getOrDefault(false)
 
     private fun dao(): WorkspaceDAO = GlobalContext.get().get()
 
@@ -148,8 +156,13 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
             accessMode and ParcelFileDescriptor.MODE_READ_WRITE != 0
         if (!writable) return ParcelFileDescriptor.open(file, accessMode)
         val parentDocId = buildDocId(target.root, target.relPath.substringBeforeLast('/', ""))
+        // 作品里的章节：整章锁定的不给写；交出可写句柄前留一版（"wt" 打开就清空了），关上后看改了什么
+        val history = bookHistory()
+        if (history.chapterLocked(file)) throw FileNotFoundException("This chapter is locked as final in RikkiHub")
+        history.beforeExternalWrite(file.canonicalFile)
         return ParcelFileDescriptor.open(file, accessMode, Handler(Looper.getMainLooper())) {
             notifyChange(parentDocId)
+            history.afterExternalWrite(file.canonicalFile)
         }
     }
 
@@ -176,7 +189,11 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         val target = parseDocId(documentId)
         require(!target.isRoot && target.relPath.isNotEmpty()) { "Cannot delete this document" }
         requireKnownRoot(target.root)
-        require(backend().deleteFile(target.root, target.relPath, recursive = true)) { "Failed to delete: $documentId" }
+        // 别的 App 删了锁定的章节：连锁进回收站，并在作品里留一条提醒
+        val deleted = BookHistory.withLockContext(BookLockContext(foreign = true)) {
+            backend().deleteFile(target.root, target.relPath, recursive = true)
+        }
+        require(deleted) { "Failed to delete: $documentId" }
         notifyChange(buildDocId(target.root, target.relPath.substringBeforeLast('/', "")))
     }
 
@@ -292,7 +309,7 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
             isDir -> Document.FLAG_DIR_SUPPORTS_CREATE or
                 Document.FLAG_SUPPORTS_DELETE or Document.FLAG_SUPPORTS_RENAME or
                 Document.FLAG_SUPPORTS_COPY or Document.FLAG_SUPPORTS_MOVE
-            else -> Document.FLAG_SUPPORTS_WRITE or
+            else -> (if (chapterLocked(root, relPath)) 0 else Document.FLAG_SUPPORTS_WRITE) or
                 Document.FLAG_SUPPORTS_DELETE or Document.FLAG_SUPPORTS_RENAME or
                 Document.FLAG_SUPPORTS_COPY or Document.FLAG_SUPPORTS_MOVE
         }

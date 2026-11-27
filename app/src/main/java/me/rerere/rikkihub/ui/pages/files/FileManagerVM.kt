@@ -528,6 +528,7 @@ class FileManagerVM(
         WorkspaceFileOperationException.TRANSFER_INTO_ITSELF -> context.getString(R.string.workspace_transfer_error_into_itself)
         WorkspaceFileOperationException.SYMLINK_NOT_ALLOWED -> context.getString(R.string.workspace_transfer_error_symlink)
         WorkspaceFileOperationException.NOT_ENOUGH_SPACE -> context.getString(R.string.workspace_transfer_error_no_space)
+        WorkspaceFileOperationException.FILE_LOCKED -> context.getString(R.string.workspace_transfer_error_locked)
         WorkspaceFileOperationException.FILE_ALREADY_EXISTS -> context.getString(R.string.workspace_new_file_exists)
         WorkspaceFileOperationException.INVALID_FILE_NAME -> context.getString(R.string.workspace_new_file_invalid_name)
         WorkspaceFileOperationException.FILE_PERMISSION_DENIED -> context.getString(R.string.file_manager_permission_title)

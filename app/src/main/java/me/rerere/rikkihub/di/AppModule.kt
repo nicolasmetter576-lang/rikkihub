@@ -342,6 +342,7 @@ val appModule = module {
             fileManager = get(),
             acpSessionManager = get(),
             skillManager = get(),
+            bookHistory = get(),
         )
     }
 
@@ -394,7 +395,12 @@ val appModule = module {
                 messageNodeDao = get(),
             ),
             fileManager = get(),
-            book = me.rerere.rikkihub.web.routes.WebBookServices(store = get(), replacer = get(), importer = get(), outliner = get(), writer = get(), tempDir = get<android.content.Context>().cacheDir),
+            book = me.rerere.rikkihub.web.routes.WebBookServices(
+                store = get(), replacer = get(), importer = get(), outliner = get(), writer = get(),
+                tempDir = get<android.content.Context>().cacheDir,
+                history = get(), historyActions = get(), turnActions = get(),
+                conversationTitle = { id -> get<me.rerere.rikkihub.data.db.dao.ConversationDAO>().getConversationById(id)?.title?.takeIf { it.isNotBlank() } },
+            ),
             acpSessionManager = get(),
         )
     }

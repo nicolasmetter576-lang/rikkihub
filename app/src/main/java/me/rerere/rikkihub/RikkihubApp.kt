@@ -31,6 +31,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import me.rerere.common.android.appTempFolder
 import me.rerere.rikkihub.di.appModule
 import me.rerere.rikkihub.di.dataSourceModule
@@ -119,6 +124,9 @@ class RikkihubApp : Application() {
 
         // cleanup workspace temp dirs (proot + rootfs /tmp)
         cleanupWorkspaceTempDirs()
+
+        // version history of book-mode workspaces watches workspace writes from here on
+        startBookHistory()
 
         // xdg-open inside workspaces (e.g. agy sign-in) opens links in the browser through this
         get<me.rerere.rikkihub.data.workspace.WorkspaceUrlOpener>().start()
@@ -363,6 +371,53 @@ class RikkihubApp : Application() {
             canonicalUrl = { "file://" + File(files.filesDir(), it).absolutePath },
             createdAt = { files.getByRelativePath(it)?.createdAt },
             deleteFile = { files.deleteRetainedUpload(it) },
+        )
+    }
+
+    private fun startBookHistory() {
+        val history = get<me.rerere.rikkihub.data.book.history.BookHistory>()
+        me.rerere.workspace.WorkspaceChanges.observer = history::onChange
+        // 定稿锁放回：带版本号写回，记成还原，带“系统放回”的放行
+        val bookStore = get<me.rerere.rikkihub.data.book.BookStore>()
+        history.writeBack = { workspaceId, path, compute ->
+            val snapshot = bookStore.read(workspaceId, path)
+            val next = compute(snapshot.content)
+            if (next == null) {
+                false
+            } else {
+                kotlinx.coroutines.withContext(
+                    me.rerere.rikkihub.data.book.history.BookHistory.sourceElement(me.rerere.rikkihub.data.book.history.HistorySource.Restore) +
+                        me.rerere.rikkihub.data.book.history.BookHistory.lockElement(me.rerere.rikkihub.data.book.history.BookLockContext(restore = true)),
+                ) { bookStore.write(workspaceId, path, next, snapshot.revision) }
+                true
+            }
+        }
+        // 逐处审阅：正在生成的回复不收尾；回复还在不在（会话在内存里看会话，否则查数据库）
+        history.isGenerating = { conversationId, messageId ->
+            runCatching { get<me.rerere.rikkihub.service.ChatService>().isGenerating(kotlin.uuid.Uuid.parse(conversationId), kotlin.uuid.Uuid.parse(messageId)) }.getOrDefault(false)
+        }
+        history.presence = { conversationId, messageIds ->
+            val conversation = kotlin.uuid.Uuid.parse(conversationId)
+            val ids = messageIds.mapNotNull { runCatching { kotlin.uuid.Uuid.parse(it) }.getOrNull() }
+            val found = get<me.rerere.rikkihub.service.ChatService>().messagePresence(conversation, ids)
+                ?: get<me.rerere.rikkihub.data.repository.ConversationRepository>().messagePresence(conversation, ids)
+            found.mapKeys { it.key.toString() }
+        }
+        val manager = get<WorkspaceManager>()
+        get<WorkspaceRepository>().listFlow()
+            .map { list -> list.filter { it.bookMode }.associate { it.id to manager.filesDir(it.root) } }
+            .distinctUntilChanged()
+            .onEach { books ->
+                history.setBooks(books)
+                history.scanAll()
+            }
+            .flowOn(Dispatchers.IO)
+            .launchIn(get<AppScope>())
+        // 回到前台：外部可能改过（终端里跑着的命令、别的 App）
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_START) get<AppScope>().launch { history.scanAll() }
+            }
         )
     }
 

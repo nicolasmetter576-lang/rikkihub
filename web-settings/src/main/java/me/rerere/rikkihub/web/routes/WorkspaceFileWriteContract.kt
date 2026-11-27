@@ -122,6 +122,8 @@ internal fun workspaceFileApiError(error: Throwable): ApiException = when (error
         else -> fileRequestError(WorkspaceArchiveException.ARCHIVE_CORRUPT, message = "Archive is damaged or incomplete")
     }
     is WorkspaceFileOperationException -> when (error.code) {
+        WorkspaceFileOperationException.FILE_LOCKED ->
+            fileRequestError(WorkspaceFileOperationException.FILE_LOCKED, HttpStatusCode.Locked, "This file holds content locked as final; change or unlock it in the app")
         "FILE_REVISION_CONFLICT" ->
             fileRequestError("FILE_REVISION_CONFLICT", HttpStatusCode.Conflict, "File changed since it was opened; reload before saving")
         WorkspaceFileOperationException.FILE_ALREADY_EXISTS ->

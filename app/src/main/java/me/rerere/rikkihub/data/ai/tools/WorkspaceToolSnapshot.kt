@@ -634,6 +634,9 @@ internal fun createWorkspaceToolSnapshot(
         viewFingerprint = viewFingerprint,
         filesScope = filesScope,
         rootfsEnvironment = rootfsEnvironmentPromptLines(workspaceRepository?.rootfsEnvironment(workspace)),
+        bookLocked = promptLanguage != null && runCatching {
+            org.koin.java.KoinJavaComponent.getKoin().get<me.rerere.rikkihub.data.book.history.BookHistory>().hasLocks(workspace.id)
+        }.getOrDefault(false),
     )
     val forbidden = forbiddenWorkspaceToolNames(workspace, overrides)
     return WorkspaceToolSnapshot(

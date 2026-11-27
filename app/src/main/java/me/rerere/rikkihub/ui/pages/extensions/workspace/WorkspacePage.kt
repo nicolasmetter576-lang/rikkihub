@@ -150,7 +150,16 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
         },
         onDismiss = { deleteTarget = null },
     ) {
-        Text(stringResource(R.string.workspace_page_delete_confirm))
+        // 作品里有定稿锁定的章节：删整个工作区前写明
+        val history = org.koin.compose.koinInject<me.rerere.rikkihub.data.book.history.BookHistory>()
+        val target = deleteTarget
+        val locked by androidx.compose.runtime.produceState(0, target?.id) {
+            value = target?.let { runCatching { history.locks(it.id).count { (_, l) -> !l.isEmpty } }.getOrDefault(0) } ?: 0
+        }
+        Column {
+            Text(stringResource(R.string.workspace_page_delete_confirm))
+            if (locked > 0) Text(stringResource(R.string.book_lock_workspace_delete_note, locked), style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

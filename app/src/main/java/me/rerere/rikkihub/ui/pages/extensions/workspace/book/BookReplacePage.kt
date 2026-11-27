@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Lock
 import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.TransactionHistory
@@ -88,6 +89,7 @@ fun BookReplacePage(workspaceId: String) {
     val toaster = LocalToaster.current
     var historyOpen by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
+    var unlocking by remember { mutableStateOf<String?>(null) }
     val noModel = stringResource(R.string.book_ai_no_model)
     LaunchedEffect(state.error, state.aiError) {
         val message = state.error ?: noModel.takeIf { state.aiError == BookAiException.Reason.NO_MODEL }
@@ -175,6 +177,29 @@ fun BookReplacePage(workspaceId: String) {
                     }
                 }
                 state.mentions?.takeIf { !it.isEmpty }?.let { mentions -> item("mentions") { Mentions(mentions) } }
+                // 定稿锁：整章锁定的不替换（可解锁）；锁定段落里的命中默认勾上，可一键取消
+                preview.files.filter { it.locked }.forEach { file ->
+                    item("locked:${file.path}") {
+                        LockedChapterRow(state.book?.entryByPath(file.path)?.title ?: file.path, onUnlock = { unlocking = file.path })
+                    }
+                }
+                val lockedHits = state.lockedHits
+                if (lockedHits.isNotEmpty()) {
+                    item("locked-hits") {
+                        Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(HugeIcons.Lock, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                stringResource(R.string.book_replace_locked_hits, lockedHits.size),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f).padding(start = 4.dp),
+                            )
+                            TextButton(onClick = vm::toggleLocked) {
+                                Text(stringResource(if (lockedHits.any { it in state.unselected }) R.string.book_replace_select_all else R.string.book_replace_select_none))
+                            }
+                        }
+                    }
+                }
                 if (preview.unreadable.isNotEmpty()) {
                     item("unreadable") { Note(stringResource(R.string.book_replace_unreadable, preview.unreadable.joinToString("、"))) }
                 }
@@ -182,7 +207,12 @@ fun BookReplacePage(workspaceId: String) {
                     item("file:${file.path}") { FileRow(file, state, onToggle = { vm.toggleFile(file.path) }) }
                     items(file.hits, key = { "${file.path}:${it.start}" }) { hit ->
                         val key = HitKey(file.path, hit.start)
-                        HitRow(hit, state.query?.pairs?.getOrNull(hit.pair), selected = key !in state.unselected, onToggle = { vm.toggle(key) })
+                        HitRow(
+                            hit, state.query?.pairs?.getOrNull(hit.pair),
+                            selected = !file.locked && key !in state.unselected,
+                            enabled = !file.locked,
+                            onToggle = { vm.toggle(key) },
+                        )
                     }
                 }
             }
@@ -201,6 +231,17 @@ fun BookReplacePage(workspaceId: String) {
     ) {
         Text(stringResource(R.string.book_replace_delete_confirm, state.query?.pairs.orEmpty().filter { it.replace.isEmpty() }.joinToString("、") { it.find }))
     }
+    RikkaConfirmDialog(
+        show = unlocking != null,
+        title = stringResource(R.string.book_lock_unlock_chapter),
+        confirmText = stringResource(R.string.book_lock_unlock),
+        dismissText = stringResource(R.string.common_cancel),
+        onConfirm = {
+            unlocking?.let(vm::unlockChapter)
+            unlocking = null
+        },
+        onDismiss = { unlocking = null },
+    ) { Text(stringResource(R.string.book_lock_unlock_chapter_confirm)) }
     if (historyOpen) HistoryDialog(state, onUndo = { id ->
         historyOpen = false
         vm.undo(id)
@@ -320,12 +361,12 @@ private fun Mentions(mentions: BookMentions) {
 @Composable
 private fun FileRow(file: BookReplaceFile, state: BookReplaceUiState, onToggle: () -> Unit) {
     val entry = state.book?.entryByPath(file.path)
-    val selected = file.hits.count { HitKey(file.path, it.start) !in state.unselected }
+    val selected = if (file.locked) 0 else file.hits.count { HitKey(file.path, it.start) !in state.unselected }
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).heightIn(min = 44.dp),
+        Modifier.fillMaxWidth().clickable(enabled = !file.locked, onClick = onToggle).heightIn(min = 44.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = selected == file.hits.size, onCheckedChange = { onToggle() })
+        Checkbox(checked = !file.locked && selected == file.hits.size, onCheckedChange = { onToggle() }, enabled = !file.locked)
         Text(
             entry?.let { "${it.number}  ${it.title}" } ?: file.path,
             style = MaterialTheme.typography.titleSmall,
@@ -333,17 +374,35 @@ private fun FileRow(file: BookReplaceFile, state: BookReplaceUiState, onToggle: 
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (file.locked) Icon(HugeIcons.Lock, stringResource(R.string.book_lock_locked), Modifier.padding(end = 4.dp).size(14.dp), tint = MaterialTheme.colorScheme.primary)
         Text("$selected/${file.hits.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun HitRow(hit: ReplaceHit, pair: ReplacePair?, selected: Boolean, onToggle: () -> Unit) {
+private fun LockedChapterRow(title: String, onUnlock: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(HugeIcons.Lock, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(
+            stringResource(R.string.book_replace_locked_chapter, title),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 4.dp),
+        )
+        TextButton(onClick = onUnlock) { Text(stringResource(R.string.book_lock_unlock)) }
+    }
+}
+
+@Composable
+private fun HitRow(hit: ReplaceHit, pair: ReplacePair?, selected: Boolean, enabled: Boolean, onToggle: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 16.dp),
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onToggle).padding(start = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = selected, onCheckedChange = { onToggle() })
+        Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = enabled)
+        if (hit.locked) Icon(HugeIcons.Lock, stringResource(R.string.book_lock_locked), Modifier.padding(end = 4.dp).size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         val error = MaterialTheme.colorScheme.error
         val primary = MaterialTheme.colorScheme.primary
         Text(
@@ -366,6 +425,7 @@ private fun ResultCard(result: BookReplaceResult, onUndo: () -> Unit) {
             Text(stringResource(R.string.book_replace_done, result.replaced, result.changed.size), style = MaterialTheme.typography.titleSmall)
             if (result.conflicts.isNotEmpty()) Note(stringResource(R.string.book_replace_conflicts, result.conflicts.joinToString("、")))
             if (result.failed.isNotEmpty()) Note(stringResource(R.string.book_replace_failed, result.failed.joinToString("、")))
+            if (result.locked.isNotEmpty()) Note(stringResource(R.string.book_replace_locked_skipped, result.locked.joinToString("、")))
             if (result.undoId != null) TextButton(onClick = onUndo) { Text(stringResource(R.string.book_replace_undo)) }
         }
     }
@@ -378,6 +438,7 @@ private fun UndoneCard(undone: BookUndoResult) {
             Text(stringResource(R.string.book_replace_undone, undone.restored.size), style = MaterialTheme.typography.titleSmall)
             if (undone.changedSince.isNotEmpty()) Note(stringResource(R.string.book_replace_undo_changed, undone.changedSince.joinToString("、")))
             if (undone.failed.isNotEmpty()) Note(stringResource(R.string.book_replace_failed, undone.failed.joinToString("、")))
+            if (undone.locked.isNotEmpty()) Note(stringResource(R.string.book_replace_undo_locked, undone.locked.joinToString("、")))
         }
     }
 }

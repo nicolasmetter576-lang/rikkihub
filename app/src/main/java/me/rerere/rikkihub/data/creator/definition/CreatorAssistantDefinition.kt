@@ -24,6 +24,9 @@ object CreatorAssistantDefinition {
     /** 非本地化 fallback 名称。 */
     const val NAME: String = "Creator"
 
+    /** 内置使用指南技能：创造助手默认打开（新建时带上，旧数据由设置迁移 V8 补一次），用户关掉后不再自动打开。 */
+    const val GUIDE_SKILL: String = "rikkihub-guide"
+
     fun isCreator(assistantId: Uuid?): Boolean = assistantId == ID
 
     /** 首次补入列表时的显示名，按系统语言取（之后可由用户自行修改）。 */
@@ -155,6 +158,7 @@ default prompts, sub-agent presets, user skills, and ordinary conversations.
         promptPreset = AssistantPresets.withSystemPrompt(SYSTEM_PROMPT),
         localTools = emptyList(),
         workspaceId = null,
+        enabledSkills = setOf(GUIDE_SKILL),
     )
 
     /** 私有工具稳定 ID（wire 名与之一致；保留命名空间见 [CreatorToolNamespace]）。 */

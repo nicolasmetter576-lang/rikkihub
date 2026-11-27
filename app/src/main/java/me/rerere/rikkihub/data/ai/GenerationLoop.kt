@@ -18,6 +18,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.EmptyCoroutineContext
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.book.history.HistorySource
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -924,9 +927,15 @@ class GenerationLoop(
                                 )
                             }
                             runningTools.incrementAndGet()
+                            // 作品版本史按“轮”归属：子代理沿用父消息已标好的来源
+                            val historySource = conversationId
+                                ?.takeIf { BookHistory.currentSource() == null }
+                                ?.let { HistorySource.Ai(it.toString(), messages[ref.messageIndex].id.toString(), tool.toolCallId) }
                             val result = try {
-                                toolDef.executeWithContext?.invoke(args, toolExecutionContext)
-                                    ?: toolDef.execute(args)
+                                withContext(historySource?.let(BookHistory::sourceElement) ?: EmptyCoroutineContext) {
+                                    toolDef.executeWithContext?.invoke(args, toolExecutionContext)
+                                        ?: toolDef.execute(args)
+                                }
                             } finally {
                                 runningTools.decrementAndGet()
                             }

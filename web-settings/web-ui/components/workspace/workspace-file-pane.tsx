@@ -161,6 +161,7 @@ export function WorkspaceFilePaneBody({
       className="h-full"
       centered={centered}
       tuiqiaoKey={`${workspaceId}:FILES:${openFile.path}`}
+      onFileReplaced={() => void pane.reload()}
       previewContext={{
         workspaceId,
         area: "FILES",

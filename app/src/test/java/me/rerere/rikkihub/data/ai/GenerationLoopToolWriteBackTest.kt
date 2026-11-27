@@ -5,6 +5,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -20,6 +21,8 @@ import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.book.history.HistorySource
 import me.rerere.rikkihub.data.datastore.Settings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -145,6 +148,45 @@ class GenerationLoopToolWriteBackTest {
         // 恢复后还要走一个 provider 步才 COMPLETED
         assertEquals(1, chunks.steps().size)
         assertEquals(GenerationChunk.GenerationEnd.Reason.COMPLETED, chunks.end().single().reason)
+    }
+
+    // ---------------------------------------------------------------
+    // 作品版本史: 工具体内的写入标成“这一轮对话”; 子代理沿用父消息的标注
+    // ---------------------------------------------------------------
+    @Test
+    fun `tool bodies run tagged with the conversation turn, nested loops keep the outer tag`() = runBlocking {
+        val seen = CopyOnWriteArrayList<HistorySource?>()
+        val probe = Tool(
+            name = "probe",
+            description = "records the history source",
+            parameters = { InputSchema.Obj(properties = JsonObject(emptyMap()), required = null) },
+            execute = { _: JsonElement ->
+                seen += withContext(Dispatchers.IO) { BookHistory.currentSource() }
+                listOf(UIMessagePart.Text("ok"))
+            },
+        )
+        val assistantMessage = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(UIMessagePart.Tool("call-1", "probe", "{}", approvalState = ToolApprovalState.Approved)),
+        )
+        val conversation = kotlin.uuid.Uuid.random()
+        suspend fun run() {
+            val harness = StreamHarness(listOf(textStepScript("done")))
+            harness.loop.generateText(
+                settings = harness.settings,
+                model = harness.model,
+                messages = listOf(UIMessage.user("go"), assistantMessage),
+                assistant = testAssistant(),
+                tools = listOf(probe),
+                maxSteps = 10,
+                conversationId = conversation,
+            ).toList()
+        }
+        run()
+        val parent = HistorySource.Ai("parent", "parent-message")
+        withContext(BookHistory.sourceElement(parent)) { run() }
+        assertEquals(listOf(HistorySource.Ai(conversation.toString(), assistantMessage.id.toString(), "call-1"), parent), seen)
+        assertNull(BookHistory.currentSource())
     }
 
     // ---------------------------------------------------------------

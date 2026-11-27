@@ -42,6 +42,7 @@ import { isCreatorConversation } from "~/lib/creator-proposals";
 import { collectLocalAttachmentUrls } from "@overlay/lib/draft-attachments";
 import { useAttachmentDraftLeases } from "@overlay/hooks/use-attachment-draft-leases";
 import { ChatMessage } from "~/components/message/chat-message";
+import { ConversationLockCard } from "@overlay/components/workspace/conversation-lock-card";
 import { WorkspaceImageProvider } from "~/components/markdown/workspace-image-context";
 import { workspaceImageContext } from "~/lib/workspace-image";
 import { badgeVariants } from "~/components/ui/badge";
@@ -851,6 +852,7 @@ const ConversationTimeline = React.memo(
 
       return map;
     }, [settings]);
+    const timelineNodes = React.useMemo(() => selectedNodeMessages.map((entry) => entry.node), [selectedNodeMessages]);
 
     return (
       <Conversation className="flex-1 min-h-0">
@@ -922,6 +924,15 @@ const ConversationTimeline = React.memo(
                     onClearTranslation={onClearTranslation}
                     onToolApproval={onToolApproval}
                   />
+                  {message.role === "ASSISTANT" ? (
+                    <ConversationLockCard
+                      workspaceId={assistant?.workspaceId}
+                      conversationId={activeId}
+                      messageId={message.id}
+                      nodes={timelineNodes}
+                      generating={isGenerating}
+                    />
+                  ) : null}
                 </div>
               );
             })}

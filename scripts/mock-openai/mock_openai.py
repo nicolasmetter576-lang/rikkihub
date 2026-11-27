@@ -102,6 +102,54 @@ SCRIPTS = {
         {"tool": "workspace_read_file", "args": {"path": "/workspace/第3章 归途.md"}},
         {"text": "book done"},
     ],
+    # a book workspace (2.57.1): the file tools refuse .book/ except .book/branches/
+    "book_structure_guard": [
+        {"tool": "workspace_write_file", "args": {"path": "/workspace/.book/book.json", "text": "{}"}},
+        {"tool": "workspace_edit_file", "args": {"path": "/workspace/./.book/book.json", "old_text": "rikkihub-book", "new_text": "x"}},
+        {"tool": "workspace_write_file", "args": {"path": "/workspace/.book/branches/c1/另一稿.md", "text": "另一稿"}},
+        {"text": "guard done"},
+    ],
+    # a book workspace (2.58.0): two writes to one chapter in one turn keep one version (what was there before)
+    "book_history": [
+        {"tool": "workspace_write_file", "args": {"path": "/workspace/第1章.md", "text": "# 起风\n\n阿青下山。\n\nAI 改的第一稿。\n"}},
+        {"tool": "workspace_edit_file", "args": {"path": "/workspace/第1章.md", "old_text": "第一稿", "new_text": "第二稿"}},
+        {"text": "history done"},
+    ],
+    # final locks (2.59.0): a write to a locked chapter and an edit of a locked passage are refused, an edit elsewhere
+    # goes through, taking a locked chapter out of the contents is refused
+    "book_lock_write": [
+        {"tool": "workspace_write_file", "args": {"path": "/workspace/第1章.md", "text": "# 起风\n\nAI 想整章重写。\n"}},
+        {"tool": "workspace_edit_file", "args": {"path": "/workspace/第2章.md", "old_text": "眉眼低垂", "new_text": "眉目低垂"}},
+        {"tool": "workspace_edit_file", "args": {"path": "/workspace/第2章.md", "old_text": "雨停了。", "new_text": "雨终于停了。"}},
+        {"tool": "book_update", "args": {"operations": [{"op": "remove", "chapter": 1}]}},
+        {"text": "lock done"},
+    ],
+    # a command changes a locked passage and the paragraph before it: the passage is put back after the turn
+    "book_lock_shell": [
+        {"tool": "workspace_shell", "args": {"timeout": 30, "command": "sed -i 's/眉眼低垂/眉目低垂/; s/雨终于停了。/雨早就停了。/' /workspace/第2章.md && echo EDITED"}},
+        {"text": "shell lock done"},
+    ],
+    # per-change review (2.60.0): one reply edits two paragraphs of a chapter and creates a new chapter file
+    "book_turn_edit": [
+        {"tool": "workspace_edit_file", "args": {"path": "/workspace/第1章.md", "old_text": "山路很长。", "new_text": "山路又长又陡。"}},
+        {"tool": "workspace_edit_file", "args": {"path": "/workspace/第1章.md", "old_text": "她没有回头。", "new_text": "她始终没有回头。"}},
+        {"tool": "workspace_write_file", "args": {"path": "/workspace/第3章.md", "text": "# 新的一章\n\nAI 新写的一章。\n"}},
+        {"text": "turn edit done"},
+    ],
+    # a later reply edits another chapter; another one only creates a file
+    "book_turn_edit2": [
+        {"tool": "workspace_edit_file", "args": {"path": "/workspace/第2章.md", "old_text": "屋里一片漆黑。", "new_text": "屋里黑漆漆的。"}},
+        {"text": "turn edit2 done"},
+    ],
+    "book_turn_create": [
+        {"tool": "workspace_write_file", "args": {"path": "/workspace/第4章.md", "text": "# 第四章\n\n又一章。\n"}},
+        {"text": "turn create done"},
+    ],
+    # a command edits a chapter and deletes a note file in the same reply
+    "book_turn_shell": [
+        {"tool": "workspace_shell", "args": {"timeout": 30, "command": "sed -i 's/雨停了。/雨早就停了。/' /workspace/第2章.md && rm /workspace/笔记.md && echo TURN_SHELL"}},
+        {"text": "turn shell done"},
+    ],
     # plot points of a chapter: one quote from the text, one the text does not have; then a comparison with a plan
     "book_outline": [
         {"text": '{"synopsis":"She waits."}\n{"text":"She waits for the boat","quote":"She waited at the pier"}\n{"text":"A letter comes","quote":"no such words here"}\n'},
@@ -463,6 +511,13 @@ SCRIPTS = {
         {"tool": "qubagu_rules_test", "args": {"text": "他喉结滚动，没有说话。她的手在抖。", "packs": [QUBAGU_SKILL_PACK]}},
         {"tool": "qubagu_rules_write", "args": {"packs": [QUBAGU_SKILL_PACK]}},
         {"text": "已写入「技能测试」包。"},
+    ],
+    # the built-in usage guide: load SKILL.md, then a reference file and a settings map by path
+    "guide_skill": [
+        {"tool": "use_skill", "args": {"name": "rikkihub-guide"}},
+        {"tool": "use_skill", "args": {"name": "rikkihub-guide", "path": "guide/troubleshooting.md"}},
+        {"tool": "use_skill", "args": {"name": "rikkihub-guide", "path": "settings-map/en.md"}},
+        {"text": "按指南查过了。"},
     ],
     # a write the engine rejects (broken regex): the error comes back, nothing is saved
     "qubagu_skill_bad": [

@@ -37,6 +37,7 @@ import me.rerere.workspace.WorkspaceDeleteResult
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceImportNode
 import me.rerere.workspace.WorkspaceImportResult
+import me.rerere.rikkihub.data.book.history.BookHistory
 import me.rerere.workspace.WorkspaceBackend
 import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceMountSelection
@@ -61,6 +62,10 @@ class WorkspaceRepository(
     val runtimeGate: WorkspaceRuntimeGate = WorkspaceRuntimeGate(),
     val sessionInvalidation: WorkspaceLegacySessionInvalidation = WorkspaceLegacySessionInvalidation(),
     private val deviceDirectoryService: WorkspaceDeviceDirectoryService? = null,
+    /** Version history of book-mode workspaces: PRoot commands, shells and CLI turns are scanned around. */
+    private val bookHistory: BookHistory? = null,
+    /** Drops data kept for a workspace outside its directory; runs after its sessions are closed and its row is gone. */
+    private val onDeleted: suspend (workspaceId: String) -> Unit = {},
 ) {
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
@@ -772,6 +777,20 @@ class WorkspaceRepository(
             ?.takeIf { it.isFile }
     }
 
+    /**
+     * Where a guest [path] lands inside the workspace's FILES directory, resolved the way the model's
+     * writes resolve it (links followed): a `/`-separated relative path, `""` for the directory itself,
+     * or null when it lands elsewhere or is refused.
+     */
+    suspend fun filesRelativePath(id: String, path: String, filesScope: String? = null): String? = withContext(Dispatchers.IO) {
+        val workspace = requireWorkspace(id)
+        val mounts = agentMounts(workspace, filesScope)
+        val target = runCatching { manager.resolveRootfsFile(workspace.root, path, mounts) }.getOrNull()?.toPath()
+            ?: return@withContext null
+        val files = manager.filesDir(workspace.root).canonicalFile.toPath()
+        if (target.startsWith(files)) files.relativize(target).joinToString("/") else null
+    }
+
     suspend fun listRootfs(id: String, path: String, filesScope: String? = null): List<WorkspaceFileEntry> = withContext(Dispatchers.IO) {
         val workspace = requireWorkspace(id)
         manager.listRootfs(workspace.root, path, agentMounts(workspace, filesScope))
@@ -899,11 +918,12 @@ class WorkspaceRepository(
         timeoutMillis: Long = WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS,
         stdin: ByteArray? = null,
         filesScope: String? = null,
+        onBookLocks: (List<me.rerere.rikkihub.data.book.history.LockReport>) -> Unit = {},
     ): WorkspaceCommandResult {
         val workspace = dao.getById(id) ?: error("Workspace not found: $id")
         val mounts = agentMounts(workspace, filesScope)
         // runInterruptible 让协程取消转化为线程中断，从而打断阻塞的 Process.waitFor 并杀掉进程
-        return runInterruptible(Dispatchers.IO) {
+        return watchingBook(id, onBookLocks) { runInterruptible(Dispatchers.IO) {
             manager.ensureWorkspace(workspace.root)
             manager.executeCommand(
                 root = workspace.root,
@@ -914,8 +934,15 @@ class WorkspaceRepository(
                 mounts = mounts,
                 shellCompatibilityMode = workspace.shellCompatibilityMode,
             )
-        }
+        } }
     }
+
+    /**
+     * Runs [block] (a PRoot command or CLI turn) with the book's version history scanned before and after; locked
+     * content the turn changed is put back and reported to [onLocks].
+     */
+    suspend fun <T> watchingBook(id: String, onLocks: (List<me.rerere.rikkihub.data.book.history.LockReport>) -> Unit = {}, block: suspend () -> T): T =
+        bookHistory?.watching(id, onLocks, block) ?: block()
 
     suspend fun delete(id: String): Boolean {
         val workspace = dao.getById(id) ?: return false
@@ -923,6 +950,7 @@ class WorkspaceRepository(
         sessionInvalidation.closeWorkspace(workspace.id, workspace.root)
         dao.deleteById(id)
         withContext(Dispatchers.IO) {
+            onDeleted(id)
             manager.deleteWorkspace(workspace.root)
         }
         cleanupAssistantReferences(id)
@@ -972,8 +1000,10 @@ class WorkspaceRepository(
         withContext(Dispatchers.IO) {
             val workspace = requireWorkspace(workspaceId)
             val mounts = agentMounts(workspace, filesScope)
+            bookHistory?.scan(workspaceId)
             manager.openShell(workspace.root, request.copy(mounts = mounts,
                 shellCompatibilityMode = workspace.shellCompatibilityMode))
+                .also { pty -> bookHistory?.scanAfter(workspaceId) { pty.awaitExit() } }
         }
 
     /** Starts a long-lived program on plain pipes inside the workspace rootfs ([filesScope]: confined like model shells). */

@@ -60,6 +60,9 @@ import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.DragDropVertical
 import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.rikkihub.R
+import me.rerere.rikkihub.data.book.history.LockNotice
+import me.rerere.hugeicons.stroke.Lock
+import me.rerere.rikkihub.data.book.history.FileLocks
 import me.rerere.rikkihub.Screen
 import me.rerere.rikkihub.data.book.Book
 import me.rerere.rikkihub.data.book.BookChapterEntry
@@ -68,6 +71,7 @@ import me.rerere.rikkihub.data.book.BookManifestException
 import me.rerere.rikkihub.data.book.BookVolume
 import me.rerere.rikkihub.data.book.ChapterNumbers
 import me.rerere.rikkihub.data.book.ChapterStatus
+import me.rerere.rikkihub.data.book.history.BookHistory
 import me.rerere.rikkihub.ui.components.ui.AlertDialog
 import me.rerere.rikkihub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkihub.ui.components.ui.toast.ToastType
@@ -76,6 +80,7 @@ import me.rerere.rikkihub.ui.context.LocalToaster
 import me.rerere.rikkihub.ui.theme.AppSpacing
 import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -95,12 +100,16 @@ fun BookPane(vm: BookVM, workspaceId: String, workspaceName: String, modifier: M
         vm.refresh()
         onPauseOrDispose { }
     }
-    LaunchedEffect(vm) { vm.messages.collect { toaster.show(it, type = ToastType.Error) } }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(vm) { vm.messages.collect { toaster.show(lockAwareMessage(context, it), type = ToastType.Error) } }
 
     val book = state.book
+    // 回到这页（resume → refresh）时重读；暂停只是提示，正文照常保存
+    val historyPaused = koinInject<BookHistory>().paused(workspaceId)
     when {
         book != null -> BookContents(
             book = book,
+            historyPaused = historyPaused,
             workspaceName = workspaceName,
             vm = vm,
             modifier = modifier,
@@ -110,6 +119,10 @@ fun BookPane(vm: BookVM, workspaceId: String, workspaceName: String, modifier: M
             onImport = { nav.navigate(Screen.BookImport(workspaceId)) },
             onOutline = { nav.navigate(Screen.BookOutline(workspaceId)) },
             onChapterOutline = { nav.navigate(Screen.ChapterOutline(workspaceId, it)) },
+            onHistory = { nav.navigate(Screen.BookHistory(workspaceId, it)) },
+            onNotice = { nav.navigate(Screen.BookHistory(workspaceId, it.path, it.id)) },
+            onTrash = { nav.navigate(Screen.BookTrash(workspaceId)) },
+            onTurn = { nav.navigate(Screen.BookTurnReview(workspaceId, it.conversationId, it.messageId)) },
         )
         state.loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> BookUnavailable(state, vm, modifier)
@@ -155,6 +168,7 @@ private sealed interface BookDialog {
 @Composable
 private fun BookContents(
     book: Book,
+    historyPaused: Boolean,
     workspaceName: String,
     vm: BookVM,
     onOpen: (String) -> Unit,
@@ -163,14 +177,30 @@ private fun BookContents(
     onImport: () -> Unit,
     onOutline: () -> Unit,
     onChapterOutline: (String) -> Unit,
+    onHistory: (String) -> Unit,
+    onNotice: (LockNotice) -> Unit,
+    onTrash: () -> Unit,
+    onTurn: (me.rerere.rikkihub.data.book.history.TurnRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val turnState by vm.turns.collectAsStateWithLifecycle()
+    var recentOpen by remember { mutableStateOf(false) }
     var arranging by rememberSaveable { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var dialog by remember { mutableStateOf<BookDialog?>(null) }
     var showSynopses by rememberSaveable { mutableStateOf(false) }
     var collapsed by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var unlistedOpen by rememberSaveable { mutableStateOf(false) }
+    val lockState by vm.locks.collectAsStateWithLifecycle()
+    val undo by vm.undo.collectAsStateWithLifecycle()
+    var noticesOpen by remember { mutableStateOf(false) }
+    var unlockingChapter by remember { mutableStateOf<String?>(null) }
+    var unlockingPassages by remember { mutableStateOf<String?>(null) }
+    val toaster = LocalToaster.current
+    val undoFailed = stringResource(R.string.book_lock_undo_failed)
+    LaunchedEffect(vm) { vm.undoFailed.collect { toaster.show(undoFailed, type = ToastType.Error) } }
+    val keepFailed = stringResource(R.string.book_lock_keep_failed)
+    LaunchedEffect(vm) { vm.keepFailed.collect { toaster.show(keepFailed, type = ToastType.Warning) } }
     val existing = remember(book) { book.manifest.items.mapTo(HashSet()) { it.id } }
     LaunchedEffect(existing) { selected = selected intersect existing }
     fun stopArranging() {
@@ -191,7 +221,21 @@ private fun BookContents(
             onImport = onImport,
             onExport = { dialog = BookDialog.Export },
             onOutline = onOutline,
+            onTrash = onTrash,
+            onRecent = { recentOpen = true },
         )
+        LockNoticeBanner(lockState, onOpen = { noticesOpen = true }, onRetry = vm::retryLocks)
+        turnState.banner?.let { record ->
+            BookTurnBanner(record, turnState.titles[record.conversationId], onOpen = { onTurn(record) }, onDismiss = { vm.dismissBanner(record) })
+        }
+        if (historyPaused) {
+            Text(
+                stringResource(R.string.book_history_paused),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = AppSpacing.md, vertical = 4.dp),
+            )
+        }
         if (arranging) {
             BookArrangeList(
                 book = book,
@@ -232,13 +276,20 @@ private fun BookContents(
                             onRemove = { vm.remove(setOf(item.id)) },
                         )
                         else -> entries[item.id]?.let { entry ->
+                            val locks = lockState.locks[entry.path]
                             BookChapterRow(
                                 entry = entry,
+                                locks = locks,
+                                alert = lockState.notices.any { it.path == entry.path },
+                                onLock = { vm.lockChapters(listOf(entry.path)) },
+                                onUnlock = { unlockingChapter = entry.path },
+                                onUnlockPassages = { unlockingPassages = entry.path },
                                 showSynopsis = showSynopses,
                                 onOpen = { if (entry.missing) dialog = BookDialog.Relink(entry.id) else onOpen(entry.path) },
                                 onRead = { onRead(entry.path) },
                                 onEdit = { dialog = BookDialog.EditChapter(entry.id) },
                                 onOutline = { onChapterOutline(entry.id) },
+                                onHistory = { onHistory(entry.path) },
                                 onMove = { dialog = BookDialog.MoveToVolume(setOf(entry.id)) },
                                 onRemove = { vm.remove(setOf(entry.id)) },
                                 onDelete = { dialog = BookDialog.Delete(setOf(entry.id)) },
@@ -270,10 +321,14 @@ private fun BookContents(
                 }
             }
         }
+        LockUndoBar(undo, onUndo = vm::undoLocks, onTimeout = vm::clearUndo)
         BookBottomBar(
             arranging = arranging,
             selected = selected,
             book = book,
+            locks = lockState.locks,
+            onLock = { vm.lockChapters(it) },
+            onUnlock = { vm.unlockChapters(it) },
             onContinue = { book.entries.filterNot { it.missing }.maxByOrNull { it.file?.modifiedAt ?: 0L }?.let { onOpen(it.path) } },
             onNew = { dialog = BookDialog.NewChapter },
             onArrange = { arranging = true },
@@ -312,9 +367,10 @@ private fun BookContents(
             vm.setInfo(title, author)
         }
         is BookDialog.EditChapter -> book.entry(current.id)?.let { entry ->
-            EditChapterDialog(entry, onDismiss = { dialog = null }) { title, synopsis, target, status ->
+            EditChapterDialog(entry, locked = lockState.locks[entry.path]?.chapter != null, onDismiss = { dialog = null }) { title, synopsis, target, status, lock ->
                 dialog = null
                 vm.updateChapter(entry.id, title, synopsis, target, status)
+                if (lock) vm.lockChapters(listOf(entry.path))
             }
         }
         is BookDialog.MoveToVolume -> MoveToVolumeDialog(book, onDismiss = { dialog = null }) { volumeId ->
@@ -339,8 +395,50 @@ private fun BookContents(
         },
         onDismiss = { dialog = null },
     ) {
-        val names = deleting?.ids.orEmpty().mapNotNull { book.entry(it)?.path }.joinToString("\n")
-        Text(stringResource(R.string.book_chapter_delete_confirm, names))
+        val paths = deleting?.ids.orEmpty().mapNotNull { book.entry(it)?.path }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.book_chapter_delete_confirm, paths.joinToString("\n")))
+            val locked = paths.count { lockState.locks[it]?.isEmpty == false }
+            if (locked > 0) Text(stringResource(R.string.book_lock_delete_note, locked), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    RikkaConfirmDialog(
+        show = unlockingChapter != null,
+        title = stringResource(R.string.book_lock_unlock_chapter),
+        confirmText = stringResource(R.string.book_lock_unlock),
+        dismissText = stringResource(R.string.common_cancel),
+        onConfirm = {
+            unlockingChapter?.let { vm.unlockChapters(listOf(it)) }
+            unlockingChapter = null
+        },
+        onDismiss = { unlockingChapter = null },
+    ) { Text(stringResource(R.string.book_lock_unlock_chapter_confirm)) }
+    RikkaConfirmDialog(
+        show = unlockingPassages != null,
+        title = stringResource(R.string.book_lock_unlock_passages, lockState.locks[unlockingPassages]?.passages?.size ?: 0),
+        confirmText = stringResource(R.string.book_lock_unlock),
+        dismissText = stringResource(R.string.common_cancel),
+        onConfirm = {
+            unlockingPassages?.let(vm::unlockPassages)
+            unlockingPassages = null
+        },
+        onDismiss = { unlockingPassages = null },
+    ) { Text(stringResource(R.string.book_lock_unlock_passages_confirm)) }
+    if (recentOpen) {
+        RecentTurnsSheet(turnState, onOpen = { record -> recentOpen = false; onTurn(record) }, onDismiss = { recentOpen = false })
+    }
+    if (noticesOpen) {
+        LockNoticesSheet(
+            notices = lockState.notices,
+            titleOf = { path -> book.entryByPath(path)?.let { "${it.number}. ${it.title}" } ?: path },
+            vm = vm,
+            onView = { notice ->
+                noticesOpen = false
+                vm.markSeen(notice.id)
+                onNotice(notice)
+            },
+            onDismiss = { noticesOpen = false },
+        )
     }
 }
 
@@ -370,6 +468,8 @@ private fun BookHeader(
     onImport: () -> Unit,
     onExport: () -> Unit,
     onOutline: () -> Unit,
+    onTrash: () -> Unit,
+    onRecent: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -415,6 +515,8 @@ private fun BookHeader(
                 entry(stringResource(R.string.book_replace_title), onReplace)
                 entry(stringResource(R.string.book_import_title), onImport)
                 entry(stringResource(R.string.book_export_title), onExport)
+                entry(stringResource(R.string.book_turn_recent), onRecent)
+                entry(stringResource(R.string.book_trash_title), onTrash)
                 entry(stringResource(if (showSynopses) R.string.book_hide_synopses else R.string.book_show_synopses), onToggleSynopses)
                 entry(stringResource(R.string.book_volume_new), onNewVolume)
                 entry(stringResource(R.string.book_info), onInfo)
@@ -459,12 +561,40 @@ private fun BookVolumeRow(
 
 @Composable
 private fun StatusDot(status: ChapterStatus) {
-    val color = when (status) {
-        ChapterStatus.DRAFT -> MaterialTheme.colorScheme.outlineVariant
-        ChapterStatus.REVISING -> MaterialTheme.colorScheme.tertiary
-        ChapterStatus.FINAL -> MaterialTheme.colorScheme.primary
+    Box(Modifier.padding(start = 8.dp).size(8.dp).background(statusColor(status), CircleShape))
+}
+
+/** 锁和状态点合并：整章锁把状态点换成同色的小锁；只有段落锁时状态点旁加一个淡色小锁；有待处理的提醒时加红点。 */
+@Composable
+private fun StatusAndLock(status: ChapterStatus, locks: FileLocks?, alert: Boolean) {
+    val chapter = locks?.chapter != null
+    val passages = locks?.passages.orEmpty().any { it.dormantSince == null }
+    if (chapter) {
+        Box(Modifier.padding(start = 6.dp)) {
+            // 草稿的状态色太淡，整章锁会比段落锁还不显眼：草稿用深一档的颜色
+            val tint = if (status == ChapterStatus.DRAFT) MaterialTheme.colorScheme.onSurfaceVariant else statusColor(status)
+            Icon(HugeIcons.Lock, stringResource(R.string.book_lock_locked), Modifier.size(12.dp), tint = tint)
+            if (alert) AlertDot(Modifier.align(Alignment.TopEnd))
+        }
+        return
     }
-    Box(Modifier.padding(start = 8.dp).size(8.dp).background(color, CircleShape))
+    if (passages) {
+        Box(Modifier.padding(start = 6.dp)) {
+            Icon(HugeIcons.Lock, stringResource(R.string.book_lock_has_passages), Modifier.size(12.dp), tint = MaterialTheme.colorScheme.outline)
+            if (alert) AlertDot(Modifier.align(Alignment.TopEnd))
+        }
+    }
+    StatusDot(status)
+}
+
+@Composable
+private fun AlertDot(modifier: Modifier) = Box(modifier.size(4.dp).background(MaterialTheme.colorScheme.error, CircleShape))
+
+@Composable
+private fun statusColor(status: ChapterStatus) = when (status) {
+    ChapterStatus.DRAFT -> MaterialTheme.colorScheme.outlineVariant
+    ChapterStatus.REVISING -> MaterialTheme.colorScheme.tertiary
+    ChapterStatus.FINAL -> MaterialTheme.colorScheme.primary
 }
 
 @Composable
@@ -479,12 +609,18 @@ internal fun statusText(status: ChapterStatus): String = stringResource(
 @Composable
 private fun BookChapterRow(
     entry: BookChapterEntry,
+    locks: FileLocks?,
+    alert: Boolean,
+    onLock: () -> Unit,
+    onUnlock: () -> Unit,
+    onUnlockPassages: () -> Unit,
     showSynopsis: Boolean,
     hasVolumes: Boolean,
     onOpen: () -> Unit,
     onRead: () -> Unit,
     onEdit: () -> Unit,
     onOutline: () -> Unit,
+    onHistory: () -> Unit,
     onMove: () -> Unit,
     onRemove: () -> Unit,
     onDelete: () -> Unit,
@@ -524,7 +660,7 @@ private fun BookChapterRow(
                 modifier = Modifier.padding(start = 8.dp),
             )
         }
-        StatusDot(entry.chapter.status)
+        StatusAndLock(entry.chapter.status, locks, alert)
         Box {
             IconButton(onClick = { menu = true }) { Icon(HugeIcons.MoreVertical, stringResource(R.string.more_options), Modifier.size(18.dp)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -540,6 +676,13 @@ private fun BookChapterRow(
                 else item(stringResource(R.string.workspace_reader_open), onClick = onRead)
                 item(stringResource(R.string.book_chapter_edit), onClick = onEdit)
                 if (!entry.missing) item(stringResource(R.string.book_outline_chapter), onClick = onOutline)
+                if (!entry.missing) item(stringResource(R.string.book_history_title), onClick = onHistory)
+                if (!entry.missing) {
+                    if (locks?.chapter != null) item(stringResource(R.string.book_lock_unlock_chapter), onClick = onUnlock)
+                    else item(stringResource(R.string.book_lock_chapter), onClick = onLock)
+                    val passages = locks?.passages.orEmpty().size
+                    if (passages > 0) item(stringResource(R.string.book_lock_unlock_passages, passages), onClick = onUnlockPassages)
+                }
                 if (hasVolumes) item(stringResource(R.string.book_move_to_volume), onClick = onMove)
                 item(stringResource(R.string.book_chapter_remove), onClick = onRemove)
                 if (!entry.missing) item(stringResource(R.string.book_chapter_delete), error = true, onClick = onDelete)
@@ -639,6 +782,9 @@ private fun BookBottomBar(
     arranging: Boolean,
     selected: Set<String>,
     book: Book,
+    locks: Map<String, FileLocks>,
+    onLock: (List<String>) -> Unit,
+    onUnlock: (List<String>) -> Unit,
     onContinue: () -> Unit,
     onNew: () -> Unit,
     onArrange: () -> Unit,
@@ -667,6 +813,31 @@ private fun BookBottomBar(
                     DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
                         ChapterStatus.entries.forEach { status ->
                             DropdownMenuItem(text = { Text(statusText(status)) }, onClick = { statusMenu = false; onStatus(status) })
+                        }
+                        // 定稿锁：分隔线和小标题隔开，选中的都没锁时不显示“解锁”
+                        val paths = chapters.mapNotNull { book.entry(it)?.takeUnless { e -> e.missing }?.path }
+                        if (paths.isNotEmpty()) {
+                            HorizontalDivider()
+                            Text(
+                                stringResource(R.string.book_lock_section),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            )
+                            val unlocked = paths.filter { locks[it]?.chapter == null }
+                            val locked = paths.filter { locks[it]?.chapter != null }
+                            if (unlocked.isNotEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.book_lock_selected, unlocked.size)) },
+                                    onClick = { statusMenu = false; onLock(unlocked) },
+                                )
+                            }
+                            if (locked.isNotEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.book_unlock_selected, locked.size)) },
+                                    onClick = { statusMenu = false; onUnlock(locked) },
+                                )
+                            }
                         }
                     }
                 }
@@ -759,9 +930,11 @@ private fun BookInfoDialog(book: Book, onDismiss: () -> Unit, onConfirm: (title:
 @Composable
 private fun EditChapterDialog(
     entry: BookChapterEntry,
+    locked: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, synopsis: String, targetWords: Int, status: ChapterStatus) -> Unit,
+    onConfirm: (title: String, synopsis: String, targetWords: Int, status: ChapterStatus, lock: Boolean) -> Unit,
 ) {
+    var lock by remember { mutableStateOf(false) }
     var title by remember { mutableStateOf(entry.chapter.title.orEmpty()) }
     var synopsis by remember { mutableStateOf(entry.chapter.synopsis) }
     var target by remember { mutableStateOf(entry.chapter.targetWords.takeIf { it > 0 }?.toString().orEmpty()) }
@@ -800,10 +973,29 @@ private fun EditChapterDialog(
                         ) { Text(statusText(value), maxLines = 1) }
                     }
                 }
+                // 只改状态不会锁住内容；选“定稿”时可以顺手锁上（默认不勾）
+                if (status == ChapterStatus.FINAL && !locked && !entry.missing) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { lock = !lock },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = lock, onCheckedChange = { lock = it })
+                        Column {
+                            Text(stringResource(R.string.book_lock_with_final), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                stringResource(R.string.book_lock_with_final_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(title, synopsis, target.toIntOrNull() ?: 0, status) }) { Text(stringResource(R.string.common_save)) }
+            TextButton(onClick = { onConfirm(title, synopsis, target.toIntOrNull() ?: 0, status, lock && status == ChapterStatus.FINAL) }) {
+                Text(stringResource(R.string.common_save))
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )

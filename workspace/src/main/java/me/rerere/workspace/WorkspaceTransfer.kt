@@ -185,6 +185,7 @@ class WorkspaceFileTransfer(
         val copy = CopyState(itemIndex, itemCount, source.name, onProgress)
         when (mode) {
             WorkspaceTransferMode.MOVE -> {
+                WorkspaceChanges.notify(WorkspaceChange.Moving(source, target))
                 val renamed = try {
                     mover(source.toPath(), target.toPath())
                     true
@@ -203,6 +204,7 @@ class WorkspaceFileTransfer(
                         )
                     }
                 }
+                WorkspaceChanges.notifyDone(WorkspaceChange.Moved(source, target))
             }
 
             WorkspaceTransferMode.COPY -> copyTreeOrClean(source, target, dstRoot, copy)

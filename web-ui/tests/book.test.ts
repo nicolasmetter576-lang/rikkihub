@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { bookExportHref, insertionChanges, movedOrder, newChapterPath, type BookItem } from "../app/overlay/lib/book";
+import { beforeAiEdits, bookExportHref, insertionChanges, movedOrder, newChapterPath, type BookItem, type HistoryEntry } from "../app/overlay/lib/book";
 
 const items: BookItem[] = [
   { type: "chapter", id: "a", title: "a", path: "a.md" },
@@ -50,4 +50,17 @@ test("insertionChanges: 依次插入换成对原文的一组改动", () => {
     assert.equal(once(text, changes), apply(text, items));
     assert.equal(new Set(changes.map((c) => c.from)).size, changes.length);
   }
+});
+
+test("beforeAiEdits: 只留紧接着被 AI 改掉的版本（新的在前），最新一版看现在的稿子是谁写的", () => {
+  const ai = { type: "ai", conversationId: "c", messageId: "m" } as const;
+  const entries: HistoryEntry[] = [
+    { type: "version", at: 4, path: "a.md", source: { type: "manual" }, sha: "d" },
+    { type: "renamed", at: 3, path: "a.md", source: { type: "manual" }, from: "old.md" },
+    { type: "version", at: 2, path: "old.md", source: ai, sha: "b" },
+    { type: "version", at: 1, path: "old.md", source: { type: "initial" }, sha: "a" },
+  ];
+  assert.deepEqual(beforeAiEdits(entries, ai).map(entry => entry.at), [4, 1]);
+  assert.deepEqual(beforeAiEdits(entries, { type: "manual" }).map(entry => entry.at), [1]);
+  assert.deepEqual(beforeAiEdits(entries, null).map(entry => entry.at), [1]);
 });

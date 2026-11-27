@@ -112,7 +112,7 @@ internal fun Route.bookTransferRoutes(repository: WorkspaceRepository, services:
                 val import = source.load(options.charset, splitRule(options)).edited(ImportEdits(options.titles, options.merged))
                 bookApi { services.importer.import(id, import) }
             }
-            call.respond(HttpStatusCode.Created, book.toDto())
+            call.respond(HttpStatusCode.Created, book.toDto(services.history.locks(id)))
         }
         post("/preview") {
             bookWorkspaceId(call, repository)

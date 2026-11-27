@@ -21,6 +21,7 @@ import me.rerere.rikkihub.data.book.BookReplaceResult
 import me.rerere.rikkihub.data.book.BookReplaceTarget
 import me.rerere.rikkihub.data.book.BookReplacer
 import me.rerere.rikkihub.data.book.BookStore
+import me.rerere.rikkihub.data.book.history.BookHistory
 import me.rerere.rikkihub.data.book.BookUndoEntry
 import me.rerere.rikkihub.data.book.BookUndoResult
 import me.rerere.rikkihub.data.book.ReplacePair
@@ -66,7 +67,11 @@ data class BookReplaceUiState(
     val aiError: BookAiException.Reason? = null,
 ) {
     val canSearch: Boolean get() = !busy && pairs.any { it.find.isNotBlank() }
-    val selectedCount: Int get() = preview?.files.orEmpty().sumOf { file -> file.hits.count { HitKey(file.path, it.start) !in unselected } }
+    val selectedCount: Int get() = preview?.files.orEmpty().filterNot { it.locked }.sumOf { file -> file.hits.count { HitKey(file.path, it.start) !in unselected } }
+
+    /** 落在锁定段落里的命中（整章锁定的章节不算，它们本来就不替换）。 */
+    val lockedHits: List<HitKey> get() = preview?.files.orEmpty().filterNot { it.locked }
+        .flatMap { file -> file.hits.filter { it.locked }.map { HitKey(file.path, it.start) } }
 
     /** 有没有把文字直接删掉的组（替换成空）。 */
     val deletes: Boolean get() = query?.pairs.orEmpty().any { it.replace.isEmpty() }
@@ -80,6 +85,7 @@ class BookReplaceVM(
     private val settingsStore: SettingsStore,
     private val workspaceRepository: WorkspaceRepository,
     private val mentions: suspend (List<String>) -> BookMentions,
+    private val history: BookHistory,
 ) : ViewModel() {
     private val _state = MutableStateFlow(BookReplaceUiState())
     val state = _state.asStateFlow()
@@ -115,7 +121,9 @@ class BookReplaceVM(
         return if (state.includeUnlisted && state.volumeId == null) chapters + book.unlisted else chapters
     }
 
-    fun search() = work {
+    fun search() = work { runSearch() }
+
+    private suspend fun runSearch() {
         val book = store.open(workspaceId)
         _state.update { it.copy(book = book, result = null, undone = null) }
         val current = _state.value
@@ -131,9 +139,20 @@ class BookReplaceVM(
         it.copy(unselected = if (key in it.unselected) it.unselected - key else it.unselected + key)
     }
 
-    fun toggleFile(path: String) = toggleAll(_state.value.preview?.files.orEmpty().filter { it.path == path }.flatMap { f -> f.hits.map { HitKey(f.path, it.start) } })
+    private fun selectable() = _state.value.preview?.files.orEmpty().filterNot { it.locked }
 
-    fun toggleEverything() = toggleAll(_state.value.preview?.files.orEmpty().flatMap { f -> f.hits.map { HitKey(f.path, it.start) } })
+    fun toggleFile(path: String) = toggleAll(selectable().filter { it.path == path }.flatMap { f -> f.hits.map { HitKey(f.path, it.start) } })
+
+    fun toggleEverything() = toggleAll(selectable().flatMap { f -> f.hits.map { HitKey(f.path, it.start) } })
+
+    /** 锁定段落里的命中一键全部取消 / 全部勾选。 */
+    fun toggleLocked() = toggleAll(_state.value.lockedHits)
+
+    /** 预览顶部“第 N 章已锁定 · 解锁”：解锁后重新搜索。 */
+    fun unlockChapter(path: String) = work {
+        history.unlock(workspaceId, path, chapter = true, passageIds = emptySet())
+        runSearch()
+    }
 
     private fun toggleAll(keys: List<HitKey>) = _state.update { state ->
         state.copy(unselected = if (keys.any { it in state.unselected }) state.unselected - keys.toSet() else state.unselected + keys)
@@ -142,7 +161,7 @@ class BookReplaceVM(
     fun replace() = work {
         val current = _state.value
         val query = current.query ?: return@work
-        val targets = current.preview?.files.orEmpty().mapNotNull { file ->
+        val targets = current.preview?.files.orEmpty().filterNot { it.locked }.mapNotNull { file ->
             val starts = file.hits.map { it.start }.filter { HitKey(file.path, it) !in current.unselected }.toSet()
             if (starts.isEmpty()) null else BookReplaceTarget(file.path, file.revision, starts)
         }

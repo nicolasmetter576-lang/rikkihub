@@ -270,10 +270,15 @@ private fun bookReminderPrompt(
         ROOTFS_ENVIRONMENT_PLACEHOLDER to
             if (chinese) BookToolPrompts.zhRootfsLines(capabilities.rootfsEnvironment) else capabilities.rootfsEnvironment,
     )
-    return interpolateToolText(
+    val prompt = interpolateToolText(
         text = template,
         placeholders = if (chinese) placeholders + ("cwd_line" to BookToolPrompts.zhCwdLine(cwd)) else placeholders,
     ).trim()
+    if (!capabilities.bookLocked) return prompt
+    // 定稿锁的一句加在模板之外（模板可能被用户改过）
+    val line = me.rerere.rikkihub.data.ai.tools.BookLockPrompts.reminderLine(language)
+    val end = "</workspace>"
+    return if (prompt.endsWith(end)) prompt.removeSuffix(end).trimEnd() + "\n" + line + "\n" + end else prompt + "\n" + line
 }
 
 // ---------------------------------------------------------------------------

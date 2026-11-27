@@ -5,6 +5,7 @@ const editorErrors: Record<string, string> = {
   FILE_ATOMIC_SAVE_UNSUPPORTED: "editor_state.atomic_unsupported",
   FILE_TOO_LARGE: "editor_state.too_large",
   FILE_PERMISSION_DENIED: "editor_state.permission_denied",
+  FILE_LOCKED: "book.lock.file_locked",
 };
 /** Error-code-only localization; never show payload strings or infer from English text. */
 export function workspaceEditorErrorKey(error: unknown, fallback: string): string {

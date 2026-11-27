@@ -142,6 +142,18 @@ fun WorkspaceDetailPage(id: String) {
         snapshotFlow { pagerState.settledPage }.collect { shownTab = tabs.getOrNull(it) }
     }
     val scope = rememberCoroutineScope()
+    var confirmBookOff by remember { mutableStateOf(false) }
+    me.rerere.rikkihub.ui.components.ui.RikkaConfirmDialog(
+        show = confirmBookOff,
+        title = stringResource(R.string.book_lock_mode_off_title),
+        confirmText = stringResource(R.string.book_lock_mode_off_confirm),
+        dismissText = stringResource(R.string.common_cancel),
+        onConfirm = {
+            confirmBookOff = false
+            vm.setBookMode(false)
+        },
+        onDismiss = { confirmBookOff = false },
+    ) { Text(stringResource(R.string.book_lock_mode_off_text)) }
     var showInstallDialog by remember { mutableStateOf(false) }
 
     BackHandler(enabled = tabs.getOrNull(pagerState.currentPage) == WorkspaceDetailTab.FILES && state.path.isNotBlank()) {
@@ -222,7 +234,11 @@ fun WorkspaceDetailPage(id: String) {
                     onSubagentModelChange = vm::setSubagentModel,
                     onSubagentAllowContextChange = vm::setSubagentAllowContext,
                     hostMountEntries = vm::hostMountEntries,
-                    onBookModeChange = vm::setBookMode,
+                    // 有定稿锁时关作品模式：先说明关掉期间锁不生效
+                    onBookModeChange = { enabled ->
+                        if (enabled) vm.setBookMode(true)
+                        else scope.launch { if (vm.bookLockedOrNoticed()) confirmBookOff = true else vm.setBookMode(false) }
+                    },
                     onBookPromptLanguageChange = vm::setBookPromptLanguage,
                 )
 

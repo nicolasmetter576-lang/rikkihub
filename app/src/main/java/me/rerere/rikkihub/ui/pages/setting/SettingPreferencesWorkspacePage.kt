@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
@@ -37,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +61,7 @@ import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceEditorToolbarSi
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceEditorToolbarPositionSelector
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceReaderModeSelector
 import me.rerere.rikkihub.ui.pages.extensions.workspace.workspaceEditorToolbarOrder
+import me.rerere.rikkihub.ui.pages.extensions.workspace.workspaceEditorToolbarShown
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WORKSPACE_TOOLBAR_PER_ROW
 import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.plus
@@ -221,9 +224,7 @@ fun SettingPreferencesWorkspacePage(vm: SettingVM = koinViewModel()) {
             item {
                 ToolbarOrderCard(
                     displaySetting = displaySetting,
-                    onOrderChange = { order ->
-                        updateDisplaySetting(displaySetting.copy(workspaceEditorToolbarOrder = order))
-                    },
+                    onChange = ::updateDisplaySetting,
                 )
             }
         }
@@ -277,11 +278,13 @@ private fun ToolbarPerRowStepper(perRow: Int, onChange: (Int) -> Unit) {
 @Composable
 private fun ToolbarOrderCard(
     displaySetting: DisplaySetting,
-    onOrderChange: (List<String>) -> Unit,
+    onChange: (DisplaySetting) -> Unit,
 ) {
     val haptic = LocalHapticFeedback.current
     val items = workspaceEditorToolbarOrder(displaySetting.workspaceEditorToolbarOrder)
-    // Which row each button lands on in multi-row mode (all buttons, as in a Markdown file), so the rows show while ordering.
+    val hidden = displaySetting.workspaceEditorToolbarHidden
+    // Which row each shown button lands on in multi-row mode (all shown buttons, as in a Markdown file), so the rows show while ordering.
+    val shown = workspaceEditorToolbarShown(displaySetting.workspaceEditorToolbarOrder, hidden)
     val perRow = displaySetting.workspaceEditorToolbarPerRow.coerceIn(WORKSPACE_TOOLBAR_PER_ROW)
 
     Card(
@@ -307,8 +310,8 @@ private fun ToolbarOrderCard(
                     )
                 }
                 TextButton(
-                    onClick = { onOrderChange(emptyList()) },
-                    enabled = items != WorkspaceEditorToolbarItem.entries,
+                    onClick = { onChange(displaySetting.copy(workspaceEditorToolbarOrder = emptyList(), workspaceEditorToolbarHidden = emptyList())) },
+                    enabled = items != WorkspaceEditorToolbarItem.entries || hidden.isNotEmpty(),
                 ) {
                     Text(stringResource(R.string.setting_workspace_editor_toolbar_order_reset))
                 }
@@ -318,10 +321,10 @@ private fun ToolbarOrderCard(
                 list = items,
                 onSettle = { fromIndex, toIndex ->
                     val reordered = items.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
-                    onOrderChange(reordered.map { it.id })
+                    onChange(displaySetting.copy(workspaceEditorToolbarOrder = reordered.map { it.id }))
                 },
                 verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) { index, item, isDragging ->
+            ) { _, item, isDragging ->
                 key(item.id) {
                     ReorderableItem {
                         Card(
@@ -348,17 +351,27 @@ private fun ToolbarOrderCard(
                                 ) {
                                     Icon(HugeIcons.DragDropVertical, contentDescription = null)
                                 }
+                                val visible = item.id !in hidden
                                 Text(
                                     text = stringResource(item.label),
+                                    color = if (visible) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f),
                                 )
-                                if (displaySetting.workspaceEditorToolbarDoubleRow) {
+                                if (displaySetting.workspaceEditorToolbarDoubleRow && visible) {
                                     Text(
-                                        text = stringResource(R.string.setting_workspace_editor_toolbar_row_n, index / perRow + 1),
+                                        text = stringResource(R.string.setting_workspace_editor_toolbar_row_n, shown.indexOf(item) / perRow + 1),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
+                                Spacer(Modifier.width(8.dp))
+                                Switch(
+                                    checked = visible,
+                                    onCheckedChange = { on ->
+                                        onChange(displaySetting.copy(workspaceEditorToolbarHidden = if (on) hidden - item.id else hidden + item.id))
+                                    },
+                                    modifier = Modifier.testTag("workspace_toolbar_shown_${item.id}"),
+                                )
                             }
                         }
                     }

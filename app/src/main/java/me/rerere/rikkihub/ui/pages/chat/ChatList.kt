@@ -65,6 +65,7 @@ import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -351,6 +352,24 @@ private fun ChatListNormal(
         )
     }
 
+    // 定稿锁：这个对话的回复动了锁定内容时，在那条回复下面显示一张卡片
+    val bookHistory = org.koin.compose.koinInject<me.rerere.rikkihub.data.book.history.BookHistory>()
+    val navController = me.rerere.rikkihub.ui.context.LocalNavController.current
+    val lockWorkspace = settings.assistants.firstOrNull { it.id == conversation.assistantId }?.workspaceId?.toString()
+    val lockNotices by remember(lockWorkspace, conversation.id) {
+        lockWorkspace?.let { bookHistory.conversationNotices(it, conversation.id.toString()) } ?: kotlinx.coroutines.flow.flowOf(emptyMap())
+    }.collectAsStateWithLifecycle(emptyMap())
+    // 逐处审阅：回复下面的审阅行（与锁提醒合成一张卡）
+    val turnRecords by remember(lockWorkspace, conversation.id) {
+        lockWorkspace?.let { bookHistory.conversationTurns(it, conversation.id.toString()) } ?: kotlinx.coroutines.flow.flowOf(emptyMap())
+    }.collectAsStateWithLifecycle(emptyMap())
+    val turnMuted by remember(lockWorkspace) {
+        lockWorkspace?.let { bookHistory.mutedFlow(it) } ?: kotlinx.coroutines.flow.flowOf(emptySet())
+    }.collectAsStateWithLifecycle(emptySet())
+    val turnCards = remember(turnRecords, turnMuted, conversation.messageNodes) {
+        me.rerere.rikkihub.ui.pages.extensions.workspace.book.turnCards(turnRecords, conversation.id.toString() in turnMuted, conversation.messageNodes)
+    }
+    val turnScope = androidx.compose.runtime.rememberCoroutineScope()
     val assistant = remember(settings.assistants, conversation.assistantId) {
         settings.getAssistantById(conversation.assistantId)
     }
@@ -471,6 +490,35 @@ private fun ChatListNormal(
                                 isCliSession = (conversation.cliSession != null),
                                 lastMessage = index == lastMessageIndex,
                             )
+                        }
+                    }
+                    val notices = lockNotices[node.currentMessage.id.toString()].orEmpty()
+                    val turnCard = turnCards[node.currentMessage.id.toString()]
+                    if (lockWorkspace != null && !selecting) {
+                        val review = { record: me.rerere.rikkihub.data.book.history.TurnRecord ->
+                            navController.navigate(me.rerere.rikkihub.Screen.BookTurnReview(lockWorkspace, record.conversationId, record.messageId))
+                        }
+                        if (notices.isNotEmpty() || turnCard?.full == true) {
+                            me.rerere.rikkihub.ui.pages.extensions.workspace.book.ConversationLockCard(
+                                lockWorkspace,
+                                notices,
+                                onView = { notice -> navController.navigate(me.rerere.rikkihub.Screen.BookHistory(lockWorkspace, notice.path, notice.id)) },
+                                review = turnCard?.takeIf { it.full }?.let { card ->
+                                    {
+                                        me.rerere.rikkihub.ui.pages.extensions.workspace.book.TurnReviewRow(
+                                            card,
+                                            onReview = { review(card.record) },
+                                            onMute = { turnScope.launch { bookHistory.mute(lockWorkspace, conversation.id.toString(), true) } },
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                        if (turnCard != null && !turnCard.full) {
+                            me.rerere.rikkihub.ui.pages.extensions.workspace.book.TurnSmallLine(turnCard) { review(turnCard.record) }
+                        }
+                        turnCard?.sibling?.let { sibling ->
+                            me.rerere.rikkihub.ui.pages.extensions.workspace.book.TurnSiblingLine { review(sibling) }
                         }
                     }
                 }

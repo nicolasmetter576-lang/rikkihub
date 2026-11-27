@@ -3,6 +3,7 @@ package me.rerere.rikkihub.ui.pages.extensions.workspace
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -58,6 +59,9 @@ internal fun WorkspaceEditorStatusBar(
     withSelection: Boolean = true,
     chapterNav: BookChapterNav? = null,
     onChapter: (String) -> Unit = {},
+    /** Book chapters: the lock icon before the counts; [onLock] opens the chapter's lock panel. */
+    lock: (@Composable () -> Unit)? = null,
+    onLock: () -> Unit = {},
 ) {
     // While typing, only the toolbar sits above the keyboard.
     if (WindowInsets.isImeVisible) return
@@ -67,7 +71,9 @@ internal fun WorkspaceEditorStatusBar(
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier.fillMaxWidth()) {
         // The stats are measured first and keep their width; the name takes what is left.
         Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (state != null) WorkspaceEditorStats(state, withSelection, style, color)
+            // The tap area grows sideways only, so the bar keeps its height.
+            if (lock != null) Box(Modifier.clickable(onClick = onLock).padding(end = 8.dp)) { lock() }
+            if (state != null) WorkspaceEditorStats(state, withSelection, style, color, compact = lock != null)
             Spacer(Modifier.weight(1f))
             if (chapterNav != null) BookChapterNavButtons(chapterNav, onChapter)
             Text(
@@ -86,7 +92,7 @@ internal fun WorkspaceEditorStatusBar(
 }
 
 @Composable
-private fun WorkspaceEditorStats(state: TextFieldState, withSelection: Boolean, style: TextStyle, color: Color) {
+private fun WorkspaceEditorStats(state: TextFieldState, withSelection: Boolean, style: TextStyle, color: Color, compact: Boolean = false) {
     var stats by remember(state) { mutableStateOf<WorkspaceStatsSnapshot?>(null) }
     LaunchedEffect(state, withSelection) {
         var countedText: CharSequence? = null
@@ -106,6 +112,9 @@ private fun WorkspaceEditorStats(state: TextFieldState, withSelection: Boolean, 
     val selection = current.selection
     val label = if (selection == null) {
         stringResource(R.string.workspace_stats, format.format(current.total.chars), format.format(current.total.words))
+    } else if (compact) {
+        // Room for the lock icon: only the selection's counts.
+        stringResource(R.string.workspace_stats, format.format(selection.chars), format.format(selection.words))
     } else {
         stringResource(
             R.string.workspace_stats_selection,

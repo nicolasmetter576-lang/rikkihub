@@ -101,6 +101,9 @@ fun BookExportSheet(book: Book, onDismiss: () -> Unit) {
                 block()
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (locked: me.rerere.rikkihub.data.book.history.BookLockedException) {
+                // 导出到作品、同名覆盖：目标是锁定的章节
+                toaster.show(context.getString(R.string.book_lock_export_target, locked.path.substringAfterLast('/')), type = ToastType.Error)
             } catch (e: Exception) {
                 toaster.show(e.message ?: e.javaClass.simpleName, type = ToastType.Error)
             } finally {

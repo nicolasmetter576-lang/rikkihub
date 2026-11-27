@@ -12,6 +12,8 @@ data class WorkspaceDeleteItemResult(
     val path: String,
     val deleted: Boolean,
     val error: String? = null,
+    /** 失败时的固定错误码（如 [WorkspaceFileOperationException.FILE_LOCKED]）；没有时为 null */
+    val errorCode: String? = null,
 )
 
 /** 一次批量删除的汇总; 已删除的条目无法回滚, 失败项保留供上层重试/展示 */
@@ -53,14 +55,18 @@ class WorkspaceBatchDeleter(
         for (item in items) {
             coroutineContext.ensureActive()
             try {
-                if (deleteTree(item.lexicalFile, rootCanonical)) {
+                WorkspaceChanges.notify(WorkspaceChange.Delete(item.lexicalFile))
+                // 观察者可能已把文件移进回收站
+                val gone = !Files.exists(item.lexicalFile.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if (gone || deleteTree(item.lexicalFile, rootCanonical)) {
                     deleted += item.rel
                 } else {
                     failures += WorkspaceDeleteItemResult(item.rel, false, "Delete failed: ${item.rel}")
                 }
             } catch (error: Throwable) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                failures += WorkspaceDeleteItemResult(item.rel, false, error.message ?: "Delete failed: ${item.rel}")
+                failures += WorkspaceDeleteItemResult(item.rel, false, error.message ?: "Delete failed: ${item.rel}",
+                    (error as? WorkspaceFileOperationException)?.code)
             }
         }
         return WorkspaceDeleteResult(deleted, failures)

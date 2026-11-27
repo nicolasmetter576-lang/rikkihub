@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Environment
 import me.rerere.rikkihub.data.book.BookReplacer
 import me.rerere.rikkihub.data.book.BookStore
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.book.history.BookHistoryActions
 import me.rerere.rikkihub.data.book.transfer.BookImporter
 import me.rerere.rikkihub.data.character.imageBytesToPng
 import me.rerere.rikkihub.data.files.FileFolders
@@ -154,6 +156,12 @@ val repositoryModule = module {
             dao = get(), manager = get(), settingsStore = get(),
             runtimeGate = get(), sessionInvalidation = get(),
             deviceDirectoryService = get(),
+            bookHistory = get(),
+            onDeleted = { id ->
+                get<BookStore>().forget(id)
+                get<BookReplacer>().forget(id)
+                get<BookHistory>().forget(id)
+            },
         )
     }
 
@@ -188,8 +196,14 @@ val repositoryModule = module {
     single { BookImporter(store = get()) }
 
     single {
-        BookReplacer(store = get(), undoDir = File(get<Context>().noBackupFilesDir, "book_undo"))
+        BookReplacer(store = get(), undoDir = File(get<Context>().noBackupFilesDir, "book_undo"), history = get())
     }
+
+    // Started in RikkihubApp (write observer, book list, foreground scans).
+    single { BookHistory(scope = get<AppScope>(), monotonic = android.os.SystemClock::elapsedRealtime) }
+
+    single { BookHistoryActions(store = get(), history = get()) }
+    single { me.rerere.rikkihub.data.book.history.TurnReviewActions(store = get(), history = get()) }
 
     single {
         SkillManager(get(), get())

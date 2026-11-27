@@ -63,6 +63,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV5Migration
 import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV6Migration
 import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV7Migration
+import me.rerere.rikkihub.data.datastore.migration.PreferenceStoreV8Migration
 import me.rerere.rikkihub.data.model.AssistantPresets
 import me.rerere.rikkihub.data.model.LibraryEntryMeta
 import me.rerere.rikkihub.data.model.PromptEntrySerializer
@@ -146,6 +147,7 @@ private val Context.settingsStore by preferencesDataStore(
             PreferenceStoreV5Migration(),
             PreferenceStoreV6Migration(),
             PreferenceStoreV7Migration(context),
+            PreferenceStoreV8Migration(),
         )
     }
 )
@@ -1317,6 +1319,9 @@ data class DisplaySetting(
     // The toolbar (with the find bar) below the text, next to the keyboard, instead of above it.
     val workspaceEditorToolbarAtBottom: Boolean = false,
     val workspaceEditorToolbarOrder: List<String> = emptyList(),
+    // Buttons switched off in the order card (by stable id); hidden ones are not shown. A list of the
+    // hidden rather than the shown, so buttons added later still appear.
+    val workspaceEditorToolbarHidden: List<String> = emptyList(),
     // Toolbar row height by WorkspaceEditorToolbarSize.id ("standard" / "compact" / "mini"); unknown ids read as mini.
     val workspaceEditorToolbarSize: String = "mini",
     // Workspace editor: typing an opening symbol adds its closer and a fill box. One switch per editor, like

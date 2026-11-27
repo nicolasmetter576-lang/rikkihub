@@ -198,6 +198,13 @@ fun Application.installWebApiStatusPages() {
                 HttpStatusCode.Conflict.value, "CONVERSATION_PARTIALLY_LOADED",
             ))
         }
+        // 定稿锁拦下的写、删、移：423，前端按 FILE_LOCKED 显示说明（不回显路径以外的内部信息）
+        exception<me.rerere.workspace.WorkspaceLockedException> { call, _ ->
+            call.respond(HttpStatusCode.Locked, ErrorResponse(
+                "This file holds content locked as final; change or unlock it in the app",
+                HttpStatusCode.Locked.value, me.rerere.workspace.WorkspaceFileOperationException.FILE_LOCKED,
+            ))
+        }
         exception<me.rerere.rikkihub.data.mutation.MutationFencedException> { call, _ ->
             call.respond(HttpStatusCode.Locked,
                 ErrorResponse("Target is busy with a pending change", HttpStatusCode.Locked.value, "TARGET_BUSY"))

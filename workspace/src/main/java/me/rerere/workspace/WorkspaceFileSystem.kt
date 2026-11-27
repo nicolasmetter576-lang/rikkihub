@@ -67,6 +67,24 @@ class WorkspaceFileSystem(
         }
     }
 
+    /**
+     * Runs [block] with the file's bytes while holding the storage-root lock, if the file is still at [expectedRevision];
+     * otherwise throws [WorkspaceFileRevisionConflictException]. No other write can land in between. [block] must not
+     * call locking file APIs (the lock is not reentrant): such calls fail fast instead of deadlocking.
+     */
+    fun <T> withRevision(root: File, path: String, expectedRevision: String, block: (ByteArray) -> T): T {
+        validateWorkspaceRevision(expectedRevision)
+        return WorkspaceFileMutations.withLock(root) {
+            val bytes = textOperation {
+                val file = resolvePath(root.canonicalFile, path)
+                if (!file.isFile) throw WorkspaceFileRevisionConflictException()
+                readBoundedWorkspaceBytes(file, maxOf(config.maxReadBytes, config.maxWriteBytes))
+            }
+            if (workspaceRevision(bytes) != expectedRevision) throw WorkspaceFileRevisionConflictException()
+            WorkspaceChanges.guarding { block(bytes) }
+        }
+    }
+
     /** CAS saves only existing files. Legacy writeText intentionally remains non-CAS. */
     fun writeTextWithRevision(root: File, path: String, text: String, expectedRevision: String): WorkspaceTextWriteResult {
         validateWorkspaceRevision(expectedRevision)
@@ -103,7 +121,9 @@ class WorkspaceFileSystem(
                     WorkspaceTextWriteResult(file.toEntry(rootCanonical), expectedRevision)
                 } else {
                     val bytes = original.encode(text, config.maxWriteBytes)
+                    WorkspaceChanges.notify(WorkspaceChange.Overwrite(file) { bytes })
                     atomicWorkspaceTextSave(file.toPath(), bytes, textSaveIo) { currentBytes() }
+                    WorkspaceChanges.notifyDone(WorkspaceChange.Written(file) { bytes })
                     WorkspaceTextWriteResult(file.toEntry(rootCanonical), workspaceRevision(bytes))
                 }
             }
@@ -176,6 +196,7 @@ class WorkspaceFileSystem(
         }
         val target = resolveCreationTarget(root, segments)
         writeNewWorkspaceFile(target, bytes)
+        WorkspaceChanges.notifyDone(WorkspaceChange.Created(target.toFile()) { bytes })
         return creationEntry(target, segments)
     }
 
@@ -269,12 +290,33 @@ class WorkspaceFileSystem(
         val file = resolvePath(rootCanonical, path)
         require(!file.exists() || file.isFile) { "Path is not a file: $path" }
         if (file.exists()) {
+            WorkspaceChanges.notify(WorkspaceChange.Overwrite(file) { bytes })
             atomicWorkspaceTextSave(file.toPath(), bytes, textSaveIo) {}
+            WorkspaceChanges.notifyDone(WorkspaceChange.Written(file) { bytes })
         } else {
             file.parentFile?.mkdirs()
             file.writeBytes(bytes)
+            WorkspaceChanges.notifyDone(WorkspaceChange.Created(file) { bytes })
         }
         return file.toEntry(rootCanonical)
+    }
+
+    /** 用 [source] 整个换掉 [path]（不存在就新建）：先拷进同目录的临时文件再改名，原文件要么不变要么整个换掉。 */
+    fun replaceWith(root: File, path: String, source: File): WorkspaceFileEntry = WorkspaceFileMutations.withLock(root) {
+        val rootCanonical = root.canonicalFile
+        val target = resolvePath(rootCanonical, path)
+        require(!target.isDirectory) { "Path is not a file: $path" }
+        val replacing = target.exists()
+        // 先问观察者再拷临时文件：被拒时不留下临时文件
+        if (replacing) WorkspaceChanges.notify(WorkspaceChange.Overwrite(target) { source.readBytes() })
+        val temp = File(target.parentFile, ".${target.name}.tmp")
+        source.copyTo(temp, overwrite = true)
+        if (!temp.renameTo(target)) {
+            temp.delete()
+            error("Cannot write $path")
+        }
+        if (replacing) WorkspaceChanges.notifyDone(WorkspaceChange.Written(target) { source.readBytes() })
+        target.toEntry(rootCanonical)
     }
 
     fun importBytes(root: File, path: String, inputStream: InputStream): WorkspaceFileEntry = WorkspaceFileMutations.withLock(root) {
@@ -313,12 +355,10 @@ class WorkspaceFileSystem(
         require(path.isNotBlank() && path != ".") { "Refusing to delete workspace root" }
         val file = resolvePath(root.canonicalFile, path)
         if (!file.exists()) return false
-        return if (file.isDirectory) {
-            require(recursive) { "Directory delete requires recursive = true" }
-            file.deleteRecursively()
-        } else {
-            file.delete()
-        }
+        require(recursive || !file.isDirectory) { "Directory delete requires recursive = true" }
+        WorkspaceChanges.notify(WorkspaceChange.Delete(file))
+        // 观察者可能已把文件移进回收站
+        return if (file.isDirectory) file.deleteRecursively() else file.delete() || !file.exists()
     }
 
     fun move(root: File, source: String, target: String, overwrite: Boolean = false): WorkspaceFileEntry = WorkspaceFileMutations.withLock(root) {
@@ -359,8 +399,11 @@ class WorkspaceFileSystem(
         require(sourceFile.exists()) { "Source does not exist: $source" }
         // 移到自身或自身子目录: overwrite 会先删掉源, copy + delete 回退会连目标一起删
         require(!targetFile.toPath().startsWith(sourceFile.toPath())) { "Cannot move $source into itself" }
+        require(overwrite || !targetFile.exists()) { "Target already exists: $target" }
+        // 在删掉被覆盖的目标之前问：被拒时什么都没动
+        WorkspaceChanges.notify(WorkspaceChange.Moving(sourceFile, targetFile))
         if (targetFile.exists()) {
-            require(overwrite) { "Target already exists: $target" }
+            WorkspaceChanges.notify(WorkspaceChange.Delete(targetFile))
             if (targetFile.isDirectory) {
                 targetFile.deleteRecursively()
             } else {
@@ -387,6 +430,7 @@ class WorkspaceFileSystem(
                 require(sourceFile.delete()) { "Failed to move $source to $target" }
             }
         }
+        WorkspaceChanges.notifyDone(WorkspaceChange.Moved(sourceFile, targetFile))
         return targetFile.toEntry(rootCanonical)
     }
 

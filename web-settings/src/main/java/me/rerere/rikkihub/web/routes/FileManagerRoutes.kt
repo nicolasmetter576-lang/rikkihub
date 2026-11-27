@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.web.routes
 
+import kotlinx.coroutines.withContext
+import me.rerere.rikkihub.data.book.history.HistorySource
+import me.rerere.rikkihub.data.book.history.BookHistory
 import androidx.core.net.toUri
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
@@ -175,8 +178,11 @@ fun Route.fileManagerRoutes(
 
         put("/text") {
             val body = readWorkspaceSelectionBody(call)
+            // 带版本号的保存是用户在网页编辑器里写的：段落锁跟着走
             val result = fileOperation {
-                service.writeText(parseRoot(body.string("root")), body.requireString("path"), body.requireString("content"), body.requireString("revision"))
+                withContext(BookHistory.sourceElement(HistorySource.Manual)) {
+                    service.writeText(parseRoot(body.string("root")), body.requireString("path"), body.requireString("content"), body.requireString("revision"))
+                }
             }
             call.respond(FileManagerRevisionDto(result.revision))
         }
@@ -281,6 +287,7 @@ private suspend fun <T> fileOperation(block: suspend () -> T): T = try {
         WorkspaceFileOperationException.FILE_ALREADY_EXISTS, WorkspaceFileOperationException.FILE_REVISION_CONFLICT -> HttpStatusCode.Conflict
         WorkspaceFileOperationException.FILE_PERMISSION_DENIED, FileManagerService.READ_ONLY_FOLDER -> HttpStatusCode.Forbidden
         WorkspaceFileOperationException.CONTENT_TOO_LARGE -> HttpStatusCode.PayloadTooLarge
+        WorkspaceFileOperationException.FILE_LOCKED -> HttpStatusCode.Locked
         else -> HttpStatusCode.BadRequest
     }
     throw CodedApiException(status, error.code, error.message ?: error.code)

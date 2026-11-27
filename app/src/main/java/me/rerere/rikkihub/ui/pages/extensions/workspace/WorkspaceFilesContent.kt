@@ -92,6 +92,9 @@ import me.rerere.rikkihub.ui.theme.CustomColors
 import me.rerere.rikkihub.utils.fileSizeToString
 import me.rerere.rikkihub.utils.plus
 import me.rerere.workspace.WorkspaceFileEntry
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.workspace.WorkspaceTransferMode
 import org.koin.androidx.compose.koinViewModel
@@ -142,6 +145,8 @@ fun WorkspaceFilesBrowser(
     var deleteTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var renameTarget by remember { mutableStateOf<WorkspaceFileEntry?>(null) }
     var pendingTransfer by remember { mutableStateOf<PendingTransferSheet?>(null) }
+    var moveOut by remember { mutableStateOf<MoveOutRequest?>(null) }
+    val scope = rememberCoroutineScope()
     val transferWorkspaces by vm.transferWorkspaces.collectAsStateWithLifecycle()
     val extraction by vm.extraction.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
@@ -255,6 +260,7 @@ fun WorkspaceFilesBrowser(
     var pendingArchiveExport by rememberSaveable(workspaceId) {
         mutableStateOf<PendingArchiveExport?>(null)
     }
+    val lockExportNote = stringResource(R.string.book_lock_export_note)
     val archiveExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
     ) { uri ->
@@ -266,6 +272,10 @@ fun WorkspaceFilesBrowser(
             area = pending.area,
             destinationUri = uri,
         )
+        // 打包里有定稿锁定的章节：锁和版本历史不随包带走
+        scope.launch {
+            if (vm.lockedCount(pending.paths, pending.area) > 0) toaster.show(lockExportNote, type = ToastType.Info)
+        }
         // The archive request was accepted: leave selection mode.
         clearSelection()
     }
@@ -519,15 +529,18 @@ fun WorkspaceFilesBrowser(
             },
             onDismiss = { pendingBatchDelete = null },
         ) {
-            Text(
-                buildString {
-                    append("Delete ${pending.paths.size} item(s)")
-                    if (pending.includesDirectories) {
-                        append(", including folders whose contents are removed recursively")
+            Column {
+                Text(
+                    buildString {
+                        append("Delete ${pending.paths.size} item(s)")
+                        if (pending.includesDirectories) {
+                            append(", including folders whose contents are removed recursively")
+                        }
+                        append(". This cannot be undone.")
                     }
-                    append(". This cannot be undone.")
-                }
-            )
+                )
+                LockedDeleteNote(vm, pending.paths, pending.area)
+            }
         }
     }
 
@@ -540,11 +553,34 @@ fun WorkspaceFilesBrowser(
             listEntries = vm::listTransferEntries,
             onDismiss = { pendingTransfer = null },
             onConfirm = { targetWorkspaceId, destinationDir ->
-                vm.transfer(pending.entries, targetWorkspaceId, destinationDir, pending.mode)
-                pendingTransfer = null
-                if (pending.fromSelection) clearSelection()
+                // 把带定稿锁的章节移出这本书：先确认锁会解除，再带移出许可移动
+                scope.launch {
+                    val locked = if (pending.mode == WorkspaceTransferMode.MOVE && targetWorkspaceId != workspaceId) {
+                        vm.lockedCount(pending.entries.map { it.path })
+                    } else 0
+                    if (locked > 0) {
+                        moveOut = MoveOutRequest(pending.entries, targetWorkspaceId, destinationDir, locked)
+                    } else {
+                        vm.transfer(pending.entries, targetWorkspaceId, destinationDir, pending.mode)
+                    }
+                    pendingTransfer = null
+                    if (pending.fromSelection) clearSelection()
+                }
             },
         )
+    }
+    moveOut?.let { request ->
+        RikkaConfirmDialog(
+            show = true,
+            title = stringResource(R.string.book_lock_move_out_title),
+            confirmText = stringResource(R.string.common_confirm),
+            dismissText = stringResource(R.string.common_cancel),
+            onConfirm = {
+                vm.transfer(request.entries, request.targetWorkspaceId, request.destinationDir, WorkspaceTransferMode.MOVE, moveOut = true)
+                moveOut = null
+            },
+            onDismiss = { moveOut = null },
+        ) { Text(stringResource(R.string.book_lock_move_out_confirm, request.locked)) }
     }
 
     extraction?.let { current ->
@@ -585,8 +621,27 @@ fun WorkspaceFilesBrowser(
             },
             onDismiss = { deleteTarget = null },
         ) {
-            Text(stringResource(R.string.workspace_detail_will_delete, entry.path))
+            Column {
+                Text(stringResource(R.string.workspace_detail_will_delete, entry.path))
+                LockedDeleteNote(vm, listOf(entry.path), state.area)
+            }
         }
+    }
+}
+
+/** 把带定稿锁的章节移出这本书：确认之前的选择。 */
+private data class MoveOutRequest(val entries: List<WorkspaceFileEntry>, val targetWorkspaceId: String, val destinationDir: String, val locked: Int)
+
+/** 删除确认里加一句：含几个锁定的章节，会连锁进回收站。 */
+@Composable
+private fun LockedDeleteNote(vm: WorkspaceDetailVM, paths: List<String>, area: WorkspaceStorageArea) {
+    val locked by produceState(0, paths, area) { value = runCatching { vm.lockedCount(paths, area) }.getOrDefault(0) }
+    if (locked > 0) {
+        Text(
+            stringResource(R.string.book_lock_delete_note, locked),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
 }
 

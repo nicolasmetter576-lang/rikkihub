@@ -24,6 +24,7 @@ internal object WorkspaceFileMutations {
     private fun lock(root: File): Mutex = locks.computeIfAbsent(root.canonicalPath) { Mutex() }
 
     fun <T> withLock(root: File, block: () -> T): T {
+        WorkspaceChanges.checkNotNotifying()
         val mutex = lock(root)
         runBlocking { mutex.lock() }
         try {
@@ -34,6 +35,7 @@ internal object WorkspaceFileMutations {
     }
 
     fun <T> withLocks(roots: List<File>, block: () -> T): T {
+        WorkspaceChanges.checkNotNotifying()
         val mutexes = roots.map { it.canonicalPath }.distinct().sorted()
             .map { locks.computeIfAbsent(it) { Mutex() } }
         val acquired = ArrayList<Mutex>()
@@ -48,11 +50,14 @@ internal object WorkspaceFileMutations {
         }
     }
 
-    suspend fun <T> withSuspendingLock(root: File, block: suspend () -> T): T =
-        lock(root).withLock { block() }
+    suspend fun <T> withSuspendingLock(root: File, block: suspend () -> T): T {
+        WorkspaceChanges.checkNotNotifying()
+        return lock(root).withLock { block() }
+    }
 
     /** Suspending [withLocks]: same sorted, deduplicated order, so the two never deadlock each other. */
     suspend fun <T> withSuspendingLocks(roots: List<File>, block: suspend () -> T): T {
+        WorkspaceChanges.checkNotNotifying()
         val mutexes = roots.map { it.canonicalPath }.distinct().sorted()
             .map { locks.computeIfAbsent(it) { Mutex() } }
         val acquired = ArrayList<Mutex>()

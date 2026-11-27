@@ -24,6 +24,7 @@ import {
 } from "~/components/ui/select";
 import { Switch } from "~/components/ui/switch";
 import { Textarea } from "~/components/ui/textarea";
+import i18n from "~/i18n";
 import { extractErrorMessage } from "~/lib/error";
 import { cn } from "~/lib/utils";
 
@@ -339,6 +340,11 @@ export function CreateNameDialog({
 }
 
 export function reportSettingsError(error: unknown, fallback: string) {
+  // 定稿锁拦下的写、删、移（423 FILE_LOCKED）：说明换成界面语言，不显示服务端英文
+  if (error && typeof error === "object" && "errorCode" in error && error.errorCode === "FILE_LOCKED") {
+    toast.error(i18n.t("workspace:book.lock.file_locked"));
+    return;
+  }
   toast.error(extractErrorMessage(error, fallback));
 }
 

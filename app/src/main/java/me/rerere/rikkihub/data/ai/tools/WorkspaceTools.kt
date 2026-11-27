@@ -19,6 +19,10 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.WorkspaceToolIdentity
 import me.rerere.ai.ui.toMetadata
 import me.rerere.rikkihub.data.book.BookStore
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.book.history.BookLockedException
+import me.rerere.rikkihub.data.book.history.HistorySource
+import me.rerere.rikkihub.data.book.history.LockReport
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkihub.data.db.entity.WorkspaceMode
 import me.rerere.rikkihub.data.files.FilesManager
@@ -133,7 +137,7 @@ internal fun buildWorkspaceTools(
     return buildList {
         // 作品结构只有一份，限定到子目录的会话看不到全书，不给作品工具
         if (filesScope == null && bookStore != null) {
-            createBookTools(workspace, ::needsApproval, bookStore)
+            createBookTools(workspace, ::needsApproval, bookStore, runCatching { getKoin().get<BookHistory>() }.getOrNull())
                 .filter { it.name in enabledIds }
                 .forEach { add(it.let(guard(identityOf(it.name)))) }
         }
@@ -265,8 +269,12 @@ private fun createWriteFileTool(
         val path = params.absolutePath("path")
         val text = params.string("text") ?: error("text is required")
         val overwrite = params["overwrite"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
-        val entry = repo.writeToolText(workspace, path, text, overwrite, filesScope)
-        listOf(UIMessagePart.Text(entry.toJson().toString()))
+        try {
+            val entry = repo.writeToolText(workspace, path, text, overwrite, filesScope)
+            listOf(UIMessagePart.Text(entry.toJson().toString()))
+        } catch (locked: BookLockedException) {
+            lockRefusal(workspace, locked, path)
+        }
     },
 )
 
@@ -317,21 +325,25 @@ private fun createEditFileTool(
         } catch (e: IllegalArgumentException) {
             error("${e.message} (path: $path)")
         }
-        val entry = repo.writeToolText(workspace, path, result.updated, overwrite = true, filesScope = filesScope)
-        val diff = generateUnifiedDiff(original, result.updated, entry.path)
-        listOf(
-            UIMessagePart.Text(
-                text = buildJsonObject {
-                    put("path", entry.path)
-                    put("replacements", result.replacements)
-                    if (result.strategy != ExactReplacer.name) put("matchStrategy", result.strategy)
-                    put("sizeBytes", entry.sizeBytes)
-                    put("updatedAt", entry.updatedAt)
-                }.toString(),
-                // diff 存入 metadata 供 UI 渲染 diff view, 不会随工具结果发送给 API
-                metadata = diff?.let { d -> DiffMetadata(diff = d).toMetadata() },
+        try {
+            val entry = repo.writeToolText(workspace, path, result.updated, overwrite = true, filesScope = filesScope)
+            val diff = generateUnifiedDiff(original, result.updated, entry.path)
+            listOf(
+                UIMessagePart.Text(
+                    text = buildJsonObject {
+                        put("path", entry.path)
+                        put("replacements", result.replacements)
+                        if (result.strategy != ExactReplacer.name) put("matchStrategy", result.strategy)
+                        put("sizeBytes", entry.sizeBytes)
+                        put("updatedAt", entry.updatedAt)
+                    }.toString(),
+                    // diff 存入 metadata 供 UI 渲染 diff view, 不会随工具结果发送给 API
+                    metadata = diff?.let { d -> DiffMetadata(diff = d).toMetadata() },
+                )
             )
-        )
+        } catch (locked: BookLockedException) {
+            lockRefusal(workspace, locked, path)
+        }
     },
 )
 
@@ -636,7 +648,8 @@ private fun createShellTool(
             ?.coerceIn(1L, SHELL_TIMEOUT_MAX_SECONDS)
             ?.times(1_000L)
             ?: WorkspaceManager.DEFAULT_COMMAND_TIMEOUT_MS
-        val result = repo.executeCommand(workspace.id, command, cwd, timeoutMillis, filesScope = filesScope)
+        var lockReports = emptyList<LockReport>()
+        val result = repo.executeCommand(workspace.id, command, cwd, timeoutMillis, filesScope = filesScope, onBookLocks = { lockReports = it })
         listOf(
             UIMessagePart.Text(
                 buildJsonObject {
@@ -645,6 +658,11 @@ private fun createShellTool(
                     put("stderr", result.stderr)
                     put("timedOut", result.timedOut)
                     if (result.truncated) put("truncated", true)
+                    workspace.promptLanguage()?.takeIf { lockReports.isNotEmpty() }?.let { language ->
+                        put("book_locks", BookLockPrompts.restored(language, lockReports) { "${WorkspaceManager.ROOTFS_WORKSPACE_DIR}/$it" })
+                        // 给工具卡片看的：放回了没有
+                        put("book_locks_restored", lockReports.all { it.restored })
+                    }
                 }.toString()
             )
         )
@@ -729,6 +747,16 @@ private suspend fun WorkspaceRepository.readImageInRootfs(
     )
 }
 
+/** 写入被定稿锁拒绝：给模型的说明（不带堆栈），JSON 里带 `locked`，工具卡片据此标出“被定稿锁拦下”。 */
+private fun lockRefusal(workspace: WorkspaceEntity, error: BookLockedException, path: String): List<UIMessagePart> {
+    val language = workspace.promptLanguage() ?: BookPromptLanguage.ZH
+    val turn = (BookHistory.currentSource() as? HistorySource.Ai)?.let { "${it.conversationId}/${it.messageId}" }
+    return listOf(UIMessagePart.Text(buildJsonObject {
+        put("error", BookLockPrompts.refusal(language, error, path, turn))
+        put("locked", true)
+    }.toString()))
+}
+
 /** Book workspaces work without a Rootfs: their files are written in-process (atomically), not through a shell. */
 private suspend fun WorkspaceRepository.writeToolText(
     workspace: WorkspaceEntity,
@@ -737,8 +765,18 @@ private suspend fun WorkspaceRepository.writeToolText(
     overwrite: Boolean,
     filesScope: String?,
 ): WorkspaceFileEntry =
-    if (workspace.bookMode) writeRootfsText(workspace.id, path, text, overwrite, filesScope)
-    else writeTextInRootfs(workspace.id, path, text, overwrite, filesScope)
+    if (workspace.bookMode) {
+        val relative = filesRelativePath(workspace.id, path, filesScope)
+        require(relative == null || !relative.isBookStructure()) {
+            "$path is maintained by the app and cannot be written with file tools. Use book_update to change the book structure."
+        }
+        writeRootfsText(workspace.id, path, text, overwrite, filesScope)
+    } else {
+        writeTextInRootfs(workspace.id, path, text, overwrite, filesScope)
+    }
+
+private fun String.isBookStructure(): Boolean =
+    (this == BookStore.BOOK_DIR || startsWith("${BookStore.BOOK_DIR}/")) && !startsWith("${BookStore.BRANCHES_DIR}/")
 
 private suspend fun WorkspaceRepository.writeTextInRootfs(
     workspaceId: String,

@@ -1,5 +1,9 @@
 package me.rerere.rikkihub.service
 
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.ai.tools.promptLanguage
+import me.rerere.rikkihub.data.ai.tools.BookLockPrompts
+import me.rerere.rikkihub.data.book.history.HistorySource
 import me.rerere.rikkihub.data.ai.wrapOrSelf
 import me.rerere.rikkihub.data.ai.UsageTag
 import me.rerere.rikkihub.data.ai.UsageSource
@@ -410,6 +414,8 @@ class ChatService(
     /** Workspace CLI agents (ACP); null in tests that never open a CLI chat. */
     private val acpSessionManager: AcpSessionManager? = null,
     private val skillManager: SkillManager? = null,
+    /** 作品的版本史：一轮生成结束后收尾逐处审阅的记录（null：测试里不开作品）。 */
+    private val bookHistory: BookHistory? = null,
 ) {
     // workspace 系统提示注入 (依赖 workspaceRepository, 故在类内构造)
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
@@ -873,6 +879,36 @@ class ChatService(
     private fun launchGenerationJob(
         conversationId: Uuid,
         keepAliveInBackground: Boolean = true,
+        block: suspend () -> Unit,
+    ): Job = startGenerationJob(conversationId, keepAliveInBackground, block).also { job ->
+        // 任务完全结束之后（被新任务替换掉的也算）收尾这个对话里这一轮写进作品的改动；收尾异步，不挡下一次生成
+        job.invokeOnCompletion { bookHistory?.finishConversation(conversationId.toString()) }
+    }
+
+    /**
+     * 会话在内存里时，这些回复现在在不在（内存里的状态可能比数据库新）；会话不在内存里返回 null，由调用方查数据库。
+     */
+    fun messagePresence(conversationId: Uuid, messageIds: List<Uuid>): Map<Uuid, me.rerere.rikkihub.data.book.history.MessagePresence>? {
+        val session = sessions[conversationId] ?: return null
+        val nodes = session.state.value.messageNodes
+        if (nodes.isEmpty()) return null
+        return messageIds.associateWith { id ->
+            val node = nodes.firstOrNull { node -> node.messages.any { it.id == id } }
+            when {
+                node == null -> me.rerere.rikkihub.data.book.history.MessagePresence.GONE
+                node.messages.getOrNull(node.selectIndex)?.id == id -> me.rerere.rikkihub.data.book.history.MessagePresence.CURRENT
+                else -> me.rerere.rikkihub.data.book.history.MessagePresence.OTHER_BRANCH
+            }
+        }
+    }
+
+    /** 这条回复正在生成吗（逐处审阅：在生成的不收尾）。 */
+    fun isGenerating(conversationId: Uuid, messageId: Uuid): Boolean =
+        sessions[conversationId]?.let { it.replyMessageId.value == messageId && it.getJob()?.isActive == true } == true
+
+    private fun startGenerationJob(
+        conversationId: Uuid,
+        keepAliveInBackground: Boolean,
         block: suspend () -> Unit,
     ): Job {
         if (!keepAliveInBackground) return appScope.launch(start = CoroutineStart.LAZY) { block() }
@@ -2041,7 +2077,8 @@ class ChatService(
         var started = false
         var prompted = false
         try {
-            manager.withAgent(launch) { live ->
+            // 作品版本史：这一回合 CLI 改的文件算在这条回复上
+            withContext(BookHistory.sourceElement(HistorySource.Ai(conversationId.toString(), reply.id.toString()))) { manager.withAgent(launch) { live ->
                 val acp = live.session
                 val diverged = cli.needsHistorySeed || cli.systemPromptHash != promptHash ||
                     cli.historyFingerprint != CliPrompts.fingerprint(history)
@@ -2084,6 +2121,13 @@ class ChatService(
 
                     val exposeUpload = "/upload" in mounts.exposedTargets
                     val allowedImageDirs = listOf(filesManager.uploadDir())
+                    // 定稿锁：CLI 的系统提示词里没有作品提示词，只在需要的回合把锁和上一回合的放回交代一遍
+                    val bookLocks = runCatching {
+                        val language = workspaceRepository.getById(workspaceId)?.promptLanguage() ?: return@runCatching null
+                        org.koin.java.KoinJavaComponent.getKoin().get<BookHistory>()
+                            .cliLockNews(workspaceId, conversationId.toString(), fresh)
+                            ?.let { (locks, notices) -> BookLockPrompts.cliBlock(language, locks, notices) { "${me.rerere.workspace.WorkspaceManager.ROOTFS_WORKSPACE_DIR}/$it" } }
+                    }.onFailure { if (it is CancellationException) throw it }.getOrNull()
                     val blocks = buildList {
                         if (fresh) {
                             if (meta == null && !agent.usesPromptFile && prompt.isNotBlank()) {
@@ -2092,6 +2136,7 @@ class ChatService(
                             CliPrompts.historySeed(history, filesScope = filesScope, exposeUpload = exposeUpload)
                                 ?.let { add(cliTextBlock(it)) }
                         }
+                        bookLocks?.let { add(cliTextBlock(it)) }
                         addAll(
                             cliPromptBlocks(
                                 message = userMessage,
@@ -2184,7 +2229,7 @@ class ChatService(
                 } finally {
                     gateway?.close()
                 }
-            }
+            } }
         } catch (error: Throwable) {
             cause = error
             throw cliError(error, agent, workspaceId)

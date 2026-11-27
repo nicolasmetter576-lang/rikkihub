@@ -21,6 +21,7 @@ import me.rerere.rikkihub.data.db.fts.MessageSearchSort
 import me.rerere.rikkihub.data.db.dao.ConversationDAO
 import me.rerere.rikkihub.data.db.dao.FavoriteDAO
 import me.rerere.rikkihub.data.favorite.NodeFavoriteAdapter
+import me.rerere.rikkihub.data.book.history.MessagePresence
 import me.rerere.rikkihub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkihub.data.db.entity.AttachmentRetentionEntity
 import me.rerere.rikkihub.data.db.entity.ConversationEntity
@@ -74,6 +75,27 @@ class ConversationRepository(
     /** dirty 会话判断（ChatService 命令层 BUSY/只读裁决用）。 */
     fun isDirtyConversation(conversationId: Uuid): Boolean =
         conversationId.toString() in dirtyConversationIds
+
+    /**
+     * 这些回复现在在不在（逐处审阅归档用）：当前分支、别的候选、会话在回收站里、没了。
+     * 只解码含它们 id 的节点，不读整段对话。
+     */
+    suspend fun messagePresence(conversationId: Uuid, messageIds: List<Uuid>): Map<Uuid, MessagePresence> {
+        val entity = conversationDAO.getConversationByIdIncludingDeleted(conversationId.toString())
+            ?: return messageIds.associateWith { MessagePresence.GONE }
+        if (entity.deletedAt != null) return messageIds.associateWith { MessagePresence.HIDDEN }
+        return messageIds.associateWith { messageId ->
+            messageNodeDAO.findNodesContaining(conversationId.toString(), messageId.toString()).firstNotNullOfOrNull { node ->
+                val messages = runCatching { JsonInstant.decodeFromString<List<UIMessage>>(node.messages) }.getOrNull() ?: return@firstNotNullOfOrNull null
+                val index = messages.indexOfFirst { it.id == messageId }
+                when {
+                    index < 0 -> null
+                    index == node.selectIndex -> MessagePresence.CURRENT
+                    else -> MessagePresence.OTHER_BRANCH
+                }
+            } ?: MessagePresence.GONE
+        }
+    }
 
     private fun nodeEntities(conversationId: String, nodes: List<MessageNode>): List<MessageNodeEntity> =
         nodes.mapIndexed { index, node ->

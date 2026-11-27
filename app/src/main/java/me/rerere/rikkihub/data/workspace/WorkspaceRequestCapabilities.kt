@@ -42,6 +42,8 @@ data class WorkspaceRequestCapabilities(
     val promptLanguage: BookPromptLanguage? = null,
     /** Rendered `{{rootfs_environment}}` lines (shell + distribution) captured with this snapshot. */
     val rootfsEnvironment: String = "",
+    /** Book workspaces: the book has locked chapters or passages (the reminder then adds one line about them). */
+    val bookLocked: Boolean = false,
 ) {
     /** [stableId] 对应的本次 wire 名（null = 未启用/不在快照）。 */
     fun wireNameOf(stableId: String): String? = availableToolNames[stableId]

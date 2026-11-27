@@ -31,12 +31,14 @@ class ToasterState internal constructor(
 
     internal val items = mutableStateListOf<ToastItem>()
 
+    /** [action]：提示后面的一个文字按钮（例如“撤销”），点了执行并收起提示。 */
     fun show(
         message: String,
         type: ToastType = ToastType.Normal,
         duration: Duration = DefaultDuration,
+        action: ToastAction? = null,
     ) {
-        val item = add(message, type)
+        val item = add(message, type, action)
         item.job = scope.launch {
             delay(duration)
             dismiss(item)
@@ -49,8 +51,8 @@ class ToasterState internal constructor(
         return ToastHandle { dismiss(item) }
     }
 
-    private fun add(message: String, type: ToastType): ToastItem {
-        val item = ToastItem(id = nextId.getAndIncrement(), message = message, type = type)
+    private fun add(message: String, type: ToastType, action: ToastAction? = null): ToastItem {
+        val item = ToastItem(id = nextId.getAndIncrement(), message = message, type = type, action = action)
         items.add(item)
         // 超出可见数量时让最早的先退出
         items.filter { it.visibleState.targetState }
@@ -78,10 +80,14 @@ fun interface ToastHandle {
     fun dismiss()
 }
 
+/** 提示上的文字按钮。 */
+class ToastAction(val label: String, val onClick: () -> Unit)
+
 internal class ToastItem(
     val id: Long,
     val message: String,
     val type: ToastType,
+    val action: ToastAction? = null,
 ) {
     val visibleState = MutableTransitionState(false).apply { targetState = true }
     var job: Job? = null

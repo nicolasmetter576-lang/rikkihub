@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.web.routes
 
+import kotlinx.coroutines.withContext
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
@@ -24,6 +25,9 @@ import me.rerere.rikkihub.data.book.BookStore
 import me.rerere.rikkihub.data.book.BookVolume
 import me.rerere.rikkihub.data.book.ChapterStatus
 import me.rerere.rikkihub.data.book.ReplacePair
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.book.history.BookHistoryActions
+import me.rerere.rikkihub.data.book.history.FileLocks
 import me.rerere.rikkihub.data.book.transfer.BookImporter
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.utils.JsonInstant
@@ -45,6 +49,7 @@ import java.io.File
  *   POST /api/workspaces/{id}/book/replace/apply   {…, files: [{path, revision, starts}]} -> 结果（含 undoId）
  *   GET  /api/workspaces/{id}/book/replace/history -> 最近的替换
  *   POST /api/workspaces/{id}/book/replace/undo    {id} -> {restored, changedSince, failed}
+ *   版本历史与回收站见 BookHistoryRoutes.kt，定稿锁见 BookLockRoutes.kt（每章的 lock 字段是锁的概况）
  *
  * 结构文件读不了：409 BOOK_CORRUPT / BOOK_NEWER_VERSION。
  */
@@ -63,7 +68,12 @@ data class BookItemDto(
     val words: Int? = null,
     val missing: Boolean? = null,
     val updatedAt: Long? = null,
+    /** 定稿锁：整章锁定、段落锁几处；没有锁时为 null。 */
+    val lock: BookItemLockDto? = null,
 )
+
+@Serializable
+data class BookItemLockDto(val chapter: Boolean, val passages: Int)
 
 @Serializable
 data class BookDto(
@@ -117,10 +127,25 @@ data class BookReplaceRequest(
 )
 
 @Serializable
-data class ReplaceHitDto(val start: Int, val pair: Int, val line: Int, val before: String, val match: String, val after: String)
+data class ReplaceHitDto(
+    val start: Int,
+    val pair: Int,
+    val line: Int,
+    val before: String,
+    val match: String,
+    val after: String,
+    /** 落在锁定段落里（默认勾上，可取消）。 */
+    val locked: Boolean = false,
+)
 
 @Serializable
-data class BookReplaceFileDto(val path: String, val revision: String, val hits: List<ReplaceHitDto>)
+data class BookReplaceFileDto(
+    val path: String,
+    val revision: String,
+    val hits: List<ReplaceHitDto>,
+    /** 整章定稿锁定：不会替换，命中不可勾选。 */
+    val locked: Boolean = false,
+)
 
 @Serializable
 data class BookReplacePreviewDto(val files: List<BookReplaceFileDto>, val unreadable: List<String>)
@@ -132,6 +157,8 @@ data class BookReplaceResultDto(
     val changed: List<String>,
     val conflicts: List<String>,
     val failed: List<String>,
+    /** 定稿锁定，没动。 */
+    val locked: List<String> = emptyList(),
 )
 
 @Serializable
@@ -144,7 +171,7 @@ data class BookUndoHistoryDto(val entries: List<BookUndoEntryDto>)
 data class BookUndoRequest(val id: String)
 
 @Serializable
-data class BookUndoResultDto(val restored: List<String>, val changedSince: List<String>, val failed: List<String>)
+data class BookUndoResultDto(val restored: List<String>, val changedSince: List<String>, val failed: List<String>, val locked: List<String> = emptyList())
 
 private fun replaceQuery(book: Book, request: BookReplaceRequest): BookReplaceQuery {
     val pairs = request.pairs.map { ReplacePair(it.find, it.replace) }
@@ -154,7 +181,7 @@ private fun replaceQuery(book: Book, request: BookReplaceRequest): BookReplaceQu
     return BookReplaceQuery(pairs, request.ignoreCase, paths)
 }
 
-internal fun Book.toDto(): BookDto {
+internal fun Book.toDto(locks: Map<String, FileLocks> = emptyMap()): BookDto {
     val entries = entries.associateBy { it.id }
     return BookDto(
         title = manifest.title,
@@ -178,6 +205,9 @@ internal fun Book.toDto(): BookDto {
                         words = entry.words,
                         missing = entry.missing,
                         updatedAt = entry.file?.modifiedAt,
+                        lock = locks[item.path]?.takeUnless { it.isEmpty }?.let { l ->
+                            BookItemLockDto(l.chapter != null, l.passages.count { it.dormantSince == null })
+                        },
                     )
                 }
             }
@@ -233,31 +263,44 @@ internal suspend fun <T> bookApi(block: suspend () -> T): T = try {
 }
 
 /** 作品路由要用的服务，一起传。 */
-class WebBookServices(val store: BookStore, val replacer: BookReplacer, val importer: BookImporter, val outliner: BookOutliner, val writer: BeatWriter, val tempDir: File)
+class WebBookServices(
+    val store: BookStore,
+    val replacer: BookReplacer,
+    val importer: BookImporter,
+    val outliner: BookOutliner,
+    val writer: BeatWriter,
+    val tempDir: File,
+    val history: BookHistory,
+    val historyActions: BookHistoryActions,
+    val turnActions: me.rerere.rikkihub.data.book.history.TurnReviewActions,
+    val conversationTitle: suspend (String) -> String?,
+)
 
 fun Route.bookRoutes(repository: WorkspaceRepository, services: WebBookServices) {
     val store = services.store
     val replacer = services.replacer
+    suspend fun Book.dto(id: String) = toDto(services.history.locks(id))
     route("/workspaces/{id}/book") {
         get {
             val id = bookWorkspaceId(call, repository)
-            call.respond(bookApi { store.open(id) }.toDto())
+            call.respond(bookApi { store.open(id) }.dto(id))
         }
         post("/edit") {
             val id = bookWorkspaceId(call, repository)
             val request = JsonInstant.decodeFromJsonElement(BookEditRequest.serializer(), call.receive<JsonObject>())
-            call.respond(bookApi { store.edit(id) { applyBookEdits(it, request.operations) } }.toDto())
+            call.respond(bookApi { store.edit(id) { applyBookEdits(it, request.operations) } }.dto(id))
         }
         post("/chapters") {
             val id = bookWorkspaceId(call, repository)
             val request = call.receive<BookCreateChapterRequest>()
             val book = bookApi { workspaceFileApiOperation { store.createChapter(id, request.path, request.text, request.afterId) } }
-            call.respond(HttpStatusCode.Created, book.toDto())
+            call.respond(HttpStatusCode.Created, book.dto(id))
         }
         post("/delete") {
             val id = bookWorkspaceId(call, repository)
             val request = call.receive<BookIdsRequest>()
-            call.respond(bookApi { workspaceFileApiOperation { store.deleteChapters(id, request.ids.toSet()) } }.toDto())
+            val foreign = BookHistory.lockElement(me.rerere.rikkihub.data.book.history.BookLockContext(foreign = true))
+            call.respond(bookApi { workspaceFileApiOperation { withContext(foreign) { store.deleteChapters(id, request.ids.toSet()) } } }.dto(id))
         }
         post("/relink") {
             val id = bookWorkspaceId(call, repository)
@@ -267,15 +310,18 @@ fun Route.bookRoutes(repository: WorkspaceRepository, services: WebBookServices)
             } catch (invalid: IllegalArgumentException) {
                 throw BadRequestException(invalid.message ?: "Invalid file")
             }
-            call.respond(book.toDto())
+            call.respond(book.dto(id))
         }
         post("/rebuild") {
             val id = bookWorkspaceId(call, repository)
-            call.respond(bookApi { store.rebuild(id) }.toDto())
+            call.respond(bookApi { store.rebuild(id) }.dto(id))
         }
         bookTransferRoutes(repository, services)
         bookOutlineRoutes(repository, services)
         beatRoutes(repository, services)
+        bookHistoryRoutes(repository, services)
+        bookLockRoutes(repository, services)
+        bookTurnRoutes(repository, services)
         route("/replace") {
             post("/preview") {
                 val id = bookWorkspaceId(call, repository)
@@ -283,7 +329,7 @@ fun Route.bookRoutes(repository: WorkspaceRepository, services: WebBookServices)
                 val preview = replacer.preview(id, replaceQuery(bookApi { store.open(id) }, request))
                 call.respond(BookReplacePreviewDto(
                     files = preview.files.map { file ->
-                        BookReplaceFileDto(file.path, file.revision, file.hits.map { ReplaceHitDto(it.start, it.pair, it.line, it.before, it.match, it.after) })
+                        BookReplaceFileDto(file.path, file.revision, file.hits.map { ReplaceHitDto(it.start, it.pair, it.line, it.before, it.match, it.after, it.locked) }, file.locked)
                     },
                     unreadable = preview.unreadable,
                 ))
@@ -295,7 +341,7 @@ fun Route.bookRoutes(repository: WorkspaceRepository, services: WebBookServices)
                 val unknown = request.files.firstOrNull { it.path !in query.paths }
                 if (unknown != null) throw BadRequestException("Not a text file of this book: ${unknown.path}")
                 val result = replacer.apply(id, query, request.files.map { BookReplaceTarget(it.path, it.revision, it.starts.toSet()) })
-                call.respond(BookReplaceResultDto(result.undoId, result.replaced, result.changed, result.conflicts, result.failed))
+                call.respond(BookReplaceResultDto(result.undoId, result.replaced, result.changed, result.conflicts, result.failed, result.locked))
             }
             get("/history") {
                 val id = bookWorkspaceId(call, repository)
@@ -309,7 +355,7 @@ fun Route.bookRoutes(repository: WorkspaceRepository, services: WebBookServices)
                 } catch (_: NoSuchElementException) {
                     throw NotFoundException("Nothing to undo")
                 }
-                call.respond(BookUndoResultDto(undone.restored, undone.changedSince, undone.failed))
+                call.respond(BookUndoResultDto(undone.restored, undone.changedSince, undone.failed, undone.locked))
             }
         }
     }

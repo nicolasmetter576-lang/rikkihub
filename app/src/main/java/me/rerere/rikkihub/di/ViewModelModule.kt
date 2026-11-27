@@ -25,7 +25,9 @@ import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookImportVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BeatBoardVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookOutlineVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookHistoryVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookReplaceVM
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookTrashVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.ChapterOutlineVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookVM
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.bookMentions
@@ -126,13 +128,35 @@ val viewModelModule = module {
             settingsStore = settingsStore,
             workspaceRepository = get(),
             mentions = { words -> bookMentions(words, settingsStore.settingsFlow.value, characters) },
+            history = get(),
         )
     }
     viewModel { BookImportVM(workspaceId = it.get(), context = get(), importer = get()) }
     viewModel { BookOutlineVM(workspaceId = it.get(), store = get(), outliner = get()) }
     viewModel { params -> ChapterOutlineVM(workspaceId = params[0], chapterId = params[1], store = get(), outliner = get()) }
     viewModel { params -> BeatBoardVM(workspaceId = params[0], chapterId = params[1], store = get(), writer = get()) }
-    viewModel { BookVM(workspaceId = it.get(), store = get()) }
+    viewModel {
+        val conversations = get<me.rerere.rikkihub.data.db.dao.ConversationDAO>()
+        BookVM(
+            workspaceId = it.get(), store = get(), history = get(), actions = get(),
+            conversationTitle = { id -> conversations.getConversationById(id)?.title?.takeIf { title -> title.isNotBlank() } },
+        )
+    }
+    viewModel { params ->
+        val conversations = get<me.rerere.rikkihub.data.db.dao.ConversationDAO>()
+        BookHistoryVM(
+            workspaceId = params[0], path = params[1], noticeId = params.values.getOrNull(2) as String?, history = get(), actions = get(),
+            conversationTitle = { id -> conversations.getConversationById(id)?.title?.takeIf { it.isNotBlank() } },
+        )
+    }
+    viewModel { BookTrashVM(workspaceId = it.get(), history = get(), actions = get()) }
+    viewModel { params ->
+        val conversations = get<me.rerere.rikkihub.data.db.dao.ConversationDAO>()
+        me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookTurnReviewVM(
+            workspaceId = params[0], conversationId = params[1], messageId = params[2], actions = get(),
+            conversationTitle = { id -> conversations.getConversationById(id)?.title?.takeIf { it.isNotBlank() } },
+        )
+    }
     viewModel<WorkspaceDetailVM> {
         WorkspaceDetailVM(
             id = it.get(),
@@ -141,6 +165,7 @@ val viewModelModule = module {
             rootfsInstallService = get(),
             envSetupService = get(),
             context = get(),
+            bookHistory = get(),
         )
     }
     viewModelOf(::FavoriteVM)

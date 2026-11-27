@@ -48,5 +48,6 @@
   "restricted": "Android 系统禁止访问其他应用的 Android/data 和 Android/obb 文件夹。",
   "device_password_required": "网页端只有开启了网页访问密码才能访问手机存储（设置 → Web 服务器）。",
   "device_permission_required": "请先在手机上的文件管理器里授予「所有文件访问」权限。",
-  "workspaces_read_only": "工作区文件夹本身不能在这里修改，请进入工作区内操作文件"
+  "workspaces_read_only": "工作区文件夹本身不能在这里修改，请进入工作区内操作文件",
+  "file_locked": "这个文件有定稿锁定的内容，请在 App 里修改或解锁"
 }

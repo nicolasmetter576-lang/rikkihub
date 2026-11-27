@@ -2,8 +2,17 @@ package me.rerere.rikkihub.data.book
 
 data class ReplacePair(val find: String, val replace: String)
 
-/** 一处命中：[start] 是全文里的 UTF-16 偏移，[pair] 是命中的是第几组。 */
-data class ReplaceHit(val start: Int, val length: Int, val pair: Int, val line: Int, val before: String, val match: String, val after: String)
+/** 一处命中：[start] 是全文里的 UTF-16 偏移，[pair] 是命中的是第几组；[locked] 落在定稿锁定的段落里。 */
+data class ReplaceHit(
+    val start: Int,
+    val length: Int,
+    val pair: Int,
+    val line: Int,
+    val before: String,
+    val match: String,
+    val after: String,
+    val locked: Boolean = false,
+)
 
 /** 全书查找替换的纯文本部分：字面匹配，不跨行。 */
 internal object BookReplace {

@@ -9,6 +9,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -159,9 +160,21 @@ internal fun WorkspaceMarkdownEditor(
     qubagu: WorkspaceEditorQubagu? = null,
     /** Non-null offers 节拍 in the toolbar. */
     onBeats: (() -> Unit)? = null,
+    /** Non-null offers 历史 (the file's version history) in the toolbar. */
+    onHistory: (() -> Unit)? = null,
     /** Selected and scrolled into view once the text is laid out, then [onRevealed]. */
     reveal: TextRange? = null,
     onRevealed: () -> Unit = {},
+    /** The whole chapter is locked as final: read-only, the toolbar keeps only what still works (find, history). */
+    chapterLocked: Boolean = false,
+    /** Locked passages: a bar in the left margin beside every visual line of each. */
+    lockedRanges: Collection<IntRange> = emptyList(),
+    /** Lock or unlock the selected paragraphs from the selection menu; null = not offered. */
+    lockMenu: WorkspaceEditorLockMenu? = null,
+    /** Shown in the find bar (the status bar hides while the keyboard is up). */
+    findLock: (@Composable () -> Unit)? = null,
+    /** A tap on the read-only text (not consumed: the caret and selection still work). */
+    onReadOnlyTap: (() -> Unit)? = null,
 ) {
     val qubaguActive = qubagu?.active == true
     val locked = readOnly || qubaguActive
@@ -440,6 +453,12 @@ internal fun WorkspaceMarkdownEditor(
     val currentOnTuiqiao by rememberUpdatedState(onTuiqiao)
     val currentOnZaizao by rememberUpdatedState(onZaizao)
     val currentQubagu by rememberUpdatedState(qubagu)
+    val currentLockMenu by rememberUpdatedState(lockMenu)
+    val currentReadOnlyTap by rememberUpdatedState(onReadOnlyTap)
+    val lockedBars by rememberUpdatedState(lockedRanges)
+    val lockBarColor = colors.primary.copy(alpha = 0.55f)
+    val lockLabel = stringResource(R.string.book_lock_passage)
+    val unlockLabel = stringResource(R.string.book_unlock_passage)
     val oversized by remember(state) { derivedStateOf { state.text.length > WorkspaceMarkdownAnalyzer.MAX_SOURCE_CHARS } }
     // Half the default top/bottom padding: the toolbar and the status bar already frame the text.
     val contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(top = 8.dp, bottom = 8.dp)
@@ -451,8 +470,11 @@ internal fun WorkspaceMarkdownEditor(
     val toolbar: @Composable () -> Unit = {
         if (!readOnly) WorkspaceEditorToolbar(
             state,
-            WorkspaceEditorToolbarActions(markdown, formatKind, onTuiqiao, onZaizao, onFind = ::openFind, qubagu = qubagu, onBeats = onBeats),
+            WorkspaceEditorToolbarActions(markdown, formatKind, onTuiqiao, onZaizao, onFind = ::openFind, qubagu = qubagu, onBeats = onBeats, onHistory = onHistory),
             onEdited = pairs::clear,
+        ) else if (chapterLocked) WorkspaceEditorToolbar(
+            state,
+            WorkspaceEditorToolbarActions(markdown, null, onFind = ::openFind, onHistory = onHistory, readOnly = true),
         )
     }
     val findBar: @Composable () -> Unit = {
@@ -463,6 +485,7 @@ internal fun WorkspaceMarkdownEditor(
             onNext = { step(1) },
             onReplace = ::replaceCurrent,
             onReplaceAll = ::replaceAll,
+            lock = findLock,
         )
     }
     Column(modifier) {
@@ -495,8 +518,37 @@ internal fun WorkspaceMarkdownEditor(
                     )
                     WorkspaceQubaguMarks(marks.marks).indexAt(result.getOffsetForPosition(position))?.let(marks.onOpen)
                 }
+            }.pointerInput(onReadOnlyTap != null) {
+                if (onReadOnlyTap == null) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        waitForUpOrCancellation(PointerEventPass.Initial)
+                    } ?: return@awaitEachGesture
+                    if ((up.position - down.position).getDistance() <= viewConfiguration.touchSlop) currentReadOnlyTap?.invoke()
+                }
             }.drawWithContent {
                 drawContent()
+                // 先读锁定范围（快照状态），再取排版：第一帧排版还没出来时也要订阅范围的变化，不然竖条一直画不出来
+                val bars = lockedBars
+                val barsLayout = layout.get()
+                if (barsLayout != null && bars.isNotEmpty()) {
+                    // 段落锁：左边距里一条 3dp 竖条（不用底色，免得和选区、查找、八股的底色混淆）
+                    val top = contentPadding.calculateTopPadding().toPx()
+                    val left = contentPadding.calculateLeftPadding(layoutDirection).toPx()
+                    val width = 3.dp.toPx()
+                    val length = barsLayout.layoutInput.text.length
+                    clipRect(0f, top, size.width, size.height - contentPadding.calculateBottomPadding().toPx()) {
+                        for (range in bars) {
+                            if (range.isEmpty() || range.first >= length) continue
+                            val first = barsLayout.getLineForOffset(range.first)
+                            val last = barsLayout.getLineForOffset(range.last.coerceAtMost(length - 1).coerceAtLeast(range.first))
+                            val y0 = barsLayout.getLineTop(first) + top - scroll.value
+                            val y1 = barsLayout.getLineBottom(last) + top - scroll.value
+                            drawRect(lockBarColor, Offset(left / 2 - width / 2, y0), Size(width, y1 - y0))
+                        }
+                    }
+                }
                 val box = pairs.boxes.lastOrNull() ?: return@drawWithContent
                 val result = layout.get() ?: return@drawWithContent
                 val left = contentPadding.calculateLeftPadding(layoutDirection).toPx()
@@ -511,6 +563,17 @@ internal fun WorkspaceMarkdownEditor(
                 val tuiqiao = currentOnTuiqiao
                 val zaizao = currentOnZaizao
                 val selection = state.selection
+                // 定稿锁：选区碰到锁定段落只给“解锁段落”，否则给“锁定段落”（八股开着时也可以用）
+                currentLockMenu?.takeIf { !selection.collapsed }?.let { menu ->
+                    separator()
+                    if (menu.touches(selection.min, selection.max)) item(key = UnlockMenuKey, label = unlockLabel) {
+                        menu.onUnlock(selection.min, selection.max)
+                        close()
+                    } else item(key = LockMenuKey, label = lockLabel) {
+                        menu.onLock(selection.min, selection.max)
+                        close()
+                    }
+                }
                 if ((tuiqiao == null && zaizao == null) || selection.collapsed || currentQubagu?.active == true) return@appendTextContextMenuComponents
                 separator()
                 if (tuiqiao != null) item(key = TuiqiaoMenuKey, label = tuiqiaoLabel) {
@@ -628,3 +691,14 @@ private fun DrawScope.drawPairBox(layout: TextLayoutResult, box: WorkspacePairBo
 }
 
 private class MarkdownAnalysisBudgetExceeded : RuntimeException()
+
+/** The selection menu's lock entry: whether the selection touches a locked passage, and lock / unlock it. */
+internal class WorkspaceEditorLockMenu(
+    val touches: (start: Int, end: Int) -> Boolean,
+    val onLock: (start: Int, end: Int) -> Unit,
+    val onUnlock: (start: Int, end: Int) -> Unit,
+)
+
+private object LockMenuKey
+
+private object UnlockMenuKey

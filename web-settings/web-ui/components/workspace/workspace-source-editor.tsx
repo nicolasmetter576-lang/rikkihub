@@ -11,7 +11,7 @@ import { markdownSemanticTheme, markdownSizeTheme, workspaceMarkdownStyles, mark
 import { useSettingsStore } from "~/stores/settings";
 import { Prec, type Extension } from "@codemirror/state";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
-import { ChevronDown, FoldVertical, Indent, Space, UnfoldVertical } from "lucide-react";
+import { ChevronDown, FoldVertical, Indent, Lock, Space, UnfoldVertical } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "~/components/ui/dropdown-menu";
 import { applyFormat, formatKindOf, type FormatCommand, type FormatKind } from "@overlay/lib/writing-format";
 import { writingFind } from "@overlay/lib/writing-find";
@@ -23,9 +23,12 @@ import { WorkspaceZaizaoPanel, type ZaizaoPanelRequest } from "@overlay/componen
 import { ZAIZAO_MAX_SELECTION_CHARS, zaizaoChange } from "@overlay/lib/zaizao";
 import { WEB_EDITOR_TYPOGRAPHY_DEFAULT, editorFocusMaxWidth, editorTypographyStyle, type EditorTypography } from "@overlay/lib/editor-typography";
 import { takeReveal } from "@overlay/lib/editor-reveal";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { WorkspaceBeatsPanel } from "@overlay/components/workspace/workspace-beats-panel";
-import { bookApi, bookQueryKey, insertionChanges, type BeatInsertion } from "@overlay/lib/book";
+import { WorkspaceBookHistory } from "@overlay/components/workspace/workspace-book-history";
+import { bookApi, bookLocksQueryKey, bookQueryKey, insertionChanges, type BeatInsertion } from "@overlay/lib/book";
+import { lockedPassages, setLockedRanges, touchesLocked } from "@overlay/lib/book-locks";
+import { reportSettingsError } from "@overlay/components/settings/settings-ui";
 import { workspaceApi, workspaceQueryKeys } from "@overlay/lib/workspace";
 
 
@@ -45,6 +48,8 @@ export interface WorkspaceSourceEditorProps {
   tuiqiaoKey?: string;
   /** 选区变化（状态条的「选中」统计）；没有选区时为 null。 */
   onSelectionChange?: (selection: { from: number; to: number } | null) => void;
+  /** 作品版本历史整章还原或取回一段后：重新读文件。 */
+  onFileReplaced?: () => void;
 }
 
 /** 选区能否再造：去掉两端空白后非空且不超过再造的上限。 */
@@ -123,18 +128,49 @@ function isMarkdownFileName(fileName?: string): boolean {
 export function WorkspaceSourceEditor({
   value,
   onChange,
-  readOnly = false,
+  readOnly: readOnlyProp = false,
   fileName,
   className,
   semantic = true,
   typography = WEB_EDITOR_TYPOGRAPHY_DEFAULT,
   centered = false,
   tuiqiaoKey,
-  onSelectionChange,
+  onSelectionChange, onFileReplaced,
 }: WorkspaceSourceEditorProps) {
   const { t } = useTranslation("workspace");
   const viewRef = useRef<EditorView | null>(null);
   const dark = useDocumentDark();
+  // 节拍: chapters of a book workspace.
+  const workspaceFile = workspaceFileOf(tuiqiaoKey);
+  const bookWorkspaceId = workspaceFile?.workspaceId ?? "";
+  const workspace = useQuery({
+    queryKey: workspaceQueryKeys.detail(bookWorkspaceId),
+    queryFn: () => workspaceApi.get(bookWorkspaceId),
+    enabled: workspaceFile !== null,
+    retry: false,
+  });
+  const book = useQuery({
+    queryKey: bookQueryKey(bookWorkspaceId),
+    queryFn: () => bookApi.get(bookWorkspaceId),
+    enabled: workspaceFile !== null && workspace.data?.bookMode === true,
+    retry: false,
+  });
+  const chapter = workspaceFile ? book.data?.items.find(item => item.type === "chapter" && item.path === workspaceFile.path) : undefined;
+  const inBook = workspaceFile !== null && workspace.data?.bookMode === true;
+  // 定稿锁：整章锁定时只读（解锁只在 App 里）；段落锁画竖条，挡住会改到它的推敲、再造、节拍换稿
+  const queryClient = useQueryClient();
+  const locksKey = ["workspaces", bookWorkspaceId, "book", "locks", workspaceFile?.path ?? ""] as const;
+  const fileLocks = useQuery({
+    queryKey: locksKey,
+    queryFn: () => bookApi.fileLocks(bookWorkspaceId, workspaceFile?.path ?? ""),
+    enabled: inBook && workspaceFile !== null,
+    retry: false,
+    // 位置对应读到的那一版稿子，之后随编辑映射；中途重取会对不上没保存的修改
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+  const chapterLocked = fileLocks.data?.chapter === true;
+  const readOnly = readOnlyProp || chapterLocked;
   const sizes = useSettingsStore(s => s.settings?.displaySetting?.workspaceMarkdownHeadingSizes === true);
   const degraded = markdownStylesDegraded(value);
   // 推敲: editable files whose type is enabled in the 推敲 settings. The floating button follows the selection's end.
@@ -210,6 +246,11 @@ export function WorkspaceSourceEditor({
       toast.error(t("tuiqiao.changed"));
       return false;
     }
+    if (touchesLocked(view.state, change.from, change.to)) {
+      toast.info(t("book.lock.apply_blocked"));
+      return false;
+    }
+    keepVersion();
     view.dispatch({ changes: change, selection: { anchor: change.from + change.insert.length }, userEvent: "input.zaizao", scrollIntoView: true });
     toast.success(t("tuiqiao.replaced"));
     return true;
@@ -221,7 +262,12 @@ export function WorkspaceSourceEditor({
       toast.error(t("tuiqiao.changed"));
       return false;
     }
+    if (touchesLocked(view.state, change.from, change.to)) {
+      toast.info(t("book.lock.apply_blocked"));
+      return false;
+    }
     // One transaction: one step in the editor history (Ctrl+Z / Undo button); the session autosaves it.
+    keepVersion();
     view.dispatch({ changes: change, selection: { anchor: change.from + change.insert.length }, userEvent: "input.tuiqiao", scrollIntoView: true });
     toast.success(t("tuiqiao.replaced"));
     return true;
@@ -261,7 +307,7 @@ export function WorkspaceSourceEditor({
     toast.success(t("writing.format_done"));
   };
   const extensions = useMemo<Extension[]>(() => {
-    const result: Extension[] = [EditorView.lineWrapping, createEditorTheme(dark, typography, centered), writingFind(dark), findKeys];
+    const result: Extension[] = [EditorView.lineWrapping, createEditorTheme(dark, typography, centered), writingFind(dark), findKeys, lockedPassages];
     if (autoPair && !readOnly) result.push(writingPairs(dark));
     if (semantic && !degraded && isMarkdownFileName(fileName)) {
       // GFM extensions are bundled locally (@lezer/markdown), no CDN or new parser.
@@ -288,6 +334,45 @@ export function WorkspaceSourceEditor({
   };
   useEffect(() => revealPassage(viewRef.current), [value, tuiqiaoKey]);
 
+  // 锁读到了（打开、加锁之后）或编辑器刚建好：把段落位置交给编辑器，之后随编辑映射
+  const applyLocks = (view: EditorView | null) => {
+    const passages = fileLocks.data?.passages ?? [];
+    view?.dispatch({
+      effects: setLockedRanges.of(
+        passages.flatMap((p) => (p.start != null && p.end != null ? [{ from: p.start, to: p.end }] : [])),
+      ),
+    });
+  };
+  useEffect(() => applyLocks(viewRef.current), [fileLocks.data]);
+  const refreshLocks = () => {
+    void queryClient.invalidateQueries({ queryKey: locksKey });
+    void queryClient.invalidateQueries({ queryKey: bookLocksQueryKey(bookWorkspaceId) });
+    void queryClient.invalidateQueries({ queryKey: bookQueryKey(bookWorkspaceId) });
+  };
+  // 网页端可以加锁（记“来自网页端”）；对着磁盘上的稿子，选中的文字还没保存时服务端拒绝
+  const lockMutation = useMutation({
+    mutationFn: async (kind: "chapter" | "passages") => {
+      const path = workspaceFile?.path ?? "";
+      const current = await bookApi.fileLocks(bookWorkspaceId, path);
+      if (kind === "chapter") return bookApi.lockChapter(bookWorkspaceId, path, current.revision ?? "");
+      const view = viewRef.current;
+      const range = view?.state.selection.main;
+      if (!view || !range) throw new Error("No editor");
+      const line = view.state.doc.lineAt(range.from);
+      const from = range.empty ? line.from : range.from;
+      const to = range.empty ? line.to : range.to;
+      return bookApi.lockPassages(bookWorkspaceId, path, current.revision ?? "", from, to, view.state.doc.sliceString(from, to));
+    },
+    onSuccess: refreshLocks,
+    onError: (error) => {
+      const code = error && typeof error === "object" && "errorCode" in error ? (error as { errorCode?: string }).errorCode : undefined;
+      if (code === "LOCK_TEXT_CHANGED") toast.error(t("book.lock.save_first"));
+      else if (code === "LOCK_TOO_SHORT") toast.error(t("book.lock.too_short"));
+      else if (code === "LOCK_OVERLAP") toast.error(t("book.lock.overlap"));
+      else reportSettingsError(error, t("book.lock.failed"));
+    },
+  });
+
   const writingButtons = (
     <>
       <button type="button" disabled={!selectionKinds.tuiqiao} data-testid="tuiqiao-toolbar"
@@ -299,37 +384,66 @@ export function WorkspaceSourceEditor({
     </>
   );
 
-  // 节拍: chapters of a book workspace.
-  const workspaceFile = workspaceFileOf(tuiqiaoKey);
-  const bookWorkspaceId = workspaceFile?.workspaceId ?? "";
-  const workspace = useQuery({
-    queryKey: workspaceQueryKeys.detail(bookWorkspaceId),
-    queryFn: () => workspaceApi.get(bookWorkspaceId),
-    enabled: workspaceFile !== null,
-    retry: false,
-  });
-  const book = useQuery({
-    queryKey: bookQueryKey(bookWorkspaceId),
-    queryFn: () => bookApi.get(bookWorkspaceId),
-    enabled: workspaceFile !== null && workspace.data?.bookMode === true,
-    retry: false,
-  });
-  const chapter = workspaceFile ? book.data?.items.find(item => item.type === "chapter" && item.path === workspaceFile.path) : undefined;
+  /** 作品里的文件：应用推敲、再造、节拍前把现在的稿子存一版（不等它，失败也不挡）。 */
+  function keepVersion() {
+    const view = viewRef.current;
+    if (!view || !inBook || !workspaceFile) return;
+    bookApi.checkpoint(bookWorkspaceId, workspaceFile.path, view.state.doc.toString()).catch(() => undefined);
+  }
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [beatsOpen, setBeatsOpen] = useState(false);
   const insertBeats = (insertions: BeatInsertion[]) => {
     const view = viewRef.current;
     if (!view) return;
     const changes = insertionChanges(insertions, view.state.doc.length);
     const last = insertions[insertions.length - 1];
+    keepVersion();
     view.dispatch({ changes, selection: { anchor: last.offset + last.text.trimEnd().length }, userEvent: "input.beats", scrollIntoView: true });
     toast.success(t("book.beats_inserted_done"));
   };
   const replaceBeat = (from: number, to: number, text: string) => {
+    const view = viewRef.current;
+    if (view && touchesLocked(view.state, from, to)) {
+      toast.info(t("book.lock.apply_blocked"));
+      return;
+    }
+    keepVersion();
     viewRef.current?.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length }, userEvent: "input.beats", scrollIntoView: true });
     toast.success(t("tuiqiao.replaced"));
   };
 
   const toolButton = "rounded px-1.5 py-1 text-xs hover:bg-muted disabled:opacity-40";
+  const historyButton = inBook ? (
+    <button type="button" data-testid="history-toolbar" className={toolButton} title={t("book.history_title")}
+      onMouseDown={event => event.preventDefault()} onClick={() => setHistoryOpen(true)}>{t("book.history_title")}</button>
+  ) : null;
+  const lockMenu = inBook && workspaceFile && !readOnlyProp ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" data-testid="lock-toolbar" className={cn(toolButton, "inline-flex items-center gap-0.5")}
+          onMouseDown={event => event.preventDefault()}>
+          <Lock className={cn("size-3", chapterLocked ? "text-primary" : "")} />{t("book.lock.menu")}<ChevronDown className="size-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" onCloseAutoFocus={event => { event.preventDefault(); viewRef.current?.focus(); }}>
+        {chapterLocked ? (
+          <DropdownMenuItem disabled>{t("book.lock.unlock_in_app")}</DropdownMenuItem>
+        ) : (
+          <>
+            <DropdownMenuItem onSelect={() => lockMutation.mutate("chapter")}>{t("book.lock.lock_chapter")}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => lockMutation.mutate("passages")}>
+              {t(viewRef.current?.state.selection.main.empty === false ? "book.lock.lock_selected" : "book.lock.lock_cursor")}
+            </DropdownMenuItem>
+            {(fileLocks.data?.passages.length ?? 0) > 0 ? (
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                {t("book.lock.passages_here", { count: fileLocks.data?.passages.length ?? 0 })}
+              </DropdownMenuLabel>
+            ) : null}
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
   const findButton = (
     <button type="button" data-testid="find-toolbar" className={toolButton} title={`${t("writing.find")} (Ctrl+F)`}
       onMouseDown={event => event.preventDefault()} onClick={() => openFind(false)}>{t("writing.find")}</button>
@@ -377,12 +491,19 @@ export function WorkspaceSourceEditor({
         {formatMenu}
         {tuiqiaoEnabled ? writingButtons : null}
         {beatsButton}
+        {historyButton}
+        {lockMenu}
       </div> : <div role="toolbar" aria-label={t("writing.find")} className="flex shrink-0 flex-wrap gap-1 border-b px-2 py-1">
         {findButton}
         {formatMenu}
         {tuiqiaoEnabled ? writingButtons : null}
         {beatsButton}
+        {historyButton}
+        {lockMenu}
       </div>}
+      {chapterLocked ? (
+        <p className="shrink-0 border-b px-3 py-1 text-xs text-muted-foreground" data-testid="chapter-locked-banner">{t("book.lock.read_only_banner")}</p>
+      ) : null}
       {findRequest ? (
         <WorkspaceFindPanel view={viewRef.current} doc={value} readOnly={readOnly} request={findRequest} onClose={() => setFindRequest(null)} />
       ) : null}
@@ -395,7 +516,7 @@ export function WorkspaceSourceEditor({
       editable={!readOnly}
       theme="none"
       className="h-full overflow-hidden"
-      onCreateEditor={view => { viewRef.current = view; trackSelection(view); revealPassage(view); }}
+      onCreateEditor={view => { viewRef.current = view; trackSelection(view); revealPassage(view); applyLocks(view); }}
       onUpdate={onEditorUpdate}
       height="100%"
       basicSetup={{
@@ -426,6 +547,9 @@ export function WorkspaceSourceEditor({
     </div>
     {tuiqiaoEnabled ? <WorkspaceTuiqiaoPanel request={tuiqiaoRequest} onClose={() => setTuiqiaoRequest(null)} onPick={pickTuiqiao} /> : null}
     {tuiqiaoEnabled ? <WorkspaceZaizaoPanel request={zaizaoRequest} onClose={() => setZaizaoRequest(null)} onPick={pickZaizao} /> : null}
+    {historyOpen && workspaceFile ? (
+      <WorkspaceBookHistory workspaceId={bookWorkspaceId} path={workspaceFile.path} onClose={() => setHistoryOpen(false)} onChanged={onFileReplaced} />
+    ) : null}
     {beatsOpen && chapter ? (
       <WorkspaceBeatsPanel
         key={chapter.id}

@@ -88,12 +88,15 @@ internal fun WorkspaceEditorFindBar(
     onNext: () -> Unit,
     onReplace: () -> Unit,
     onReplaceAll: () -> Unit,
+    /** The chapter's lock icon (book chapters), at the start of the search row. */
+    lock: (@Composable () -> Unit)? = null,
 ) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(find.focusRequests) { if (find.focusRequests > 0) focus.requestFocus() }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                lock?.invoke()
                 val count = when {
                     find.query.text.isEmpty() || find.matchedFor != (find.query.text.toString() to find.caseSensitive) -> ""
                     find.matches.isEmpty() -> stringResource(R.string.workspace_find_none)

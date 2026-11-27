@@ -93,6 +93,21 @@ import me.rerere.workspace.WorkspaceTextWriteResult
 import org.koin.compose.koinInject
 import me.rerere.rikkihub.data.ai.UsageRecorder
 import me.rerere.rikkihub.data.book.QuoteLocator
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.rememberLockedRanges
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.normalizedOffset
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.LockedDraftBar
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.LockUndoBar
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.LockUndo
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.EditorLockIcon
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.ChapterLockSheet
+import androidx.compose.foundation.clickable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.flowOf
+import me.rerere.rikkihub.data.book.history.FileLocks
+import me.rerere.rikkihub.data.book.history.LockRefusedException
+import me.rerere.rikkihub.data.book.history.BookLockedException
+import me.rerere.rikkihub.data.book.history.BookHistoryActions
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkihub.data.ai.tavern.TavernRuntime
 import me.rerere.rikkihub.data.ai.qubagu.QubaguRefiner
@@ -122,7 +137,7 @@ fun WorkspaceFileEditorPage(id: String, area: WorkspaceStorageArea, path: String
         onShowSecondChange = { showReference = it },
         first = { active ->
             WorkspaceFileEditorPane(
-                rememberWorkspaceEditorDocument(id, area, path), WorkspaceEditorPaneRole.MAIN, active,
+                rememberWorkspaceEditorDocument(id, area, path, inBook = book != null), WorkspaceEditorPaneRole.MAIN, active,
                 onExit = { nav.popBackStack() },
                 onSwitch = { showReference = true },
                 reveal = reveal,
@@ -184,6 +199,12 @@ internal class WorkspaceEditorDocument(
     val webResources: WorkspaceWebResources? = null,
     /** Opens the paged reading mode on this file (workspace Markdown / text files); null = not offered. */
     val openReader: (() -> Unit)? = null,
+    /** Keeps the given text as a version of a book chapter before an assistant edit lands; a no-op outside books. */
+    val keepVersion: (suspend (text: String) -> Unit)? = null,
+    /** Opens this file's version history (book workspaces); null = not offered. */
+    val openHistory: (() -> Unit)? = null,
+    /** (workspace id, path) when the file is in a book: the editor shows and follows its final locks. */
+    val lockTarget: Pair<String, String>? = null,
 )
 
 /** Relative URLs (stylesheets, scripts, images) of an HTML/SVG preview, served from local files. */
@@ -195,17 +216,23 @@ internal class WorkspaceWebResources(
 )
 
 @Composable
-private fun rememberWorkspaceEditorDocument(id: String, area: WorkspaceStorageArea, path: String): WorkspaceEditorDocument {
+private fun rememberWorkspaceEditorDocument(id: String, area: WorkspaceStorageArea, path: String, inBook: Boolean = false): WorkspaceEditorDocument {
     val repository = koinInject<WorkspaceRepository>()
+    val history = koinInject<BookHistory>()
     val nav = LocalNavController.current
-    return remember(id, area, path) {
+    return remember(id, area, path, inBook) {
         WorkspaceEditorDocument(
             key = "$id\u0000$area\u0000$path",
             fileName = path.substringAfterLast('/').ifBlank { path },
             displayPath = workspaceGuestPath(area, path),
             editable = area == WorkspaceStorageArea.FILES,
             read = { repository.readTextSnapshotForPreview(id, area, path) },
-            write = { text, revision -> repository.writeTextWithRevision(id, path, text, revision) },
+            // 编辑器保存是你自己写的：段落锁跟着走（整章锁仍然挡住）
+            write = { text, revision ->
+                kotlinx.coroutines.withContext(BookHistory.sourceElement(me.rerere.rikkihub.data.book.history.HistorySource.Manual)) {
+                    repository.writeTextWithRevision(id, path, text, revision)
+                }
+            },
             webResources = workspaceGuestPath(area, path).let { guestPath ->
                 // A FILES page may use anything in the files area; a rootfs page only its own folder tree.
                 val readable = if (area == WorkspaceStorageArea.FILES) "${WorkspaceManager.ROOTFS_WORKSPACE_DIR}/"
@@ -215,6 +242,9 @@ private fun rememberWorkspaceEditorDocument(id: String, area: WorkspaceStorageAr
                 }
             },
             openReader = { nav.navigate(Screen.WorkspaceReader(id, area.name, path)) }.takeIf { isReadableName(path) },
+            keepVersion = if (area == WorkspaceStorageArea.FILES) ({ text -> history.checkpoint(id, path, text) }) else null,
+            openHistory = { nav.navigate(Screen.BookHistory(id, path)) }.takeIf { inBook && area == WorkspaceStorageArea.FILES },
+            lockTarget = (id to path).takeIf { area == WorkspaceStorageArea.FILES && history.isBook(id) },
         )
     }
 }
@@ -271,6 +301,13 @@ internal fun WorkspaceFileEditorPane(
         val target = leaveTarget
         if (target != null && chapterNav != null) chapterNav.open(target) else onExit()
     }
+    // 定稿锁：整章锁定时只读；段落锁画竖条、挡住会改到它的推敲、再造、节拍换稿
+    val bookHistory = koinInject<BookHistory>()
+    val historyActions = koinInject<BookHistoryActions>()
+    val lockTarget = document.lockTarget
+    val fileLocks by remember(lockTarget) { lockTarget?.let { (ws, p) -> bookHistory.lockFlow(ws, p) } ?: flowOf(null) }
+        .collectAsStateWithLifecycle(null)
+    val chapterLocked = fileLocks?.chapter != null
     val editable = document.editable
     val fileName = document.fileName
     val previewKind = workspaceFilePreviewKind(fileName)
@@ -316,10 +353,11 @@ internal fun WorkspaceFileEditorPane(
     // Read fresh by save/leave: they also run from effects, after the composition that built them.
     fun isDirty() = draftVm.originalText == null || textState.text.toString() != draftVm.originalText
     fun hasValidBaseline() = draftVm.originalText != null && draftVm.baselineRevision?.matches(Regex("[0-9a-f]{64}")) == true
-    fun canAutoSave() = editable && !loading && !loadError && hasValidBaseline() && draftVm.autoSavePause == null
+    fun canAutoSave() = editable && !chapterLocked && !loading && !loadError && hasValidBaseline() && draftVm.autoSavePause == null
     val dirty = isDirty()
     val validBaseline = hasValidBaseline()
     val savedMessage = stringResource(R.string.workspace_editor_saved)
+    val lockedSaveMessage = stringResource(R.string.book_lock_save_refused)
     val failedMessage = stringResource(R.string.workspace_editor_save_failed)
     val conflictMessage = stringResource(R.string.workspace_editor_conflict)
     val revertedMessage = stringResource(R.string.workspace_editor_reverted)
@@ -339,8 +377,13 @@ internal fun WorkspaceFileEditorPane(
     val zaizaoTooLongMessage = stringResource(R.string.zaizao_error_too_long, Zaizao.MAX_SELECTION_CHARS)
     // 推敲 replaces source text, so it needs what autosave needs; only file types enabled in its settings.
     val tuiqiaoConfig = LocalSettings.current.tuiqiao
-    val canTuiqiao = editable && tuiqiaoConfig.enabledFor(fileName) && !loading && !loadError &&
+    val canTuiqiao = editable && !chapterLocked && tuiqiaoConfig.enabledFor(fileName) && !loading && !loadError &&
         validBaseline && draftVm.autoSavePause == null
+    val lockedRanges = rememberLockedRanges(textState, fileLocks.takeUnless { chapterLocked })
+    val lockBlockedMessage = stringResource(R.string.book_lock_apply_blocked)
+    /** 推敲、再造、节拍换稿、八股：改动范围碰到锁定段落就不应用。 */
+    fun touchesLock(start: Int, end: Int): Boolean =
+        lockedRanges.values.any { start <= it.last && it.first < maxOf(end, start + 1) }
     // A sheet left open while 推敲 stopped being available (file type turned off in its settings,
     // autosave paused) could no longer replace anything: close it. Not keyed on `loading`, which is
     // briefly true after a configuration change while the sheet's request keeps running.
@@ -365,7 +408,7 @@ internal fun WorkspaceFileEditorPane(
         }
     }
     // 八股 marks need what autosave needs too: applying a suggestion edits the file.
-    val canQubagu = editable && workspaceFormatKind(fileName) != null && !loading && !loadError && validBaseline && draftVm.autoSavePause == null
+    val canQubagu = editable && !chapterLocked && workspaceFormatKind(fileName) != null && !loading && !loadError && validBaseline && draftVm.autoSavePause == null
     val qubaguVm: WorkspaceQubaguViewModel = viewModel(key = "workspace-qubagu:$fileKey") {
         val engine = Qubagu(tavernRuntime.regexFactory)
         WorkspaceQubaguViewModel(engine, QubaguRefiner(engine, providerManager, usageRecorder), settingsStore)
@@ -379,13 +422,24 @@ internal fun WorkspaceFileEditorPane(
         WorkspaceQubaguScan.TOO_LARGE to stringResource(R.string.qubagu_scan_too_large, WorkspaceQubaguViewModel.MAX_CHARS),
     )
     val qubaguChangedMessage = stringResource(R.string.qubagu_scan_changed)
+    /** Book chapters: keep the text as it is now as a version, then run [apply] (an assistant edit). */
+    fun keepVersionThen(apply: () -> Unit) {
+        val keep = document.keepVersion ?: return apply()
+        val before = textState.text.toString()
+        scope.launch {
+            runCatching { keep(before) }.onFailure { if (it is CancellationException) throw it }
+            apply()
+        }
+    }
     val qubagu = if (!canQubagu) null else WorkspaceEditorQubagu(
         active = qubaguVm.active,
         scanning = qubaguVm.scanning,
         marks = qubaguVm.marks?.marks.orEmpty(),
         onToggle = {
             if (qubaguVm.active) qubaguVm.stop()
-            else qubaguVm.start(textState.text.toString()) { result -> qubaguMessages[result]?.let { toaster.show(it, type = ToastType.Info) } }
+            else keepVersionThen {
+                qubaguVm.start(textState.text.toString()) { result -> qubaguMessages[result]?.let { toaster.show(it, type = ToastType.Info) } }
+            }
         },
         onOpen = qubaguVm::open,
     )
@@ -407,6 +461,10 @@ internal fun WorkspaceFileEditorPane(
             return
         }
         val (edit, next) = change
+        if (touchesLock(edit.start, edit.end)) {
+            toaster.show(lockBlockedMessage, type = ToastType.Info)
+            return
+        }
         textState.edit {
             replace(edit.start, edit.end, edit.text)
             selection = TextRange(edit.start + edit.text.length)
@@ -421,12 +479,16 @@ internal fun WorkspaceFileEditorPane(
         }
     }
     /** Replaces the session's range if it still holds the original text: one undoable edit, autosaved. */
-    fun applyTuiqiao(candidate: TuiqiaoCandidate) {
-        val session = tuiqiaoVm.session ?: return
+    fun applyTuiqiao(candidate: TuiqiaoCandidate) = keepVersionThen {
+        val session = tuiqiaoVm.session ?: return@keepVersionThen
         val text = textState.text
         if (!canTuiqiao || session.end > text.length || text.substring(session.start, session.end) != session.original) {
             toaster.show(tuiqiaoChangedMessage, type = ToastType.Error)
-            return
+            return@keepVersionThen
+        }
+        if (touchesLock(session.start, session.end)) {
+            toaster.show(lockBlockedMessage, type = ToastType.Info)
+            return@keepVersionThen
         }
         textState.edit {
             replace(session.start, session.end, candidate.text)
@@ -442,11 +504,15 @@ internal fun WorkspaceFileEditorPane(
         }
     }
     /** Replaces the session's original if it is still where the session last saw it; the session stays kept. */
-    fun applyZaizao(draft: WorkspaceZaizaoDraft) {
-        val entry = zaizaoVm.shown ?: return
+    fun applyZaizao(draft: WorkspaceZaizaoDraft) = keepVersionThen {
+        val entry = zaizaoVm.shown ?: return@keepVersionThen
         if (!canTuiqiao || !entry.matches(textState.text.toString())) {
             toaster.show(tuiqiaoChangedMessage, type = ToastType.Error)
-            return
+            return@keepVersionThen
+        }
+        if (touchesLock(entry.liveStart, entry.liveEnd)) {
+            toaster.show(lockBlockedMessage, type = ToastType.Info)
+            return@keepVersionThen
         }
         val start = entry.liveStart
         textState.edit {
@@ -480,8 +546,8 @@ internal fun WorkspaceFileEditorPane(
     }
     var beatsOpen by rememberSaveable(fileKey) { mutableStateOf(false) }
     // Writing drafts into the text needs what autosave needs, like 推敲.
-    val canEditText = editable && !loading && !loadError && validBaseline && draftVm.autoSavePause == null && !qubaguVm.active
-    val onBeats: (() -> Unit)? = if (chapter == null || !editable || loading || loadError) null else ({ beatsOpen = true })
+    val canEditText = editable && !chapterLocked && !loading && !loadError && validBaseline && draftVm.autoSavePause == null && !qubaguVm.active
+    val onBeats: (() -> Unit)? = if (chapter == null || !editable || chapterLocked || loading || loadError) null else ({ beatsOpen = true })
     if (beatsOpen && chapter != null) BeatBoardSheet(
         workspaceId = chapter.workspaceId,
         chapterId = chapter.chapterId,
@@ -490,21 +556,25 @@ internal fun WorkspaceFileEditorPane(
             text = textState.text.toString(),
             cursor = textState.selection.max,
             editable = canEditText,
-            insert = { insertions ->
+            insert = { insertions -> keepVersionThen {
                 textState.edit {
                     insertions.forEach { replace(it.offset, it.offset, it.text) }
                     val last = insertions.last()
                     selection = TextRange(last.offset + last.text.trimEnd('\n').length)
                 }
                 toaster.show(beatsInsertedMessage, type = ToastType.Success)
-            },
-            replace = { range, text ->
+            } },
+            replace = { range, text -> keepVersionThen {
+                if (touchesLock(range.first, range.last + 1)) {
+                    toaster.show(lockBlockedMessage, type = ToastType.Info)
+                    return@keepVersionThen
+                }
                 textState.edit {
                     replace(range.first, range.last + 1, text)
                     selection = TextRange(range.first + text.length)
                 }
                 toaster.show(tuiqiaoReplacedMessage, type = ToastType.Success)
-            },
+            } },
             copy = { text ->
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("beat", text)))
@@ -517,7 +587,7 @@ internal fun WorkspaceFileEditorPane(
     )
     /** [auto]: background save — silent on success, skipped when clean or paused; failure pauses it. */
     fun save(closeAfter: Boolean = false, auto: Boolean = false) {
-        if (saving || loading || loadError || !editable || !hasValidBaseline()) return
+        if (saving || loading || loadError || !editable || chapterLocked || !hasValidBaseline()) return
         if (auto && (draftVm.autoSavePause != null || !isDirty())) return
         val frozenText = textState.text.toString()
         val expectedRevision = draftVm.baselineRevision ?: return
@@ -539,6 +609,10 @@ internal fun WorkspaceFileEditorPane(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (locked: BookLockedException) {
+                // 万一锁比界面先到：不写，修改留在草稿里（锁一到编辑器就只读，并给出解锁并保存）
+                toaster.show(lockedSaveMessage, type = ToastType.Error)
+                if (closeAfter) leaveConfirm = true
             } catch (error: Exception) {
                 val conflict = error is WorkspaceFileRevisionConflictException
                 draftVm.autoSavePause = if (conflict) WorkspaceEditorAutoSavePause.CONFLICT else WorkspaceEditorAutoSavePause.FAILED
@@ -616,7 +690,7 @@ internal fun WorkspaceFileEditorPane(
     }
     if (leaveConfirm || reloadConfirm) WorkspaceEditorLeaveDialog(
         saving = saving,
-        canSave = validBaseline && !reloadConfirm,
+        canSave = validBaseline && !reloadConfirm && !chapterLocked,
         onSave = { save(closeAfter = true) },
         onDiscard = {
             draftVm.discardBoundDraft()
@@ -703,6 +777,86 @@ internal fun WorkspaceFileEditorPane(
             if (!(editable && isDirty())) document.openReader?.invoke()
         }
     }
+    // ---- 定稿锁：锁面板、选择菜单、撤销提示条、只读提示、锁定时留下的草稿 ----
+    var lockPanelOpen by remember(fileKey) { mutableStateOf(false) }
+    var lockBusy by remember(fileKey) { mutableStateOf(false) }
+    var lockUndo by remember(fileKey) { mutableStateOf<LockUndo?>(null) }
+    val lockTooShort = stringResource(R.string.book_lock_too_short)
+    val lockOverlap = stringResource(R.string.book_lock_overlap)
+    val lockTip = stringResource(R.string.book_lock_tip)
+    val lockUndoFailed = stringResource(R.string.book_lock_undo_failed)
+    /** 加锁对着磁盘上的稿子：有没保存的修改先存，存好了再加。 */
+    fun lockWork(locked: Boolean, run: suspend (ws: String, path: String, revision: String) -> FileLocks?) {
+        val (ws, lockPath) = lockTarget ?: return
+        if (lockBusy) return
+        lockBusy = true
+        scope.launch {
+            try {
+                if (locked && editable && isDirty()) {
+                    save(auto = true)
+                    snapshotFlow { saving }.first { !it }
+                    if (isDirty()) return@launch
+                }
+                val revision = draftVm.baselineRevision ?: return@launch
+                val previous = run(ws, lockPath, revision)
+                lockUndo = LockUndo(locked, 1, mapOf(lockPath to previous))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (refused: LockRefusedException) {
+                toaster.show(if (refused.reason == LockRefusedException.Reason.OVERLAP) lockOverlap else lockTooShort, type = ToastType.Info)
+            } catch (error: Exception) {
+                toaster.show(error.message ?: error.javaClass.simpleName, type = ToastType.Error)
+            } finally {
+                lockBusy = false
+            }
+        }
+    }
+    fun lockParagraphs(start: Int, end: Int) = lockWork(true) { ws, lockPath, revision ->
+        val text = textState.text
+        historyActions.lockPassage(ws, lockPath, revision, normalizedOffset(text, start), normalizedOffset(text, end)).second
+    }
+    fun unlockPassages(ids: Set<String>) = lockWork(false) { ws, lockPath, _ ->
+        bookHistory.unlock(ws, lockPath, chapter = false, passageIds = ids)
+    }
+    val lockMenu = if (lockTarget == null || chapterLocked || !editable || loading || loadError) null else WorkspaceEditorLockMenu(
+        touches = { start, end -> lockedRanges.values.any { start <= it.last && it.first < maxOf(end, start + 1) } },
+        onLock = ::lockParagraphs,
+        onUnlock = { start, end ->
+            unlockPassages(lockedRanges.filterValues { start <= it.last && it.first < maxOf(end, start + 1) }.keys)
+        },
+    )
+    if (lockPanelOpen && lockTarget != null) {
+        ChapterLockSheet(
+            locks = fileLocks,
+            hasSelection = !textState.selection.collapsed,
+            busy = lockBusy || loading || loadError || !validBaseline,
+            onJump = { passage ->
+                lockedRanges[passage.id]?.let { range ->
+                    lockPanelOpen = false
+                    showPreview = false
+                    revealRange = TextRange(range.first, range.last + 1)
+                }
+            },
+            onLockChapter = {
+                lockPanelOpen = false
+                lockWork(true) { ws, lockPath, revision -> historyActions.lockChapter(ws, lockPath, revision) }
+            },
+            onUnlockChapter = {
+                lockPanelOpen = false
+                lockWork(false) { ws, lockPath, _ -> bookHistory.unlock(ws, lockPath, chapter = true, passageIds = emptySet()) }
+            },
+            onLockParagraph = {
+                lockPanelOpen = false
+                val selection = textState.selection
+                lockParagraphs(selection.min, selection.max)
+            },
+            onUnlockPassage = { unlockPassages(setOf(it.id)) },
+            onDismiss = { lockPanelOpen = false },
+        )
+    }
+    // The history compares with the file on disk, so unsaved edits are saved first.
+    val onHistory: (() -> Unit)? = document.openHistory?.takeIf { role == WorkspaceEditorPaneRole.MAIN && !loading && !loadError }
+        ?.let { open -> { if (editable && isDirty()) save(); open() } }
     Scaffold(
         topBar = {
             WorkspaceEditorTopBar(
@@ -744,7 +898,8 @@ internal fun WorkspaceFileEditorPane(
                         }
                     }
                     val opened = draftVm.openedText
-                    if (editable && !loading && !loadError && validBaseline && opened != null &&
+                    // 整章锁定后正文只读，“还原”也是一次改动，不给
+                    if (editable && !chapterLocked && !loading && !loadError && validBaseline && opened != null &&
                         workspaceEditorCanRevert(opened, textState.text)) {
                         TextButton(onClick = {
                             textState.revertWorkspaceEditorTo(opened)
@@ -804,12 +959,56 @@ internal fun WorkspaceFileEditorPane(
                             document.webResources, Modifier.weight(1f))
                     } else {
                         WorkspaceMarkdownEditor(textState, previewKind == WorkspaceFilePreviewKind.MARKDOWN,
-                            Modifier.weight(1f), readOnly = !editable || !validBaseline, formatKind = workspaceFormatKind(fileName),
-                            onTuiqiao = onTuiqiao, onZaizao = onZaizao, active = active, qubagu = qubagu, onBeats = onBeats,
-                            reveal = revealRange, onRevealed = { revealRange = null })
+                            Modifier.weight(1f), readOnly = !editable || !validBaseline || chapterLocked, formatKind = workspaceFormatKind(fileName),
+                            onTuiqiao = onTuiqiao, onZaizao = onZaizao, active = active, qubagu = qubagu, onBeats = onBeats, onHistory = onHistory,
+                            reveal = revealRange, onRevealed = { revealRange = null },
+                            chapterLocked = chapterLocked,
+                            lockedRanges = lockedRanges.values,
+                            lockMenu = lockMenu,
+                            findLock = lockTarget?.let { { EditorLockIcon(fileLocks, Modifier.clickable { lockPanelOpen = true }.padding(horizontal = 8.dp)) } },
+                            // 只读时第一次点按正文：提示怎么解锁（每章一次）
+                            onReadOnlyTap = lockTarget?.takeIf { chapterLocked }?.let { (ws, lockPath) ->
+                                { scope.launch { if (!bookHistory.tipShown(ws, lockPath)) toaster.show(lockTip, type = ToastType.Info) } }
+                            })
                     }
                 }
             }
+            if (chapterLocked && editable && !loading && draftVm.loadedFileKey == fileKey && isDirty()) {
+                LockedDraftBar(
+                    onUnlockAndSave = {
+                        val (ws, lockPath) = lockTarget ?: return@LockedDraftBar
+                        scope.launch {
+                            val previous = bookHistory.unlock(ws, lockPath, chapter = true, passageIds = emptySet())
+                            lockUndo = LockUndo(false, 1, mapOf(lockPath to previous))
+                            snapshotFlow { fileLocks?.chapter }.first { it == null }
+                            save()
+                        }
+                    },
+                    onCopy = {
+                        scope.launch {
+                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("draft", textState.text.toString())))
+                            toaster.show(tuiqiaoCopiedMessage, type = ToastType.Success)
+                        }
+                    },
+                    onDiscard = {
+                        draftVm.discardBoundDraft()
+                        draftVm.loadedFileKey = null
+                        loadRetry++
+                    },
+                )
+            }
+            LockUndoBar(
+                lockUndo,
+                onUndo = { undo ->
+                    lockUndo = null
+                    val ws = lockTarget?.first ?: return@LockUndoBar
+                    scope.launch {
+                        val failed = undo.previous.count { (lockPath, previous) -> !bookHistory.restoreLocks(ws, lockPath, previous) }
+                        if (failed > 0) toaster.show(lockUndoFailed, type = ToastType.Error)
+                    }
+                },
+                onTimeout = { lockUndo = null },
+            )
             WorkspaceEditorStatusBar(
                 fileName = fileName,
                 path = document.displayPath,
@@ -817,6 +1016,8 @@ internal fun WorkspaceFileEditorPane(
                 withSelection = !showPreview,
                 chapterNav = chapterNav,
                 onChapter = { requestLeave(it) },
+                lock = lockTarget?.let { { EditorLockIcon(fileLocks, Modifier.testTag("book-lock-status")) } },
+                onLock = { lockPanelOpen = true },
             )
         }
     }

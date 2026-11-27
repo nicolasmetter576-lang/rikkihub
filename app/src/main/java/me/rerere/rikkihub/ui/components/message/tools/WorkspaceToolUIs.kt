@@ -32,6 +32,9 @@ import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.highlight.CodeHighlightText
 import androidx.compose.ui.res.stringResource
 import me.rerere.hugeicons.HugeIcons
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import me.rerere.hugeicons.stroke.Lock
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.FileAdd
 import me.rerere.hugeicons.stroke.FileEdit
@@ -76,10 +79,14 @@ object EditFileToolUI : ToolUIRenderer {
         return generateUnifiedDiff(oldText, newText, path)
     }
 
-    override fun hasSummary(context: ToolUIContext): Boolean = diffOf(context) != null
+    override fun hasSummary(context: ToolUIContext): Boolean = diffOf(context) != null || lockedByBook(context)
 
     @Composable
     override fun Summary(context: ToolUIContext) {
+        if (lockedByBook(context)) {
+            BookLockBadge(stringResource(R.string.tool_ui_book_locked))
+            return
+        }
         val diff = remember(context) { diffOf(context) } ?: return
         val stats = remember(diff) { parseDiffStats(diff) }
         Row(
@@ -213,6 +220,7 @@ object WriteFileToolUI : ToolUIRenderer {
 
     @Composable
     override fun Summary(context: ToolUIContext) {
+        if (lockedByBook(context)) BookLockBadge(stringResource(R.string.tool_ui_book_locked))
         val text = remember(context) { textOf(context) } ?: return
         FileContentSummary(
             text = text,
@@ -408,6 +416,9 @@ object ShellToolUI : ToolUIRenderer {
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ShellExitStatus(content, MaterialTheme.typography.labelSmall)
+            content.boolean("book_locks_restored")?.let { restored ->
+                BookLockBadge(stringResource(if (restored) R.string.tool_ui_book_restored else R.string.tool_ui_book_not_restored))
+            }
             if (combined.isNotEmpty()) {
                 Box(
                     modifier = Modifier
@@ -499,6 +510,18 @@ object ShellToolUI : ToolUIRenderer {
                 )
             }
         }
+    }
+}
+
+/** 写、改文件被定稿锁拒绝（工具结果里 `locked: true`）。 */
+private fun lockedByBook(context: ToolUIContext): Boolean = context.tool.isExecuted && context.content.boolean("locked") == true
+
+/** 工具卡片上的一行定稿锁说明。 */
+@Composable
+private fun BookLockBadge(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Icon(HugeIcons.Lock, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
     }
 }
 

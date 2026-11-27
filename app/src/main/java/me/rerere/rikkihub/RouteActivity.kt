@@ -119,7 +119,9 @@ import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspacePage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceDetailPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookImportPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookOutlinePage
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookHistoryPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookReplacePage
+import me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookTrashPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.book.ChapterOutlinePage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceDeviceDirectoryPage
 import me.rerere.rikkihub.ui.pages.extensions.workspace.WorkspaceFileEditorPage
@@ -757,6 +759,15 @@ class RouteActivity : ComponentActivity() {
                                 ChapterOutlinePage(key.workspaceId, key.chapterId)
                             }
 
+                            entry<Screen.BookHistory> { key ->
+                                BookHistoryPage(key.workspaceId, key.path, key.noticeId)
+                            }
+                            entry<Screen.BookTurnReview> { key ->
+                                me.rerere.rikkihub.ui.pages.extensions.workspace.book.BookTurnReviewPage(key.workspaceId, key.conversationId, key.messageId)
+                            }
+                            entry<Screen.BookTrash> { key ->
+                                BookTrashPage(key.workspaceId)
+                            }
                             entry<Screen.BookReplace> { key ->
                                 BookReplacePage(key.workspaceId)
                             }
@@ -1105,6 +1116,15 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data class BookImport(val workspaceId: String) : Screen
+
+    @Serializable
+    data class BookHistory(val workspaceId: String, val path: String, val noticeId: String? = null) : Screen
+
+    @Serializable
+    data class BookTurnReview(val workspaceId: String, val conversationId: String, val messageId: String) : Screen
+
+    @Serializable
+    data class BookTrash(val workspaceId: String) : Screen
 
     /** [command] runs in a new tab (CLI install/login from a chat). */
     @Serializable

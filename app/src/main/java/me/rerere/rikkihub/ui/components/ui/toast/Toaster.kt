@@ -204,7 +204,17 @@ private fun ToastContent(
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 5,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
+            item.action?.let { action ->
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        action.onClick()
+                        onDismiss()
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = colors.content),
+                ) { Text(action.label, style = MaterialTheme.typography.labelLarge) }
+            }
         }
     }
 }

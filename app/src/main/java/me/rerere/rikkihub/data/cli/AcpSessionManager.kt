@@ -184,7 +184,7 @@ class AcpSessionManager(
                 workspaceId = launch.workspaceId,
                 kind = WorkspaceOperationKind.GENERATION,
                 handleClass = WorkspaceHandleClass.CLI_SESSION,
-            ) { block(current) }
+            ) { workspaceRepository.watchingBook(launch.workspaceId) { block(current) } }
         } finally {
             current.busy = false
             current.lastUsedAt = System.currentTimeMillis()

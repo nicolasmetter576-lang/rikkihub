@@ -43,6 +43,7 @@ import me.rerere.rikkihub.ui.context.LocalToaster
  * Buttons of the workspace editor's top toolbar. [id] is what `DisplaySetting.workspaceEditorToolbarOrder`
  * stores, so it must never change; [command] is set for the Markdown formatting buttons. The writing
  * buttons come first in the default order; users who reordered get new buttons appended at the end.
+ * 历史 is last so adding it moved no existing button.
  */
 internal enum class WorkspaceEditorToolbarItem(val id: String, @StringRes val label: Int, val command: WorkspaceMarkdownCommand? = null) {
     TUIQIAO("tuiqiao", R.string.tuiqiao_title),
@@ -62,6 +63,7 @@ internal enum class WorkspaceEditorToolbarItem(val id: String, @StringRes val la
     TABLE("table", R.string.workspace_editor_table, WorkspaceMarkdownCommand.TABLE),
     UNDO("undo", R.string.workspace_editor_undo),
     REDO("redo", R.string.workspace_editor_redo),
+    HISTORY("history", R.string.book_history_toolbar),
 }
 
 /**
@@ -75,8 +77,12 @@ internal fun workspaceEditorToolbarOrder(stored: List<String>): List<WorkspaceEd
     return ordered + WorkspaceEditorToolbarItem.entries.filterNot { it in ordered }
 }
 
-/** Buttons per row in multi-row mode; 17 puts every button of a Markdown chapter on one row. */
-internal val WORKSPACE_TOOLBAR_PER_ROW = 3..17
+/** The buttons the toolbar shows: [workspaceEditorToolbarOrder] without the ones switched off. */
+internal fun workspaceEditorToolbarShown(stored: List<String>, hidden: List<String>): List<WorkspaceEditorToolbarItem> =
+    workspaceEditorToolbarOrder(stored).filterNot { it.id in hidden }
+
+/** Buttons per row in multi-row mode; 18 puts every button of a Markdown chapter on one row. */
+internal val WORKSPACE_TOOLBAR_PER_ROW = 3..18
 
 /**
  * Multi-row mode cuts the buttons in order into rows of [perRow] (clamped to [WORKSPACE_TOOLBAR_PER_ROW]),
@@ -92,7 +98,7 @@ internal fun workspaceEditorToolbarRows(
 /**
  * What the open file offers. Markdown buttons need [markdown]; 排版 needs a [formatKind] (Markdown and
  * plain text only); 推敲/再造 show when their callback is set (same rule as the selection menu); 八股 when
- * [qubagu] is set; 节拍 when [onBeats] is set (chapters of a book); Find, Undo and Redo are always there. While 八股 marks are shown the text is read-only and
+ * [qubagu] is set; 节拍 when [onBeats] is set (chapters of a book); 历史 when [onHistory] is set (book files); Find, Undo and Redo are always there. While 八股 marks are shown the text is read-only and
  * every button that would change it is greyed out (Find and 八股 itself stay).
  */
 internal class WorkspaceEditorToolbarActions(
@@ -103,15 +109,21 @@ internal class WorkspaceEditorToolbarActions(
     val onFind: () -> Unit = {},
     val qubagu: WorkspaceEditorQubagu? = null,
     val onBeats: (() -> Unit)? = null,
+    val onHistory: (() -> Unit)? = null,
+    /** The text is locked as final: only the buttons that don't change it (find, history). */
+    val readOnly: Boolean = false,
 ) {
     val locked: Boolean get() = qubagu?.active == true
 }
 
-internal fun WorkspaceEditorToolbarItem.availableFor(actions: WorkspaceEditorToolbarActions): Boolean = when (this) {
+internal fun WorkspaceEditorToolbarItem.availableFor(actions: WorkspaceEditorToolbarActions): Boolean = if (actions.readOnly) {
+    this == WorkspaceEditorToolbarItem.FIND || this == WorkspaceEditorToolbarItem.HISTORY && actions.onHistory != null
+} else when (this) {
     WorkspaceEditorToolbarItem.TUIQIAO -> actions.onTuiqiao != null
     WorkspaceEditorToolbarItem.ZAIZAO -> actions.onZaizao != null
     WorkspaceEditorToolbarItem.QUBAGU -> actions.qubagu != null
     WorkspaceEditorToolbarItem.BEATS -> actions.onBeats != null
+    WorkspaceEditorToolbarItem.HISTORY -> actions.onHistory != null
     WorkspaceEditorToolbarItem.FORMAT -> actions.formatKind != null
     WorkspaceEditorToolbarItem.FIND, WorkspaceEditorToolbarItem.UNDO, WorkspaceEditorToolbarItem.REDO -> true
     else -> actions.markdown
@@ -121,7 +133,8 @@ internal fun WorkspaceEditorToolbarItem.availableFor(actions: WorkspaceEditorToo
 @Composable
 internal fun WorkspaceEditorToolbar(state: TextFieldState, actions: WorkspaceEditorToolbarActions, onEdited: () -> Unit = {}) {
     val display = LocalSettings.current.displaySetting
-    val items = workspaceEditorToolbarOrder(display.workspaceEditorToolbarOrder).filter { it.availableFor(actions) }
+    val items = workspaceEditorToolbarShown(display.workspaceEditorToolbarOrder, display.workspaceEditorToolbarHidden)
+        .filter { it.availableFor(actions) }
     val size = WorkspaceEditorToolbarSize.of(display.workspaceEditorToolbarSize)
     if (!display.workspaceEditorToolbarDoubleRow) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -181,6 +194,8 @@ private fun WorkspaceEditorToolbarButton(
         }
 
         WorkspaceEditorToolbarItem.BEATS -> WorkspaceEditorToolbarTextButton(onClick = { actions.onBeats?.invoke() }, size, enabled = unlocked, fill = fill) { ToolbarLabel(label, fill) }
+
+        WorkspaceEditorToolbarItem.HISTORY -> WorkspaceEditorToolbarTextButton(onClick = { actions.onHistory?.invoke() }, size, fill = fill) { ToolbarLabel(label, fill) }
 
         WorkspaceEditorToolbarItem.TUIQIAO, WorkspaceEditorToolbarItem.ZAIZAO -> {
             // Selection only (user decision): the button is grey until text is selected.

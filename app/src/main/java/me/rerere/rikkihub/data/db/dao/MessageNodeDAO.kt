@@ -30,6 +30,10 @@ interface MessageNodeDAO {
     )
     suspend fun hasRawFileReference(needle: String): Boolean
 
+    /** 含 [needle]（一条消息的 id）的节点：逐处审阅判断一条回复还在不在，只解码命中的节点。 */
+    @Query("SELECT * FROM message_node WHERE conversation_id = :conversationId AND instr(messages, :needle) > 0")
+    suspend fun findNodesContaining(conversationId: String, needle: String): List<MessageNodeEntity>
+
     @Query("SELECT id FROM message_node WHERE conversation_id = :conversationId AND id IN (:nodeIds)")
     suspend fun getExistingNodeIds(conversationId: String, nodeIds: List<String>): List<String>
 

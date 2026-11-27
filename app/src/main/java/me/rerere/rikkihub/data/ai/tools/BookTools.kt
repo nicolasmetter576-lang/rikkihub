@@ -23,6 +23,8 @@ import me.rerere.rikkihub.data.book.BookManifest
 import me.rerere.rikkihub.data.book.BookStore
 import me.rerere.rikkihub.data.book.BookVolume
 import me.rerere.rikkihub.data.book.ChapterStatus
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.book.history.FileLocks
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
 import me.rerere.workspace.WorkspaceManager
 
@@ -40,7 +42,11 @@ internal fun createBookTools(
     workspace: WorkspaceEntity,
     needsApproval: (String) -> Boolean,
     store: BookStore,
+    /** 定稿锁：目录与读章时标出，锁定章不许移出目录；null = 不标。 */
+    history: BookHistory? = null,
 ): List<Tool> {
+    suspend fun locks(): Map<String, FileLocks> = history?.locks(workspace.id).orEmpty()
+    val language = workspace.promptLanguage() ?: BookPromptLanguage.ZH
     fun tool(id: String, parameters: JsonObject, required: List<String>, run: suspend (JsonObject) -> String) = Tool(
         name = id,
         description = BuiltinToolCatalog.require(id).defaultDescription,
@@ -62,6 +68,7 @@ internal fun createBookTools(
             bookContentsText(
                 store.open(workspace.id), args.int("from"), args.int("to"),
                 synopses = args["synopses"]?.jsonPrimitive?.booleanOrNull ?: true,
+                locks = locks(),
             )
         },
         tool(
@@ -78,7 +85,7 @@ internal fun createBookTools(
                 property("offset", "integer", "Skip this many characters, to continue a cut result. Defaults to 0.")
             },
             listOf("chapter"),
-        ) { args -> readChapters(store, workspace.id, args) },
+        ) { args -> readChapters(store, workspace.id, args, locks(), language) },
         tool(
             BuiltinToolIds.BOOK_SEARCH,
             buildJsonObject {
@@ -122,6 +129,7 @@ internal fun createBookTools(
             val operations = (args["operations"] as? JsonArray)?.map { it.jsonObject }
                 ?: error("operations must be a list")
             require(operations.isNotEmpty() && operations.size <= MAX_OPERATIONS) { "operations must hold 1 to $MAX_OPERATIONS items" }
+            lockedRemoval(store.open(workspace.id), operations, locks(), language)?.let { return@tool it }
             val book = store.edit(workspace.id) { applyBookOperations(it, operations) }
             "Done: ${operations.size} change(s). The book has ${book.entries.size} chapters.\n" +
                 bookContentsText(book, null, null, synopses = false)
@@ -140,7 +148,21 @@ private fun JsonObject.text(name: String): String? = this[name]?.jsonPrimitive?.
 
 private fun guestPath(path: String) = "${WorkspaceManager.ROOTFS_WORKSPACE_DIR}/$path"
 
-internal fun bookContentsText(book: Book, from: Int?, to: Int?, synopses: Boolean): String = buildString {
+/** 要把锁定的章节移出目录：整批不做，说明是第几个操作（防“写副本、把锁定章移出、副本放回原位”）。 */
+internal fun lockedRemoval(book: Book, operations: List<JsonObject>, locks: Map<String, FileLocks>, language: BookPromptLanguage): String? {
+    val zh = language == BookPromptLanguage.ZH
+    operations.forEachIndexed { index, op ->
+        if (op.text("op") != "remove") return@forEachIndexed
+        val entry = op.int("chapter")?.let(book::entryByNumber) ?: return@forEachIndexed
+        if (locks[entry.path]?.isEmpty == false) {
+            return if (zh) "没有做任何改动：第 ${index + 1} 个操作要把第 ${entry.number} 章移出目录，但这一章有用户定稿锁定的内容，需要用户在 App 里操作。去掉这个操作后可以重新提交其余的改动。"
+            else "Nothing was changed: operation ${index + 1} removes chapter ${entry.number} from the contents, but it holds content the user locked as final; only the user can do that in the app. Drop that operation and resubmit the others."
+        }
+    }
+    return null
+}
+
+internal fun bookContentsText(book: Book, from: Int?, to: Int?, synopses: Boolean, locks: Map<String, FileLocks> = emptyMap()): String = buildString {
     val manifest = book.manifest
     append(manifest.title.ifBlank { "(untitled)" })
     if (manifest.author.isNotBlank()) append(" — ").append(manifest.author)
@@ -161,7 +183,7 @@ internal fun bookContentsText(book: Book, from: Int?, to: Int?, synopses: Boolea
         append("${entry.number}. ${entry.title} — ")
         append(if (entry.missing) "FILE MISSING" else "${entry.words} words")
         if (entry.chapter.targetWords > 0) append(" of ${entry.chapter.targetWords}")
-        appendLine(", ${entry.chapter.status.id}, ${guestPath(entry.path)}")
+        appendLine(", ${entry.chapter.status.id}${BookLockPrompts.contentsMark(locks[entry.path])}, ${guestPath(entry.path)}")
         if (synopses && entry.chapter.synopsis.isNotBlank()) appendLine("   ${entry.chapter.synopsis.replace('\n', ' ')}")
     }
     if (shown.size < book.entries.size) appendLine("(chapters $first-$last of ${book.entries.size}; use from/to for others)")
@@ -172,7 +194,7 @@ internal fun bookContentsText(book: Book, from: Int?, to: Int?, synopses: Boolea
     }
 }.trimEnd()
 
-private suspend fun readChapters(store: BookStore, workspaceId: String, args: JsonObject): String {
+private suspend fun readChapters(store: BookStore, workspaceId: String, args: JsonObject, locks: Map<String, FileLocks>, language: BookPromptLanguage): String {
     val book = store.open(workspaceId)
     val number = args.int("chapter") ?: error("chapter is required")
     val last = (args.int("to") ?: number).coerceAtLeast(number)
@@ -187,7 +209,9 @@ private suspend fun readChapters(store: BookStore, workspaceId: String, args: Js
     }
     val part = args.text("part") ?: "all"
     val limit = (args.int("max_chars") ?: if (part == "all") READ_MAX_CHARS else READ_PART_CHARS).coerceIn(1, READ_MAX_CHARS)
-    return sliceProse(text, part, limit, (args.int("offset") ?: 0).coerceAtLeast(0))
+    // 锁定的内容列在正文以外，不往正文里插标记
+    val footer = entries.joinToString("") { BookLockPrompts.readFooter(language, locks[it.path]) }
+    return sliceProse(text, part, limit, (args.int("offset") ?: 0).coerceAtLeast(0)) + footer
 }
 
 /** 取正文的一段：不切断代理对，截断时写明还剩多少、从哪接着读。 */

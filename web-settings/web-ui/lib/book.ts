@@ -18,6 +18,8 @@ export interface BookItem {
   words?: number | null;
   missing?: boolean | null;
   updatedAt?: number | null;
+  /** 定稿锁概况；没有锁时为空 */
+  lock?: { chapter: boolean; passages: number } | null;
 }
 
 export interface Book {
@@ -65,10 +67,13 @@ export interface BookReplaceHit {
   before: string;
   match: string;
   after: string;
+  /** 落在锁定段落里（默认勾上，可取消） */
+  locked?: boolean;
 }
 
 export interface BookReplacePreview {
-  files: Array<{ path: string; revision: string; hits: BookReplaceHit[] }>;
+  /** locked：整章定稿锁定，不会替换 */
+  files: Array<{ path: string; revision: string; hits: BookReplaceHit[]; locked?: boolean }>;
   unreadable: string[];
 }
 
@@ -78,6 +83,7 @@ export interface BookReplaceResult {
   changed: string[];
   conflicts: string[];
   failed: string[];
+  locked?: string[];
 }
 
 export interface BookUndoEntry {
@@ -272,7 +278,325 @@ export function insertionChanges(insertions: readonly BeatInsertion[], length: n
 /** detail key 的前缀之下：workspace_update 事件失效 detail 时一起刷新 */
 export const bookQueryKey = (id: string) => ["workspaces", id, "book"] as const;
 
+/** 一版内容是谁写的（与 App 的 HistorySource 同形）。 */
+export type HistorySource =
+  | { type: "manual" }
+  | { type: "ai"; conversationId: string; messageId: string; toolCallId?: string | null }
+  | { type: "replace" }
+  | { type: "external_app" }
+  | { type: "external" }
+  | { type: "initial" }
+  | { type: "restore" };
+
+export type HistoryEntry =
+  | { type: "version"; at: number; path: string; source: HistorySource; sha: string }
+  | { type: "deleted"; at: number; path: string; source: HistorySource; trash: string }
+  | { type: "renamed"; at: number; path: string; source: HistorySource; from: string };
+
+export interface BookHistory {
+  /** 新的在前 */
+  entries: HistoryEntry[];
+  currentWriter?: HistorySource | null;
+  paused: boolean;
+  conversations: Record<string, string>;
+}
+
+export type DiffSpan = { text: string; kind: "same" | "removed" | "added" };
+
+export type DiffBlock =
+  | { type: "same"; lines: string[] }
+  | { type: "changed"; index: number; old: string[]; new: string[]; spans?: DiffSpan[][] | null };
+
+export interface BookHistoryComparison {
+  old: string;
+  revision: string;
+  diff: { blocks: DiffBlock[]; rewritten: boolean };
+}
+
+export interface TrashedFile {
+  key: string;
+  name: string;
+  path: string;
+  at: number;
+  source: HistorySource;
+  size: number;
+}
+
+/** 只看 AI 改之前：紧接着下一版（或现在的稿子）是 AI 写的那些。entries 新的在前。 */
+export function beforeAiEdits(entries: readonly HistoryEntry[], currentWriter?: HistorySource | null): HistoryEntry[] {
+  return entries.filter((entry, index) => {
+    if (entry.type !== "version") return false;
+    const newer = entries.slice(0, index).filter((item) => item.type === "version");
+    const next = newer.length > 0 ? newer[newer.length - 1].source : currentWriter;
+    return next?.type === "ai";
+  });
+}
+
+export interface BookPassageLock {
+  id: string;
+  head: string;
+  web: boolean;
+  paused: boolean;
+  /** 在 revision 那一版稿子里的位置（含头不含尾） */
+  start?: number | null;
+  end?: number | null;
+}
+
+export interface BookFileLocks {
+  path: string;
+  chapter: boolean;
+  chapterWeb?: boolean;
+  passages: BookPassageLock[];
+  revision?: string | null;
+}
+
+export type LockNoticeKind = "restored" | "not_restored" | "no_space" | "changed" | "lost" | "base_missing" | "deleted";
+
+export interface LockNotice {
+  id: string;
+  key: string;
+  path: string;
+  kind: LockNoticeKind;
+  at: number;
+  conversationId?: string | null;
+  messageId?: string | null;
+  /** 改之前的稿子（比较页从这一版开始） */
+  beforeSha?: string | null;
+  earlier?: number;
+}
+
+export interface BookLocks {
+  locks: BookFileLocks[];
+  notices: LockNotice[];
+  broken: boolean;
+}
+
+export const bookLocksQueryKey = (id: string) => ["workspaces", id, "book", "locks"] as const;
+
+// ---- 逐处审阅 ----
+
+export type TurnStatus = "PENDING" | "REVIEWED" | "ARCHIVED";
+export type Unattributed = "overlap" | "terminal";
+
+export interface BookTurnSummary {
+  conversationId: string;
+  messageId: string;
+  finishedAt: number;
+  status: TurnStatus;
+  /** 卡片上数的文件（不含只改了缩进、空行的） */
+  files: number;
+  deleted: number;
+  onlyCreated: boolean;
+  reverted: number;
+  unattributed?: Unattributed | null;
+  /** 碰过的文件（历史键） */
+  keys: string[];
+  cleaned: boolean;
+}
+
+export type TurnBlockState = "pending" | "reverted" | "gone" | "changed_later";
+
+export interface TurnBlock {
+  index: number;
+  old: string[];
+  new: string[];
+  spans?: DiffSpan[][] | null;
+  locked?: boolean;
+  state: TurnBlockState;
+  partner?: number | null;
+}
+
+export interface TurnFile {
+  key: string;
+  path: string;
+  kind: "changed" | "created" | "deleted" | "renamed";
+  renamedFrom?: string | null;
+  revision?: string | null;
+  before?: string | null;
+  after?: string | null;
+  chapterLocked?: boolean;
+  whole?: boolean;
+  layoutOnly?: boolean;
+  layout?: number;
+  missing?: "before" | "after" | "deleted_version" | null;
+  mixed?: boolean;
+  done?: boolean;
+  changesSince?: number | null;
+  gone?: boolean;
+  unrecoverable?: boolean;
+  canUndo?: boolean;
+  blocks?: TurnBlock[];
+}
+
+export interface TurnReview {
+  conversationId: string;
+  messageId: string;
+  finishedAt: number;
+  status: TurnStatus;
+  reverted: number;
+  unattributed?: Unattributed | null;
+  files: TurnFile[];
+}
+
+export interface TurnFilePick {
+  key: string;
+  revision?: string | null;
+  before?: string | null;
+  after?: string | null;
+  reject: number[];
+  whole?: boolean;
+}
+
+export interface TurnFileOutcome {
+  key: string;
+  path: string;
+  outcome: "ok" | "conflict" | "locked" | "failed" | "missing";
+  failed?: number[];
+  reverted?: number;
+}
+
+export const bookTurnsQueryKey = (id: string, conversationId: string) => ["workspaces", id, "book", "turns", conversationId] as const;
+export const bookTurnLatestQueryKey = (id: string) => ["workspaces", id, "book", "turns", "latest"] as const;
+
+/** 这一块现在能不能单独切换接受 / 拒绝（与 App 的 selectable 同一规则）。 */
+export function turnBlockSelectable(file: TurnFile, block: TurnBlock): boolean {
+  if (file.done) return false;
+  switch (file.kind) {
+    case "deleted":
+      return Boolean(file.gone) && !file.unrecoverable;
+    case "created":
+      return !file.gone && !file.chapterLocked && (block.state === "pending" || block.state === "changed_later");
+    default:
+      return (
+        !file.gone && !file.chapterLocked && !file.whole && !file.layoutOnly && !file.missing && block.state === "pending"
+      );
+  }
+}
+
+/** 完成时每个文件的选择：没选拒绝的文件也带上（标为处理过）；新建、删除的文件整个文件是第 0 块。 */
+export function turnPicks(review: TurnReview, rejected: Record<string, number[]>): TurnFilePick[] {
+  return review.files
+    .filter((file) => !file.done)
+    .map((file) => {
+      const reject = rejected[file.key] ?? [];
+      const whole = file.kind === "created" || file.kind === "deleted";
+      return {
+        key: file.key,
+        revision: file.revision,
+        before: file.before,
+        after: file.after,
+        reject: whole ? [] : reject,
+        whole: whole && reject.length > 0,
+      };
+    });
+}
+
+export interface TurnCard {
+  summary: BookTurnSummary;
+  /** 完整一行（卡片里）；否则一行小字 */
+  full: boolean;
+  sibling: BookTurnSummary | null;
+}
+
+interface TurnNode {
+  messages: Array<{ id: string }>;
+  selectIndex: number;
+}
+
+/**
+ * 当前分支上每条回复的审阅提示（与 App 同一规则）：只有最新一条待审、没静音的回复显示完整一行；
+ * 删了文件的轮次总是完整一行；只新建了文件的、更早的，只给一行小字。已归档不显示。
+ */
+export function turnCards(turns: readonly BookTurnSummary[], muted: boolean, nodes: readonly TurnNode[]): Map<string, TurnCard> {
+  const byId = new Map(turns.map((turn) => [turn.messageId, turn]));
+  const cards = new Map<string, TurnCard>();
+  if (byId.size === 0) return cards;
+  const current = nodes.flatMap((node) => {
+    const message = node.messages[node.selectIndex];
+    return message ? [{ node, id: message.id }] : [];
+  });
+  let latest: BookTurnSummary | null = null;
+  for (const { id } of current) {
+    const turn = byId.get(id);
+    if (turn?.status === "PENDING" && (!latest || turn.finishedAt > latest.finishedAt)) latest = turn;
+  }
+  for (const { node, id } of current) {
+    const summary = byId.get(id);
+    if (!summary || summary.status === "ARCHIVED") continue;
+    // 重新生成：同一节点上最近一个还有未审记录、碰过同一批文件的兄弟回复
+    let sibling: BookTurnSummary | null = null;
+    for (const message of node.messages) {
+      const other = message.id === id ? undefined : byId.get(message.id);
+      if (other?.status === "PENDING" && other.keys.some((key) => summary.keys.includes(key)) && (!sibling || other.finishedAt > sibling.finishedAt)) {
+        sibling = other;
+      }
+    }
+    const full = summary.status === "PENDING" && (summary.deleted > 0 || (summary === latest && !muted && !summary.onlyCreated));
+    cards.set(id, { summary, full, sibling });
+  }
+  return cards;
+}
+
+const DISMISSED_NOTICES = "rikkihub.book.dismissedLockNotices";
+
+/** 网页端的“知道了”只在这个浏览器里隐藏（App 里仍然显示），防止工作区里的程序经本机接口抹掉提醒。 */
+export const dismissedNotices = {
+  read(): Set<string> {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(DISMISSED_NOTICES) ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  },
+  add(id: string) {
+    const ids = [...dismissedNotices.read(), id].slice(-200);
+    localStorage.setItem(DISMISSED_NOTICES, JSON.stringify(ids));
+  },
+};
+
 export const bookApi = {
+  locks(id: string) {
+    return api.get<BookLocks>(`workspaces/${id}/book/locks`);
+  },
+  fileLocks(id: string, path: string) {
+    return api.get<BookFileLocks>(`workspaces/${id}/book/locks?path=${encodeURIComponent(path)}`);
+  },
+  lockChapter(id: string, path: string, revision: string) {
+    return api.post<BookFileLocks>(`workspaces/${id}/book/locks/chapter`, { path, revision }, { retry: 0 });
+  },
+  lockPassages(id: string, path: string, revision: string, start: number, end: number, text?: string) {
+    return api.post<BookFileLocks>(`workspaces/${id}/book/locks/passages`, { path, revision, start, end, text }, { retry: 0 });
+  },
+  /** 比较页上放回带比较时的 path + revision：稿子变了 409 */
+  putBackNotice(id: string, noticeId: string, compared?: { path: string; revision: string }) {
+    return api.post<{ done: boolean }>(`workspaces/${id}/book/locks/notices/put-back`, { id: noticeId, ...compared }, { retry: 0 });
+  },
+  turns(id: string, conversationId: string) {
+    return api.get<{ turns: BookTurnSummary[]; muted: boolean }>(
+      `workspaces/${id}/book/turns?conversation=${encodeURIComponent(conversationId)}`,
+    );
+  },
+  latestTurn(id: string) {
+    return api.get<{ turn?: BookTurnSummary | null; title?: string | null }>(`workspaces/${id}/book/turns/latest`);
+  },
+  recentTurns(id: string) {
+    return api.get<{ turns: BookTurnSummary[]; titles: Record<string, string> }>(`workspaces/${id}/book/turns/recent`);
+  },
+  turn(id: string, conversationId: string, messageId: string) {
+    return api.get<TurnReview>(`${turnPath(id, conversationId, messageId)}`);
+  },
+  completeTurn(id: string, conversationId: string, messageId: string, files: TurnFilePick[]) {
+    return api.post<{ results: TurnFileOutcome[] }>(`${turnPath(id, conversationId, messageId)}/complete`, { files }, { retry: 0 });
+  },
+  undoTurn(id: string, conversationId: string, messageId: string) {
+    return api.post<{ results: TurnFileOutcome[] }>(`${turnPath(id, conversationId, messageId)}/undo`, {}, { retry: 0 });
+  },
+  turnSeen(id: string, conversationId: string, messageId: string) {
+    return api.post<void>(`${turnPath(id, conversationId, messageId)}/seen`, {});
+  },
+  muteTurns(id: string, conversationId: string, muted: boolean) {
+    return api.post<void>(`workspaces/${id}/book/turns/mute`, { conversation: conversationId, muted });
+  },
   get(id: string) {
     return api.get<Book>(`workspaces/${id}/book`);
   },
@@ -343,6 +667,34 @@ export const bookApi = {
   beatPresence(id: string, chapterId: string, text: string) {
     return api.post<{ beats: Record<string, BeatPresence> }>(`${notesPath(id, chapterId)}/presence`, { text });
   },
+  history(id: string, path: string) {
+    return api.get<BookHistory>(`workspaces/${id}/book/history?path=${encodeURIComponent(path)}`);
+  },
+  compareVersion(id: string, path: string, sha: string) {
+    return api.get<BookHistoryComparison>(
+      `workspaces/${id}/book/history/compare?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(sha)}`,
+    );
+  },
+  restoreVersion(id: string, request: { path: string; sha: string; revision: string }) {
+    return api.post<{ revision: string }>(`workspaces/${id}/book/history/restore`, request, { retry: 0 });
+  },
+  takeBack(id: string, request: { path: string; sha: string; revision: string; index: number }) {
+    return api.post<{ revision: string }>(`workspaces/${id}/book/history/take-back`, request, { retry: 0 });
+  },
+  /** 编辑器应用推敲、再造、节拍之前：把应用前的稿子存一版（不是作品时服务端直接忽略） */
+  checkpoint(id: string, path: string, text: string) {
+    return api.post<void>(`workspaces/${id}/book/history/checkpoint`, { path, text }, { retry: 0 });
+  },
+  trash(id: string) {
+    return api.get<{ items: TrashedFile[] }>(`workspaces/${id}/book/trash`);
+  },
+  restoreTrashed(id: string, item: TrashedFile) {
+    return api.post<{ path: string }>(
+      `workspaces/${id}/book/trash/restore`,
+      { key: item.key, name: item.name, path: item.path },
+      { retry: 0 },
+    );
+  },
   markInserted(id: string, chapterId: string, blocks: Record<string, string>) {
     return api.post<ChapterNotes>(`${notesPath(id, chapterId)}/inserted`, { blocks });
   },
@@ -367,7 +719,7 @@ export const bookApi = {
     return api.get<{ entries: BookUndoEntry[] }>(`workspaces/${id}/book/replace/history`);
   },
   replaceUndo(id: string, undoId: string) {
-    return api.post<{ restored: string[]; changedSince: string[]; failed: string[] }>(
+    return api.post<{ restored: string[]; changedSince: string[]; failed: string[]; locked?: string[] }>(
       `workspaces/${id}/book/replace/undo`,
       { id: undoId },
       { retry: 0 },
@@ -395,4 +747,8 @@ export function newChapterPath(items: readonly BookItem[], name: string): string
   const last = items.filter((item) => item.type === "chapter").at(-1)?.path ?? "";
   const slash = last.lastIndexOf("/");
   return slash < 0 ? file : `${last.slice(0, slash + 1)}${file}`;
+}
+
+function turnPath(id: string, conversationId: string, messageId: string) {
+  return `workspaces/${id}/book/turns/${encodeURIComponent(conversationId)}/${encodeURIComponent(messageId)}`;
 }

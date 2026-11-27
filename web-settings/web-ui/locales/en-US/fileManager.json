@@ -48,5 +48,6 @@
   "restricted": "Android blocks access to other apps' Android/data and Android/obb folders.",
   "device_password_required": "Phone storage is only available on the web when the web access password is on (Settings → Web server).",
   "device_permission_required": "Grant \"All files access\" in the app first (File manager on the phone).",
-  "workspaces_read_only": "Workspace folders themselves can't be changed here; open one to work with its files"
+  "workspaces_read_only": "Workspace folders themselves can't be changed here; open one to work with its files",
+  "file_locked": "This file holds content locked as final; change or unlock it in the app"
 }

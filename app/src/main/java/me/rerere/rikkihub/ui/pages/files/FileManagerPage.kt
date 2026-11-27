@@ -1,5 +1,6 @@
 package me.rerere.rikkihub.ui.pages.files
 
+import me.rerere.rikkihub.data.book.history.BookHistory
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.lazy.itemsIndexed
 import me.rerere.rikkihub.ui.components.ui.cardGroupItemShape
@@ -1004,6 +1005,7 @@ private fun openExternally(context: Context, file: File): Boolean {
 @Composable
 fun FileManagerEditorPage(root: FileManagerRoot, path: String) {
     val service = koinInject<FileManagerService>()
+    val history = koinInject<BookHistory>()
     val nav = LocalNavController.current
     val libraryName = stringResource(R.string.file_manager_library)
     val document = remember(root, path) {
@@ -1013,11 +1015,18 @@ fun FileManagerEditorPage(root: FileManagerRoot, path: String) {
             displayPath = if (root is FileManagerRoot.Library) "$libraryName/$path" else service.file(root, path).path,
             editable = true,
             read = { service.readText(root, path) },
-            write = { text, revision -> service.writeText(root, path, text, revision) },
+            // 编辑器保存是你自己写的：段落锁跟着走（整章锁仍然挡住）
+            write = { text, revision ->
+                kotlinx.coroutines.withContext(BookHistory.sourceElement(me.rerere.rikkihub.data.book.history.HistorySource.Manual)) {
+                    service.writeText(root, path, text, revision)
+                }
+            },
             // Relative URLs of an HTML page resolve inside the same root (the file layer refuses `..` and escaping links).
             webResources = WorkspaceWebResources("/$path") { urlPath ->
                 runCatching { service.file(root, urlPath.removePrefix("/")) }.getOrNull()?.takeIf { it.isFile }
             },
+            keepVersion = { text -> history.checkpoint(service.file(root, path), text) },
+            lockTarget = runCatching { history.bookFileOf(service.file(root, path)) }.getOrNull(),
         )
     }
     WorkspaceFileEditorPane(

@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight, Lock, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -49,11 +49,13 @@ export function WorkspaceBookReplace({
   };
   const titles = new Map(book.items.filter((item) => item.path).map((item) => [item.path, item]));
   const total = preview?.files.reduce((sum, file) => sum + file.hits.length, 0) ?? 0;
-  const selected =
-    preview?.files.reduce(
-      (sum, file) => sum + file.hits.filter((hit) => !unselected.has(hitKey(file.path, hit.start))).length,
-      0,
-    ) ?? 0;
+  // 整章定稿锁定的章节不替换，命中不可勾选；锁定段落里的命中默认勾上，可以一键取消
+  const selectable = preview?.files.filter((file) => !file.locked) ?? [];
+  const selected = selectable.reduce(
+    (sum, file) => sum + file.hits.filter((hit) => !unselected.has(hitKey(file.path, hit.start))).length,
+    0,
+  );
+  const lockedHits = selectable.flatMap((file) => file.hits.filter((hit) => hit.locked).map((hit) => hitKey(file.path, hit.start)));
 
   const reset = () => {
     setPreview(null);
@@ -93,7 +95,7 @@ export function WorkspaceBookReplace({
       if (!preview) return;
       const deleting = query.pairs.filter((pair) => !pair.replace).map((pair) => pair.find);
       if (deleting.length > 0 && !window.confirm(t("book.replace_delete_confirm", { words: deleting.join("、") }))) return;
-      const files = preview.files
+      const files = selectable
         .map((file) => ({
           path: file.path,
           revision: file.revision,
@@ -114,6 +116,7 @@ export function WorkspaceBookReplace({
       toast.success(t("book.replace_undone", { count: undone.restored.length }));
       if (undone.changedSince.length > 0)
         toast.warning(t("book.replace_undo_changed", { files: undone.changedSince.join("、") }));
+      if (undone.locked?.length) toast.warning(t("book.lock.undo_locked", { files: undone.locked.join("、") }));
       await loadHistory();
       onChanged();
     });
@@ -203,6 +206,9 @@ export function WorkspaceBookReplace({
                   {t("book.replace_failed_files", { files: result.failed.join("、") })}
                 </p>
               ) : null}
+              {result.locked?.length ? (
+                <p className="text-muted-foreground">{t("book.lock.replace_skipped", { files: result.locked.join("、") })}</p>
+              ) : null}
             </div>
           ) : null}
           {preview ? (
@@ -216,12 +222,29 @@ export function WorkspaceBookReplace({
                     size="sm"
                     variant="ghost"
                     onClick={() =>
-                      toggle(preview.files.flatMap((file) => file.hits.map((hit) => hitKey(file.path, hit.start))))
+                      toggle(selectable.flatMap((file) => file.hits.map((hit) => hitKey(file.path, hit.start))))
                     }
                   >
                     {t(unselected.size > 0 ? "book.replace_select_all" : "book.replace_select_none")}
                   </Button>
                 </div>
+                {preview.files.filter((file) => file.locked).map((file) => (
+                  <p key={`locked:${file.path}`} className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Lock className="size-3 text-primary" />
+                    {t("book.lock.replace_locked_chapter", { name: titles.get(file.path)?.title ?? file.path })}
+                  </p>
+                ))}
+                {lockedHits.length > 0 ? (
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Lock className="size-3" />
+                      {t("book.lock.replace_locked_hits", { count: lockedHits.length })}
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => toggle(lockedHits)}>
+                      {t(lockedHits.some((key) => unselected.has(key)) ? "book.replace_select_all" : "book.replace_select_none")}
+                    </Button>
+                  </div>
+                ) : null}
                 {preview.files.map((file) => {
                   const keys = file.hits.map((hit) => hitKey(file.path, hit.start));
                   const item = titles.get(file.path);
@@ -229,21 +252,25 @@ export function WorkspaceBookReplace({
                     <div key={file.path} className="rounded-xl border">
                       <label className="flex items-center gap-2 border-b px-3 py-2 text-sm font-medium">
                         <Checkbox
-                          checked={keys.every((key) => !unselected.has(key))}
+                          checked={!file.locked && keys.every((key) => !unselected.has(key))}
+                          disabled={file.locked}
                           onCheckedChange={() => toggle(keys)}
                         />
                         <span className="min-w-0 flex-1 truncate">
                           {item ? `${item.number}  ${item.title}` : file.path}
                         </span>
+                        {file.locked ? <Lock className="size-3 text-primary" aria-label={t("book.lock.locked")} /> : null}
                         <span className="text-xs text-muted-foreground">{file.hits.length}</span>
                       </label>
                       {file.hits.map((hit) => (
                         <label key={hit.start} className="flex items-start gap-2 px-3 py-1 text-sm">
                           <Checkbox
                             className="mt-1"
-                            checked={!unselected.has(hitKey(file.path, hit.start))}
+                            checked={!file.locked && !unselected.has(hitKey(file.path, hit.start))}
+                            disabled={file.locked}
                             onCheckedChange={() => toggle([hitKey(file.path, hit.start)])}
                           />
+                          {hit.locked ? <Lock className="mt-1.5 size-3 shrink-0 text-muted-foreground" aria-label={t("book.lock.locked")} /> : null}
                           <span className="min-w-0 break-words">
                             {hit.before}
                             <del className="text-destructive">{hit.match}</del>

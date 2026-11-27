@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, MoreVertical, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, Lock, MoreVertical, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
@@ -28,19 +28,25 @@ import {
   SettingsSelectField,
   reportSettingsError,
 } from "@overlay/components/settings/settings-ui";
+import { WorkspaceBookHistory, WorkspaceBookTrash } from "@overlay/components/workspace/workspace-book-history";
+import { WorkspaceBookReview } from "@overlay/components/workspace/workspace-book-review";
 import { WorkspaceBookOutline } from "@overlay/components/workspace/workspace-book-outline";
 import { WorkspaceBookReplace } from "@overlay/components/workspace/workspace-book-replace";
 import { WorkspaceBookExport, WorkspaceBookImport } from "@overlay/components/workspace/workspace-book-transfer";
 import {
   CHAPTER_STATUSES,
   bookApi,
+  bookLocksQueryKey,
+  bookTurnLatestQueryKey,
   bookQueryKey,
+  dismissedNotices,
   movedOrder,
   newChapterPath,
   type Book,
   type BookEdit,
   type BookItem,
   type ChapterStatus,
+  type LockNotice,
 } from "@overlay/lib/book";
 import { revealOnOpen } from "@overlay/lib/editor-reveal";
 
@@ -66,6 +72,44 @@ export function WorkspaceBook({
   const [replacing, setReplacing] = React.useState(false);
   const [outlining, setOutlining] = React.useState(false);
   const [transfer, setTransfer] = React.useState<"import" | "export" | null>(null);
+  const [historyPath, setHistoryPath] = React.useState<string | null>(null);
+  const [historyNotice, setHistoryNotice] = React.useState<string | undefined>(undefined);
+  const [reviewing, setReviewing] = React.useState<{ conversationId: string; messageId: string } | null>(null);
+  const [recentOpen, setRecentOpen] = React.useState(false);
+  const latestTurn = useQuery({ queryKey: bookTurnLatestQueryKey(workspaceId), queryFn: () => bookApi.latestTurn(workspaceId), retry: false });
+  const recentTurns = useQuery({
+    queryKey: ["workspaces", workspaceId, "book", "turns", "recent"],
+    queryFn: () => bookApi.recentTurns(workspaceId),
+    enabled: recentOpen,
+    retry: false,
+  });
+  const refreshTurns = () => void queryClient.invalidateQueries({ queryKey: ["workspaces", workspaceId, "book", "turns"] });
+  const [trashOpen, setTrashOpen] = React.useState(false);
+  const [noticesOpen, setNoticesOpen] = React.useState(false);
+  const [dismissed, setDismissed] = React.useState(() => dismissedNotices.read());
+  const locksQuery = useQuery({ queryKey: bookLocksQueryKey(workspaceId), queryFn: () => bookApi.locks(workspaceId), retry: false });
+  const notices = (locksQuery.data?.notices ?? []).filter((notice) => !dismissed.has(notice.id));
+  const refreshLocks = () => {
+    void queryClient.invalidateQueries({ queryKey: bookLocksQueryKey(workspaceId) });
+    void queryClient.invalidateQueries({ queryKey: key });
+  };
+  // 网页端可以加锁；解锁、“保留这次修改”只在 App 里（防工作区里的命令经本机接口解锁）
+  const lockChapter = useMutation({
+    mutationFn: async (path: string) => {
+      const current = await bookApi.fileLocks(workspaceId, path);
+      return bookApi.lockChapter(workspaceId, path, current.revision ?? "");
+    },
+    onSuccess: refreshLocks,
+    onError: (error) => reportSettingsError(error, t("book.lock.failed")),
+  });
+  const putBack = useMutation({
+    mutationFn: (notice: LockNotice) => bookApi.putBackNotice(workspaceId, notice.id),
+    onSuccess: (result) => {
+      if (!result.done) reportSettingsError(null, t("book.lock.put_back_failed"));
+      refreshLocks();
+    },
+    onError: (error) => reportSettingsError(error, t("book.lock.put_back_failed")),
+  });
 
   const mutation = useMutation({
     mutationFn: (run: () => Promise<Book>) => run(),
@@ -153,8 +197,57 @@ export function WorkspaceBook({
           <Button size="sm" variant="outline" onClick={() => setInfoOpen(true)}>
             {t("book.info")}
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setRecentOpen(true)}>
+            {t("book.turn.recent")}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setTrashOpen(true)}>
+            {t("book.trash_title")}
+          </Button>
         </div>
       </div>
+
+      {locksQuery.data?.broken ? (
+        <p className="rounded-lg border border-destructive/40 px-3 py-2 text-xs text-destructive">{t("book.lock.broken")}</p>
+      ) : notices.length > 0 ? (
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-lg border border-destructive/40 px-3 py-2 text-left text-xs text-destructive"
+          onClick={() => setNoticesOpen(true)}
+          data-testid="book-lock-banner"
+        >
+          <Lock className="size-3.5" />
+          <span className="flex-1">{t("book.lock.banner", { count: notices.length })}</span>
+          <span className="text-primary">{t("book.lock.view")}</span>
+        </button>
+      ) : null}
+      {latestTurn.data?.turn ? (
+        <div className="flex w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-xs text-primary" data-testid="book-turn-banner">
+          <button
+            type="button"
+            className="min-w-0 flex-1 truncate text-left"
+            onClick={() => latestTurn.data?.turn && setReviewing(latestTurn.data.turn)}
+          >
+            {latestTurn.data.title
+              ? t("book.turn.banner", { title: latestTurn.data.title, count: latestTurn.data.turn.files })
+              : t("book.turn.banner_untitled", { count: latestTurn.data.turn.files })}
+          </button>
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => latestTurn.data?.turn && setReviewing(latestTurn.data.turn)}>
+            {t("book.turn.review")}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-6"
+            aria-label={t("book.turn.banner_dismiss")}
+            onClick={() => {
+              const turn = latestTurn.data?.turn;
+              if (turn) void bookApi.turnSeen(workspaceId, turn.conversationId, turn.messageId).then(refreshTurns);
+            }}
+          >
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      ) : null}
 
       {book.items.length === 0 ? (
         <p className="rounded-xl border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
@@ -197,7 +290,14 @@ export function WorkspaceBook({
                         ? `${number(item.words)}/${number(item.targetWords)}`
                         : number(item.words)}
                   </span>
-                  <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
+                  <span className="flex w-16 shrink-0 items-center justify-end gap-1 text-xs text-muted-foreground">
+                    {item.lock ? (
+                      <Lock
+                        className={item.lock.chapter ? "size-3 text-primary" : "size-3 text-muted-foreground"}
+                        aria-label={item.lock.chapter ? t("book.lock.locked") : t("book.lock.has_passages", { count: item.lock.passages })}
+                        data-testid="book-lock-mark"
+                      />
+                    ) : null}
                     {t(`book.status_${item.status ?? "draft"}`)}
                   </span>
                 </button>
@@ -243,6 +343,19 @@ export function WorkspaceBook({
                         <DropdownMenuItem onSelect={() => setRelinking(item)}>
                           {t("book.relink")}
                         </DropdownMenuItem>
+                      ) : item.path ? (
+                        <>
+                          <DropdownMenuItem onSelect={() => setHistoryPath(item.path ?? null)}>
+                            {t("book.history_title")}
+                          </DropdownMenuItem>
+                          {item.lock?.chapter ? (
+                            <DropdownMenuItem disabled>{t("book.lock.unlock_in_app")}</DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onSelect={() => item.path && lockChapter.mutate(item.path)}>
+                              {t("book.lock.lock_chapter")}
+                            </DropdownMenuItem>
+                          )}
+                        </>
                       ) : null}
                       {volumes.map((volume) => (
                         <DropdownMenuItem
@@ -303,6 +416,84 @@ export function WorkspaceBook({
         </div>
       ) : null}
 
+      {historyPath ? (
+        <WorkspaceBookHistory
+          workspaceId={workspaceId}
+          path={historyPath}
+          noticeId={historyNotice}
+          onClose={() => {
+            setHistoryPath(null);
+            setHistoryNotice(undefined);
+          }}
+          onChanged={refreshLocks}
+        />
+      ) : null}
+      {reviewing ? (
+        <WorkspaceBookReview
+          workspaceId={workspaceId}
+          conversationId={reviewing.conversationId}
+          messageId={reviewing.messageId}
+          onClose={() => {
+            setReviewing(null);
+            refreshTurns();
+          }}
+          onChanged={() => {
+            refreshTurns();
+            void queryClient.invalidateQueries({ queryKey: key });
+          }}
+        />
+      ) : null}
+      <Dialog open={recentOpen} onOpenChange={setRecentOpen}>
+        <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-xl" data-testid="book-turn-recent">
+          <DialogHeader>
+            <DialogTitle>{t("book.turn.recent")}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {!recentTurns.data ? (
+              <p className="text-sm text-muted-foreground">{t("list.loading")}</p>
+            ) : recentTurns.data.turns.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("book.turn.recent_empty")}</p>
+            ) : (
+              <div className="divide-y overflow-hidden rounded-xl border">
+                {recentTurns.data.turns.map((turn) => (
+                  <button
+                    key={`${turn.conversationId}/${turn.messageId}`}
+                    type="button"
+                    className="block w-full px-3 py-2 text-left hover:bg-muted/50"
+                    onClick={() => {
+                      setRecentOpen(false);
+                      setReviewing(turn);
+                    }}
+                  >
+                    <p className="truncate text-sm">{recentTurns.data.titles[turn.conversationId] ?? t("book.turn.untitled")}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[
+                        new Date(turn.finishedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }),
+                        t("book.turn.card", { count: turn.files }),
+                        turn.status === "PENDING"
+                          ? t("book.turn.status_pending")
+                          : turn.status === "REVIEWED"
+                            ? t("book.turn.reviewed_summary", { count: turn.reverted })
+                            : t("book.turn.status_archived"),
+                        turn.cleaned ? t("book.turn.cleaned") : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {trashOpen ? (
+        <WorkspaceBookTrash
+          workspaceId={workspaceId}
+          onClose={() => setTrashOpen(false)}
+          onChanged={() => void queryClient.invalidateQueries({ queryKey: key })}
+        />
+      ) : null}
       {transfer === "import" ? (
         <WorkspaceBookImport
           workspaceId={workspaceId}
@@ -372,13 +563,59 @@ export function WorkspaceBook({
           setRenamingVolume(null);
         }}
       />
+      <Dialog open={noticesOpen} onOpenChange={setNoticesOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("book.lock.notices_title")}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] space-y-3 overflow-y-auto">
+            {notices.length === 0 ? <p className="text-sm text-muted-foreground">{t("book.lock.notices_empty")}</p> : null}
+            {[...notices].sort((a, b) => b.at - a.at).map((notice) => (
+              <div key={notice.id} className="space-y-1 rounded-lg border p-3 text-sm" data-testid="book-lock-notice">
+                <p>{t(`book.lock.notice_${notice.kind}`, { name: notice.path.split("/").pop() ?? notice.path })}</p>
+                {notice.earlier ? (
+                  <p className="text-xs text-muted-foreground">{t("book.lock.notice_earlier", { count: notice.earlier })}</p>
+                ) : null}
+                {notice.kind === "restored" ? (
+                  <p className="text-xs text-muted-foreground">{t("book.lock.keep_in_app")}</p>
+                ) : null}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {notice.kind !== "deleted" ? (
+                    <Button size="sm" variant="outline" onClick={() => {
+                      setNoticesOpen(false);
+                      setHistoryPath(notice.path);
+                      if (notice.kind === "changed" || notice.kind === "not_restored") setHistoryNotice(notice.id);
+                    }}>
+                      {t("book.lock.view")}
+                    </Button>
+                  ) : null}
+                  {["not_restored", "no_space", "changed", "deleted"].includes(notice.kind) ? (
+                    <Button size="sm" variant="outline" disabled={putBack.isPending} onClick={() => putBack.mutate(notice)}>
+                      {t("book.lock.put_back")}
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="ghost" onClick={() => {
+                    dismissedNotices.add(notice.id);
+                    setDismissed(dismissedNotices.read());
+                  }}>
+                    {t("book.lock.dismiss_here")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
       <ConfirmDeleteDialog
         open={deleting != null}
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
         }}
         title={t("book.delete_chapter")}
-        description={t("book.delete_confirm", { name: deleting?.path ?? "" })}
+        description={
+          t("book.delete_confirm", { name: deleting?.path ?? "" }) +
+          (deleting?.lock ? "\n" + t("book.lock.delete_note") : "")
+        }
         onConfirm={async () => {
           const target = deleting;
           setDeleting(null);

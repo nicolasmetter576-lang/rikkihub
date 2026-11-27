@@ -1,10 +1,24 @@
 package me.rerere.rikkihub.data.book
 
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import me.rerere.rikkihub.data.ai.tools.BuiltinToolIds
+import me.rerere.rikkihub.data.ai.tools.buildWorkspaceTools
+import me.rerere.rikkihub.data.book.history.BookHistory
+import me.rerere.rikkihub.data.book.history.BookHistoryActions
+import me.rerere.rikkihub.data.book.history.ChapterDiff
+import me.rerere.rikkihub.data.book.history.BookHistoryStore
+import me.rerere.rikkihub.data.book.history.HistoryEntry
+import me.rerere.rikkihub.data.book.history.HistorySource
 import me.rerere.rikkihub.data.book.transfer.BookImport
 import me.rerere.rikkihub.data.book.transfer.BookImporter
 import me.rerere.rikkihub.data.book.transfer.ExportFormat
@@ -13,12 +27,15 @@ import me.rerere.rikkihub.data.book.transfer.ImportChapter
 import me.rerere.rikkihub.data.datastore.SettingsStore
 import me.rerere.rikkihub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkihub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkihub.data.mutation.MutationRuntime
 import me.rerere.rikkihub.data.repository.WorkspaceRepository
 import me.rerere.rikkihub.data.workspace.WorkspaceRuntimeGate
 import me.rerere.workspace.LocalWorkspaceBackend
 import me.rerere.workspace.RootfsInstaller
+import me.rerere.workspace.WorkspaceChanges
 import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceShellStatus
+import me.rerere.workspace.WorkspaceStorageArea
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,27 +51,34 @@ class BookStoreTest {
     private lateinit var root: File
     private lateinit var store: BookStore
     private lateinit var repository: WorkspaceRepository
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val row = WorkspaceEntity(
+        id = "w", name = "长夜", root = "w", shellStatus = WorkspaceShellStatus.DISABLED.name,
+        createdAt = 1, updatedAt = 1, bookMode = true,
+    )
 
     @Before
     fun setUp() {
         base = Files.createTempDirectory("book-store-test").toFile()
         root = File(base, "w/files").apply { mkdirs() }
-        val row = WorkspaceEntity(
-            id = "w", name = "长夜", root = "w", shellStatus = WorkspaceShellStatus.DISABLED.name,
-            createdAt = 1, updatedAt = 1, bookMode = true,
-        )
-        // 只用到 getById
+        var deleted = false
+        // 只用到 getById 与 deleteById
         val dao = Proxy.newProxyInstance(WorkspaceDAO::class.java.classLoader, arrayOf(WorkspaceDAO::class.java)) { _, method, args ->
-            if (method.name == "getById") row.takeIf { args[0] == "w" } else error("unexpected ${method.name}")
+            when (method.name) {
+                "getById" -> row.takeIf { args[0] == "w" && !deleted }
+                "deleteById" -> 1.also { deleted = true }
+                else -> error("unexpected ${method.name}")
+            }
         } as WorkspaceDAO
-        val unsafe = Class.forName("sun.misc.Unsafe").let { type -> type to type.getDeclaredField("theUnsafe").apply { isAccessible = true }.get(null) }
-        val settings = unsafe.first.getMethod("allocateInstance", Class::class.java).invoke(unsafe.second, SettingsStore::class.java) as SettingsStore
+        val dataStore = PreferenceDataStoreFactory.create(scope = scope, produceFile = { File(base, "settings.preferences_pb") })
+        val settings = SettingsStore.forTesting(dataStore, MutationRuntime(File(base, "mutation"), File(base, "restore.marker")), scope)
         val manager = WorkspaceManager(base)
         repository = WorkspaceRepository(
             dao = dao,
             manager = LocalWorkspaceBackend(manager, RootfsInstaller(manager), File("/nonexistent-native"), null),
             settingsStore = settings,
             runtimeGate = WorkspaceRuntimeGate(joinTimeoutMillis = 2_000L),
+            onDeleted = { id -> store.forget(id); replacer().forget(id) },
         )
         store = newStore()
     }
@@ -63,6 +87,7 @@ class BookStoreTest {
 
     @After
     fun tearDown() {
+        scope.cancel()
         base.deleteRecursively()
     }
 
@@ -189,6 +214,35 @@ class BookStoreTest {
         assertFalse(File(root, "第1章.md").exists())
     }
 
+    @Test
+    fun `the model's file tools leave the book structure alone but can write parallel drafts`() = runBlocking {
+        write("第1章.md", "甲")
+        store.open("w")
+        val manifest = manifestFile.readText()
+        Files.createSymbolicLink(File(root, "link").toPath(), File(root, ".book").toPath())
+        val tools = buildWorkspaceTools(
+            workspace = row, workspaceRepository = repository, includeSubagent = false,
+            loadWorkspace = { row }, bookStore = store,
+        )
+        val writeFile = tools.single { it.name == BuiltinToolIds.WORKSPACE_WRITE_FILE }
+        val editFile = tools.single { it.name == BuiltinToolIds.WORKSPACE_EDIT_FILE }
+        fun write(path: String) = buildJsonObject { put("path", path); put("text", "{}") }
+        val refused = listOf(
+            "/workspace/.book/book.json", "/workspace/./.book/book.json", "/workspace//.book/chapters/c1.json",
+            "/workspace/link/book.json",
+        ).associateWith { path -> runCatching { writeFile.execute(write(path)) }.exceptionOrNull()?.message }
+        refused.forEach { (path, message) -> assertTrue("$path: $message", message.orEmpty().contains("book_update")) }
+        val edit = buildJsonObject { put("path", "/workspace/.book/book.json"); put("old_text", "rikkihub-book"); put("new_text", "x") }
+        assertTrue(runCatching { editFile.execute(edit) }.exceptionOrNull()?.message.orEmpty().contains("book_update"))
+        assertEquals(manifest, manifestFile.readText())
+        assertFalse(File(root, ".book/chapters/c1.json").exists())
+
+        writeFile.execute(write("/workspace/.book/branches/c1/另一稿.md"))
+        writeFile.execute(write("/workspace/.bookish/a.md"))
+        assertEquals("{}", File(root, ".book/branches/c1/另一稿.md").readText())
+        assertEquals("{}", File(root, ".bookish/a.md").readText())
+    }
+
     // ---- 查找替换 ----------------------------------------------------------------------------
 
     private fun replacer() = BookReplacer(store, File(base, "undo"))
@@ -196,6 +250,23 @@ class BookStoreTest {
     private fun query(vararg paths: String) = BookReplaceQuery(listOf(ReplacePair("阿青", "阿白")), false, paths.toList())
 
     private fun targets(preview: BookReplacePreview) = preview.files.map { BookReplaceTarget(it.path, it.revision, null) }
+
+    @Test
+    fun `deleting the workspace forgets its index and replacement undo`() = runBlocking {
+        write("第1章.md", "阿青")
+        store.open("w")
+        replacer().apply("w", query("第1章.md"), targets(replacer().preview("w", query("第1章.md"))))
+        val index = File(base, "cache/w.json")
+        val undo = File(base, "undo/w")
+        assertTrue(index.exists() && undo.list().orEmpty().isNotEmpty())
+        File(base, "undo/other").mkdirs()
+
+        assertTrue(repository.delete("w"))
+        assertFalse(index.exists())
+        assertFalse(undo.exists())
+        assertTrue(File(base, "undo/other").exists())
+        assertFalse(File(base, "w").exists())
+    }
 
     @Test
     fun `replacing across chapters can be undone`() = runBlocking {
@@ -326,6 +397,98 @@ class BookStoreTest {
         assertEquals(listOf("长夜.txt"), File(root, "导出").list()!!.toList())
     }
 
+    // ---- 版本史（经运行闸门、BookStore 的真实写入路径） --------------------------------------------
+
+    private fun withHistory(block: suspend (BookHistory) -> Unit) {
+        val history = BookHistory(scope).apply { setBooks(mapOf("w" to root)) }
+        WorkspaceChanges.observer = history::onChange
+        try {
+            runBlocking { block(history) }
+        } finally {
+            WorkspaceChanges.observer = null
+        }
+    }
+
+    private fun historyVersions(path: String) = BookHistoryStore(root.canonicalFile, { 0 }).let { disk ->
+        disk.entries(path).filterIsInstance<HistoryEntry.Version>().map { disk.read(it.sha)!!.decodeToString() to it.source }
+    }
+
+    @Test
+    fun `the writer's source survives the runtime gate, replacements and exports`() = withHistory {
+        write("第1章.md", "阿青来了")
+        val ai = HistorySource.Ai("c", "m", "t")
+        withContext(BookHistory.sourceElement(ai)) { repository.writeText("w", "第1章.md", "阿青走了", overwrite = true) }
+        replacer().apply("w", query("第1章.md"), targets(replacer().preview("w", query("第1章.md"))))
+        assertEquals("阿白走了", File(root, "第1章.md").readText())
+        repository.writeText("w", "第1章.md", "手改", overwrite = true)
+        assertEquals(
+            listOf("阿青来了" to HistorySource.Initial, "阿青走了" to ai, "阿白走了" to HistorySource.Replace),
+            historyVersions("第1章.md"),
+        )
+        val options = ExportOptions(ExportFormat.TXT)
+        store.exportInto(store.open("w"), options, "导出/长夜.txt")
+        val first = File(root, "导出/长夜.txt").readText()
+        write("第1章.md", "又改")
+        store.exportInto(store.open("w"), options, "导出/长夜.txt")
+        assertEquals(listOf(first), historyVersions("导出/长夜.txt").map { it.first })
+    }
+
+    @Test
+    fun `restoring a version and taking one paragraph back go through revision checks`() = withHistory { history ->
+        write("第1章.md", "甲\n乙\n丙")
+        val ai = HistorySource.Ai("c", "m")
+        withContext(BookHistory.sourceElement(ai)) { repository.writeText("w", "第1章.md", "甲\n乙改\n丙\n丁", overwrite = true) }
+        val actions = BookHistoryActions(store, history)
+        val version = history.entries("w", "第1章.md").filterIsInstance<HistoryEntry.Version>().single()
+        val comparison = actions.compare("w", "第1章.md", version.sha)
+        val blocks = comparison.diff.blocks.filterIsInstance<ChapterDiff.Block.Changed>()
+        assertEquals(2, blocks.size)
+        // 稿子在比较之后变了：取回被版本校验挡住
+        repository.writeText("w", "第1章.md", "甲\n乙改\n丙\n丁\n戊", overwrite = true)
+        assertTrue(runCatching { actions.takeBack("w", "第1章.md", version.sha, blocks[0].index, comparison.current.revision) }.isFailure)
+        val fresh = actions.compare("w", "第1章.md", version.sha)
+        val first = fresh.diff.blocks.filterIsInstance<ChapterDiff.Block.Changed>().first()
+        val revision = actions.takeBack("w", "第1章.md", version.sha, first.index, fresh.current.revision)
+        assertEquals("甲\n乙\n丙\n丁\n戊", File(root, "第1章.md").readText())
+        actions.restore("w", "第1章.md", version.sha, revision)
+        assertEquals("甲\n乙\n丙", File(root, "第1章.md").readText())
+        // 还原前的稿子自动留了一版
+        val texts = history.entries("w", "第1章.md").filterIsInstance<HistoryEntry.Version>().map { history.read("w", it.sha) }
+        assertTrue("甲\n乙\n丙\n丁\n戊" in texts)
+    }
+
+    @Test
+    fun `a chapter put back from the trash is relinked when its entry is still waiting`() = withHistory { history ->
+        write("第1章.md", "甲")
+        write("第2章.md", "乙")
+        val book = store.open("w")
+        val id = book.entryByPath("第1章.md")!!.id
+        // 文件被删了但目录项还在（显示“找不到”）
+        repository.deleteFiles("w", WorkspaceStorageArea.FILES, listOf("第1章.md"))
+        assertTrue(store.open("w").entry(id)!!.missing)
+        write("第1章.md", "别人的新文件")
+        val trashed = history.trashed("w").single()
+        val actions = BookHistoryActions(store, history)
+        val path = actions.restoreTrashed("w", trashed.key, trashed.name, trashed.path)
+        assertEquals("第1章 (1).md", path)
+        // 原路径上又有文件了，目录项不再“找不到”，放回的留在未编入里
+        assertTrue("第1章 (1).md" in store.open("w").unlisted)
+        // 章节删掉后放回：在未编入里
+        store.deleteChapters("w", setOf(store.open("w").entryByPath("第2章.md")!!.id))
+        val second = history.trashed("w").first { it.path == "第2章.md" }
+        assertEquals("第2章.md", actions.restoreTrashed("w", second.key, second.name, second.path))
+        assertTrue("第2章.md" in store.open("w").unlisted)
+    }
+
+    @Test
+    fun `deleting chapters puts their files in the trash`() = withHistory {
+        write("第1章.md", "甲")
+        val id = store.open("w").entries.single().id
+        store.deleteChapters("w", setOf(id))
+        assertFalse(File(root, "第1章.md").exists())
+        assertEquals(listOf("甲"), File(base, "w/history/trash").walkTopDown().filter { it.isFile }.map { it.readText() }.toList())
+    }
+
     @Test
     fun `pictures outside the book are not read`() = runBlocking {
         File(base, "secret.png").writeText("x")
@@ -405,5 +568,197 @@ class BookStoreTest {
         assertFalse(compared.updateBeat("b1") { it.copy(words = 5, locked = true) }.comparisonStale)
         assertTrue(compared.updateBeat("b1") { it.copy(text = "乙") }.comparisonStale)
         assertTrue(compared.addBeats(listOf("丙")).comparisonStale)
+    }
+
+    // ---- 定稿锁与全书替换 ----------------------------------------------------------------------
+
+    @Test
+    fun `book-wide replace skips a locked chapter and marks hits in locked passages`() = withHistory { history ->
+        write("第1章.md", "阿青下山。")
+        write("第2章.md", "开头一句。\n阿青站在门口很久都没有说话。\n结尾。")
+        store.open("w")
+        history.lockChapter("w", "第1章.md", File(root, "第1章.md").readBytes(), web = false)
+        history.lockPassage("w", "第2章.md", File(root, "第2章.md").readBytes(), 1..1, web = false)
+        val replacer = BookReplacer(store, File(base, "undo"), history)
+        val preview = replacer.preview("w", query("第1章.md", "第2章.md"))
+        assertTrue(preview.files.first { it.path == "第1章.md" }.locked)
+        assertTrue(preview.files.first { it.path == "第2章.md" }.hits.single().locked)
+
+        // 勾上锁定段落里的命中（默认就是勾上的）：替换，锁跟着走，历史仍记全书替换
+        val result = replacer.apply("w", query("第1章.md", "第2章.md"), targets(preview))
+        assertEquals(listOf("第1章.md"), result.locked)
+        assertEquals("阿青下山。", File(root, "第1章.md").readText())
+        assertTrue(File(root, "第2章.md").readText().contains("阿白站在门口"))
+        assertEquals(listOf("阿白站在门口很久都没有说话。"), history.locksOf("w", "第2章.md")!!.passages.single().lines)
+        // 替换前的稿子留了底，现在的稿子记在全书替换名下（不是手写）
+        assertTrue(historyVersions("第2章.md").any { it.first.contains("阿青站在门口") })
+        assertEquals(HistorySource.Replace, history.currentWriter("w", "第2章.md"))
+    }
+
+    @Test
+    fun `untick the locked hits and the passage stays as it was`() = withHistory { history ->
+        write("第2章.md", "阿青开头。\n阿青站在门口很久都没有说话。\n结尾。")
+        store.open("w")
+        history.lockPassage("w", "第2章.md", File(root, "第2章.md").readBytes(), 1..1, web = false)
+        val replacer = BookReplacer(store, File(base, "undo"), history)
+        val file = replacer.preview("w", query("第2章.md")).files.single()
+        val unlocked = file.hits.filterNot { it.locked }.map { it.start }.toSet()
+        replacer.apply("w", query("第2章.md"), listOf(BookReplaceTarget(file.path, file.revision, unlocked)))
+        assertEquals("阿白开头。\n阿青站在门口很久都没有说话。\n结尾。", File(root, "第2章.md").readText())
+    }
+
+    @Test
+    fun `undoing a replace is held back by a chapter locked afterwards`() = withHistory { history ->
+        write("第1章.md", "阿青下山。")
+        store.open("w")
+        val replacer = BookReplacer(store, File(base, "undo"), history)
+        val result = replacer.apply("w", query("第1章.md"), targets(replacer.preview("w", query("第1章.md"))))
+        history.lockChapter("w", "第1章.md", File(root, "第1章.md").readBytes(), web = false)
+        val undone = replacer.undo("w", result.undoId!!)
+        assertEquals(listOf("第1章.md"), undone.locked)
+        assertEquals("阿白下山。", File(root, "第1章.md").readText())
+    }
+
+    // ---- 逐处审阅：读、完成、撤销（经 BookStore 的真实写入路径） ------------------------------------
+
+    private val turn = HistorySource.Ai("c", "m1", "t1")
+
+    /** AI 这一轮写了 [writes]（路径 → 全文；文件不在就新建），收尾后返回审阅页。 */
+    private suspend fun aiTurn(history: BookHistory, actions: me.rerere.rikkihub.data.book.history.TurnReviewActions, writes: Map<String, String>): me.rerere.rikkihub.data.book.history.TurnReviewDto {
+        withContext(BookHistory.sourceElement(turn)) {
+            for ((path, text) in writes) repository.writeText("w", path, text, overwrite = File(root, path).exists())
+        }
+        val running = scope.coroutineContext[kotlinx.coroutines.Job]!!.children.toSet()
+        history.finishTurn("c", "m1")
+        (scope.coroutineContext[kotlinx.coroutines.Job]!!.children.toSet() - running).forEach { it.join() }
+        return actions.load("w", "c", "m1")!!
+    }
+
+    private fun pick(file: me.rerere.rikkihub.data.book.history.TurnFileDto, reject: Set<Int> = emptySet(), whole: Boolean = false) =
+        me.rerere.rikkihub.data.book.history.TurnFilePick(file.key, file.revision, file.before, file.after, reject, whole)
+
+    private val p1 = "雨下了一整夜，镇上的石板路泛着冷光。"
+    private val p2 = "他推开院门，院子里积着一洼洼的水。"
+    private val p3 = "远处传来几声狗叫，又很快安静下来。"
+
+    @Test
+    fun `rejecting blocks writes them back, keeps a version first and marks the turn reviewed`() = withHistory { history ->
+        val actions = me.rerere.rikkihub.data.book.history.TurnReviewActions(store, history)
+        File(root, "第1章.md").writeBytes(("\uFEFF" + listOf(p1, p2, p3).joinToString("\r\n\r\n")).toByteArray())
+        history.scanAll()
+        val review = aiTurn(history, actions, mapOf("第1章.md" to "\uFEFF" + listOf("雨停了。", p2, "远处没有声音。").joinToString("\r\n\r\n")))
+        val file = review.files.single()
+        assertEquals(2, file.blocks.size)
+        val outcome = actions.complete("w", "c", "m1", listOf(pick(file, setOf(0)))).single()
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnFileOutcome.Outcome.OK, outcome.outcome)
+        // 只换回第一块；BOM 与 CRLF 由快照层照原文件保留
+        assertEquals("\uFEFF" + listOf(p1, p2, "远处没有声音。").joinToString("\r\n\r\n"), File(root, "第1章.md").readText())
+        assertTrue(historyVersions("第1章.md").any { it.first.contains("雨停了。") })
+        val again = actions.load("w", "c", "m1")!!
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnStatus.REVIEWED, again.status)
+        assertEquals(1, again.reverted)
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnBlockDto.BlockState.REVERTED, again.files.single().blocks[0].state)
+        // 撤销：回到审阅前，记录回到待审
+        actions.undo("w", "c", "m1")
+        assertEquals("\uFEFF" + listOf("雨停了。", p2, "远处没有声音。").joinToString("\r\n\r\n"), File(root, "第1章.md").readText())
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnStatus.PENDING, actions.load("w", "c", "m1")!!.status)
+    }
+
+    @Test
+    fun `a locked chapter, a changed draft and a stale record each fail on their own`() = withHistory { history ->
+        val actions = me.rerere.rikkihub.data.book.history.TurnReviewActions(store, history)
+        write("a.md", listOf(p1, p2).joinToString("\n\n"))
+        write("b.md", listOf(p1, p2).joinToString("\n\n"))
+        write("c.md", listOf(p1, p2).joinToString("\n\n"))
+        history.scanAll()
+        val review = aiTurn(history, actions, listOf("a.md", "b.md", "c.md").associateWith { listOf(p1, "他推开木门。").joinToString("\n\n") })
+        val (a, b, c) = review.files
+        history.lockChapter("w", "a.md", File(root, "a.md").readBytes(), web = false)
+        write("b.md", listOf(p1, "他推开木门。", "你接着写的。").joinToString("\n\n"))
+        val outcomes = actions.complete("w", "c", "m1", listOf(pick(a, setOf(0)), pick(b, setOf(0)), pick(c, setOf(0)).copy(after = "别的")))
+        assertEquals(
+            listOf(me.rerere.rikkihub.data.book.history.TurnFileOutcome.Outcome.LOCKED, me.rerere.rikkihub.data.book.history.TurnFileOutcome.Outcome.CONFLICT, me.rerere.rikkihub.data.book.history.TurnFileOutcome.Outcome.CONFLICT),
+            outcomes.map { it.outcome },
+        )
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnStatus.PENDING, actions.load("w", "c", "m1")!!.status)
+        // 重新加载后再完成，只处理剩下的
+        val fresh = actions.load("w", "c", "m1")!!.files
+        val retry = actions.complete("w", "c", "m1", listOf(pick(fresh[1], setOf(0)), pick(fresh[2], setOf(0))))
+        assertTrue(retry.all { it.outcome == me.rerere.rikkihub.data.book.history.TurnFileOutcome.Outcome.OK })
+        assertEquals(listOf(p1, p2, "你接着写的。").joinToString("\n\n"), File(root, "b.md").readText())
+    }
+
+    @Test
+    fun `rejecting a new chapter deletes it and undo puts it back in place with its details`() = withHistory { history ->
+        val actions = me.rerere.rikkihub.data.book.history.TurnReviewActions(store, history)
+        write("第1章.md", p1)
+        write("第3章.md", p3)
+        val book = store.open("w")
+        history.scanAll()
+        withContext(BookHistory.sourceElement(turn)) { store.createChapter("w", "第2章.md", p2, book.entries[0].id, title = "插进来的一章") }
+        store.edit("w") { it.manifest.updateChapter(it.entryByPath("第2章.md")!!.id) { chapter -> chapter.copy(synopsis = "梗概", status = ChapterStatus.REVISING) } }
+        val review = aiTurn(history, actions, emptyMap())
+        val created = review.files.single()
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnFileDto.Kind.CREATED, created.kind)
+        actions.complete("w", "c", "m1", listOf(pick(created, whole = true)))
+        assertFalse(File(root, "第2章.md").exists())
+        assertEquals(listOf("第1章.md", "第3章.md"), store.open("w").entries.map { it.path })
+        actions.undo("w", "c", "m1")
+        val back = store.open("w").entries
+        assertEquals(listOf("第1章.md", "第2章.md", "第3章.md"), back.map { it.path })
+        assertEquals("插进来的一章", back[1].chapter.title)
+        assertEquals("梗概", back[1].chapter.synopsis)
+        assertEquals(ChapterStatus.REVISING, back[1].chapter.status)
+    }
+
+    @Test
+    fun `rejecting a deletion puts the file back, undo deletes it again only if unchanged`() = withHistory { history ->
+        val actions = me.rerere.rikkihub.data.book.history.TurnReviewActions(store, history)
+        write("设定.md", p1)
+        history.scanAll()
+        // 命令删掉了它
+        withContext(BookHistory.sourceElement(turn)) { history.watching("w") { File(root, "设定.md").delete() } }
+        val review = aiTurn(history, actions, emptyMap())
+        val deleted = review.files.single()
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnFileDto.Kind.DELETED, deleted.kind)
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnFileOutcome.Outcome.OK, actions.complete("w", "c", "m1", listOf(pick(deleted, whole = true))).single().outcome)
+        assertEquals(p1, File(root, "设定.md").readText())
+        // 放回后你改过：撤销不动它
+        write("设定.md", "你改过了")
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnFileOutcome.Outcome.CONFLICT, actions.undo("w", "c", "m1").single().outcome)
+        assertEquals("你改过了", File(root, "设定.md").readText())
+    }
+
+    @Test
+    fun `a version with a BOM compares cleanly and restores without a second BOM`() = withHistory { history ->
+        val actions = BookHistoryActions(store, history)
+        File(root, "第1章.md").writeBytes("\uFEFF第一段\r\n\r\n第二段".toByteArray())
+        history.scanAll()
+        val current = store.read("w", "第1章.md")
+        store.write("w", "第1章.md", current.content.replace("第二段", "改过的第二段"), current.revision)
+        // 写之前的稿子（带 BOM、CRLF 的原字节）留了一版
+        val sha = history.entries("w", "第1章.md").filterIsInstance<HistoryEntry.Version>().first().sha
+        assertTrue(history.read("w", sha)!!.startsWith("\uFEFF"))
+        val comparison = actions.compare("w", "第1章.md", sha)
+        // 只有真改了的那一段
+        assertEquals(1, comparison.diff.blocks.count { it is ChapterDiff.Block.Changed })
+        actions.restore("w", "第1章.md", sha, comparison.current.revision)
+        assertEquals("\uFEFF第一段\r\n\r\n第二段", File(root, "第1章.md").readText())
+    }
+
+    @Test
+    fun `restoring one whole file leaves the other files of the turn to review`() = withHistory { history ->
+        val actions = me.rerere.rikkihub.data.book.history.TurnReviewActions(store, history)
+        write("a.md", listOf(p1, p2).joinToString("\n\n"))
+        write("b.md", listOf(p1, p2).joinToString("\n\n"))
+        history.scanAll()
+        val review = aiTurn(history, actions, listOf("a.md", "b.md").associateWith { listOf(p1, "他推开木门。").joinToString("\n\n") })
+        val a = review.files.single { it.path == "a.md" }
+        val outcome = actions.complete("w", "c", "m1", listOf(pick(a, whole = true))).single()
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnFileOutcome.Outcome.OK, outcome.outcome)
+        assertEquals(listOf(p1, p2).joinToString("\n\n"), File(root, "a.md").readText())
+        val after = actions.load("w", "c", "m1")!!
+        assertEquals(me.rerere.rikkihub.data.book.history.TurnStatus.PENDING, after.status)
+        assertFalse(after.files.single { it.path == "b.md" }.done)
     }
 }

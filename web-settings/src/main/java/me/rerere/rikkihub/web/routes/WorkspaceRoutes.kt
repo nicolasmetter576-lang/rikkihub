@@ -1,5 +1,8 @@
 package me.rerere.rikkihub.web.routes
 
+import kotlinx.coroutines.withContext
+import me.rerere.rikkihub.data.book.history.HistorySource
+import me.rerere.rikkihub.data.book.history.BookHistory
 import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -327,7 +330,10 @@ fun Route.workspaceRoutes(
             val request = readWorkspaceFileWriteRequest(call)
             val entry = workspaceFileApiOperation {
                 if (request.expectedRevision != null) {
-                    val saved = workspaceRepository.writeTextWithRevision(id, path, request.content, request.expectedRevision)
+                    // 带版本号的保存是用户在网页编辑器里写的：段落锁跟着走（整章锁仍然挡住）
+                    val saved = withContext(BookHistory.sourceElement(HistorySource.Manual)) {
+                        workspaceRepository.writeTextWithRevision(id, path, request.content, request.expectedRevision)
+                    }
                     saved.entry.toDto().copy(revision = saved.revision)
                 } else {
                     // Legacy clients/tools retain the explicit old overwrite contract.
@@ -539,7 +545,8 @@ fun Route.workspaceRoutes(
             val recursive = call.request.queryParameters["recursive"]?.toBooleanStrictOrNull() ?: false
             val deleted = fileOpLocks.withLock(id, area.name) {
                 try {
-                    workspaceRepository.deleteFile(id, area, path, recursive)
+                    // 网页端删了锁定的章节：连锁进回收站，并在 App 里留一条提醒
+                    withContext(foreignDelete) { workspaceRepository.deleteFile(id, area, path, recursive) }
                 } catch (error: IllegalArgumentException) {
                     throw BadRequestException(
                         sanitizeWorkspaceHostPaths(error.message, workspace.root)
@@ -560,7 +567,7 @@ fun Route.workspaceRoutes(
                 try {
                     // 模块层先把全部选中项验完 (存在/越界/根/符号链接) 再动手,
                     // 任一无效则一项都不删, 直接 400
-                    workspaceRepository.deleteFiles(id, area, paths)
+                    withContext(foreignDelete) { workspaceRepository.deleteFiles(id, area, paths) }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: IllegalArgumentException) {
@@ -1071,3 +1078,6 @@ internal fun validateTransferPaths(paths: List<String>): List<String> {
     }
     return paths
 }
+
+/** 网页端的删除：锁定的章节连锁进回收站，并留一条“网页端删除了锁定的章节”提醒。 */
+private val foreignDelete get() = BookHistory.lockElement(me.rerere.rikkihub.data.book.history.BookLockContext(foreign = true))

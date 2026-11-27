@@ -84,6 +84,7 @@ export function fileManagerFileUrl(root: FileManagerRoot, path: string, download
 const fileManagerErrors: Record<string, string> = {
   FILE_MANAGER_READ_ONLY_FOLDER: "workspaces_read_only",
   FILE_PERMISSION_DENIED: "device_permission_required",
+  FILE_LOCKED: "file_locked",
 };
 
 /** i18n key (fileManager namespace) of a failed operation, by error code only; undefined for codes without a text of their own. */
